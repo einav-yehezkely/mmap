@@ -61,9 +61,12 @@ that needs network access. Later runs use the cached copy.
 
 ### How `npm run dev` works
 
-`npm run dev` runs `electron-vite dev` in `apps/desktop`. It builds the main and preload bundles,
-starts a Vite dev server for the renderer on a loopback address, and launches Electron with
-`ELECTRON_RENDERER_URL` pointing at that server. The main process accepts the URL only when the
+`npm run dev` runs `electron-vite dev --watch` in `apps/desktop`. It builds the main and preload
+bundles, starts a Vite dev server for the renderer on a loopback address, and launches Electron
+with `ELECTRON_RENDERER_URL` pointing at that server. In watch mode, changes to renderer code are
+applied with hot reload, and changes to main-process or preload code (including the `packages/*`
+code they bundle) rebuild those bundles and restart Electron. Keep the terminal open: build errors
+appear there, not in the window. The main process accepts the URL only when the
 app is not packaged and the URL is `http://localhost` or `http://127.0.0.1`
 (`apps/desktop/src/main/security/trusted-origins.ts`). In development the Content Security Policy
 also allows the inline React Fast Refresh preamble and the dev server's WebSocket; packaged
@@ -97,12 +100,35 @@ The app accepts two command-line flags, used only by the packaged smoke test: `-
 
 - Build output: `apps/desktop/out` (bundles) and `apps/desktop/release` (packaged app and
   installer). Both are git-ignored.
-- Tests create temporary SQLite files under the OS temp directory (`mmap-test-*`) and delete them
-  afterwards.
-- Phase 0 creates no workspace. Electron keeps its own profile (Chromium cache and the
-  single-instance lock) in `%APPDATA%\mmap`, named after `productName` in
-  `apps/desktop/package.json`. Workspaces will live in `%APPDATA%\mmap\workspaces\<name>`
-  from Phase 1 ([ADR-0005](adr/0005-workspace-location-and-supported-filesystems.md)).
+- Tests create temporary SQLite files and folders under the OS temp directory and delete them
+  afterwards. The packaged smoke test uses its own temporary profile.
+
+### Development data is your real profile
+
+`npm run dev` uses the **real** user profile, not a separate development one: `%APPDATA%\mmap`,
+named after `productName` in `apps/desktop/package.json`. Development builds and installed
+(packaged) builds share it. It contains:
+
+| Path under `%APPDATA%\mmap` | Contents                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `workspaces\My Knowledge`   | The default workspace created on first launch; other workspaces in the default location as well |
+| `settings.json`             | Last and recent workspaces, attachment size limit                                               |
+| `Local Storage\`            | Chromium storage, including unsaved-draft recovery copies                                       |
+| other folders               | Chromium cache and Electron's single-instance lock                                              |
+
+Consequences:
+
+- Notes you write while developing land in the same workspace an installed build opens.
+- Only one of them can use a workspace at a time: the second one either focuses the first
+  window or reports the workspace as in use.
+- A schema migration in a development build upgrades your real workspace (a verified backup is
+  written to the workspace's `recovery` folder first). An older installed build will then refuse
+  it as "created by a newer version".
+
+To experiment safely, create a separate workspace (Settings, Workspace, "Switch or create
+workspace") and switch back afterwards, or copy the closed workspace folder before testing.
+Workspace folders survive uninstalling the app
+([ADR-0005](adr/0005-workspace-location-and-supported-filesystems.md)).
 
 ## Troubleshooting
 
@@ -135,6 +161,22 @@ Check the terminal for a Vite error first. If the dev server URL is not a loopba
 main process ignores it and loads `app://mmap`, which needs a previous `npm run build`. Running
 `npm run build` once, or fixing the dev server address, resolves this.
 
+### The dev window shows an error after many file edits
+
+When many files change in quick succession (switching branches, a large search-and-replace, a
+formatter run), Vite can transform a module while it is still being written and keep serving that
+broken version from its cache. The window then shows an error, or the error boundary's message,
+even though the code on disk is correct and `npm run typecheck` passes. Press **Ctrl+R**
+(View, Reload) in the dev window. If the error remains, stop `npm run dev` with Ctrl+C and start
+it again.
+
+### "This workspace is already open in another mmap window or process"
+
+Another mmap process holds the workspace's `.lock` file, typically an installed build running at
+the same time as `npm run dev` (they share the profile, see above). Close the other one. A lock
+left by a crashed mmap process on this computer is detected as stale and removed automatically;
+a lock written by another computer is never removed, so close the workspace there first.
+
 ### The packaged smoke test fails
 
 `npm run smoke:packaged` prints one `PASS` or `FAIL` line per check, with a reason for failures.
@@ -145,8 +187,8 @@ main process ignores it and loads `app://mmap`, which needs a previous `npm run 
   The main process logs `[mmap] startup failed: <ErrorName>` to the console. Packaged builds omit
   stack traces, so reproduce with `npm run preview -w @mmap/desktop` to see the full error.
 - A single check fails: the check name says which layer is broken (SQLite and migrations,
-  `app://` loading, React rendering under the CSP, the preload bridge, renderer isolation, or CSP
-  enforcement). See [testing.md](testing.md#packaged-smoke-test) for what each check proves.
+  `app://` loading, React rendering under the CSP, the preload bridge, first-run workspace
+  creation, node operations through the bridge, renderer isolation, or CSP enforcement). See [testing.md](testing.md#packaged-smoke-test) for what each check proves.
 - `Smoke test timed out after 120 s.`: often Defender scanning a freshly built binary. Run it
   again; if it keeps timing out, investigate the renderer load.
 

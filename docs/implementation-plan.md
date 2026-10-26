@@ -44,7 +44,7 @@ The dependency direction is `apps/desktop → storage-sqlite → domain` and `ap
 
 ## 3. Phases
 
-### Phase 0 — Foundation (this increment)
+### Phase 0 — Foundation (done)
 
 Deliverables
 
@@ -71,6 +71,8 @@ missing-folder handling, verified move), node CRUD with revisions and autosave s
 Tiptap editor with KaTeX (bundled), validated versioned note JSON + derived plain text,
 tags, managed attachments (staging, checksums, reconciliation, traversal/symlink protection),
 note sanitization tests. Exit: workspace isolation, content survives restart, offline.
+Implemented on branch `phase-1-knowledge-base`; see [§6](#6-phase-1-status-2026-10-26) for what is
+done and what is not.
 
 ### Phase 2 — Connections and discovery
 
@@ -121,3 +123,63 @@ documentation, performance verification on the reference machine.
 
 Carried into Phase 1: workspace lifecycle and lock, write coordinator, pre-migration backup
 wiring, worker thread for heavy database work, external-link IPC channel.
+
+## 6. Phase 1 status (2026-10-26)
+
+Implemented on branch `phase-1-knowledge-base` in five slices (`git log --oneline main..HEAD`):
+1.1 workspaces, write coordinator, note and file policies; 1.2 nodes, library and autosave;
+1.3 rich notes with Tiptap and KaTeX; 1.4 tags; 1.5 managed attachments. Test suite: 570 tests in
+29 files ([testing.md](testing.md)).
+
+| PRD §12 exit criterion / deliverable          | Evidence                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exit: workspace isolation passes              | `workspace-manager.test.ts` (switching keeps workspaces isolated); cross-workspace tests in `knowledge-node-service.test.ts`, `tag-service.test.ts` (service and composite foreign key) and `attachment-service.test.ts`; preview protocol limited to the open workspace; `Workbench` keyed by workspace ID                                                         |
+| Exit: content survives restart                | `apps/desktop/src/main/phase1-acceptance.test.ts` (PRD §13 criterion 3: formatted text, table, code block, inline and display math, tags and an attachment survive exit and restart, and deletion of the original file); `workspace-manager.test.ts` restart test                                                                                                   |
+| Exit: workflows work offline                  | No network code in the main process; CSP without remote origins; packaged smoke test with a dead proxy creates the first-run workspace and runs node create/save/conflict/tag/filter/delete through the real bridge (8 checks)                                                                                                                                      |
+| Local workspaces (PRD §5.1)                   | `apps/desktop/src/main/workspaces/`: manifest, default location, create/open/rename/switch with native dialogs, recent list, lock with stale recovery, missing/damaged handling, network shares blocked, cloud-sync warning, flush on quit; `workspace-manager.test.ts`                                                                                             |
+| One writer coordinator                        | `packages/storage-sqlite/src/sqlite-connections.ts` (queued `BEGIN IMMEDIATE` writer, read-only WAL reader, `AsyncLocalStorage`); `sqlite-connections.test.ts`                                                                                                                                                                                                      |
+| Pre-migration backup                          | `packages/storage-sqlite/src/workspace-database.ts` and `backup.ts` (verified online backup into `recovery/`); `sqlite-connections.test.ts`                                                                                                                                                                                                                         |
+| Node CRUD, revisions, autosave (PRD §5.2)     | `knowledge-node-service.ts` and `knowledge-node-service.test.ts`; renderer `node-draft-saver.ts` and its fake-timer tests; conflict banner with three choices; local recovery copies; delete preview                                                                                                                                                                |
+| Library listing                               | Three sort orders, keyset pagination ("Load more"), totals, tag filter; pagination stability tests                                                                                                                                                                                                                                                                  |
+| Tiptap and KaTeX, bundled (PRD §5.3)          | `apps/desktop/src/renderer/src/notes/`; `editor-schema.test.ts` (jsdom) proves editor output is accepted and stable; KaTeX `trust: false` with size and expansion limits                                                                                                                                                                                            |
+| Validated, versioned note JSON and plain text | `packages/domain/src/notes/note-document.ts`, `plain-text.ts`; written in one transaction with FTS update; `note-document.test.ts` (115 tests), `plain-text.test.ts`                                                                                                                                                                                                |
+| Note sanitization and safe links              | Hostile-document and link-policy tests (`note-document.test.ts`, `link-policy.test.ts`, `editor-schema.test.ts`); `app:open-external-link` re-validation, `external-link-service.test.ts`                                                                                                                                                                           |
+| Tags (PRD §5.8, tag part)                     | `tag-service.ts`, `tag-service.test.ts`; tag chips, filter bar and "Manage tags" in the UI; smoke test tags and filters                                                                                                                                                                                                                                             |
+| Managed attachments (PRD §5.10)               | `file-attachment-store.ts` (staging, SHA-256 verification, generated names, traversal and junction checks, reconciliation), `attachment-policy.ts` (executables by extension and content), configurable size limit, preview protocol; `file-attachment-store.test.ts`, `attachment-preview.test.ts`, `attachment-ipc-services.test.ts`, `attachment-policy.test.ts` |
+| Timeline recording (PRD §5.9, recording part) | `node_created` and session-grouped `note_updated` events; `editing-session.test.ts`, `knowledge-node-service.test.ts`                                                                                                                                                                                                                                               |
+| External-link IPC channel (from Phase 0)      | `app:open-external-link`                                                                                                                                                                                                                                                                                                                                            |
+| Documentation                                 | [architecture](architecture.md), [data model](data-model.md), [IPC contracts](ipc-contracts.md), [testing](testing.md), [setup](setup.md), [user guide](user-guide.md); ADR-0005 amendment                                                                                                                                                                          |
+
+### Not yet done in Phase 1
+
+PRD §5.1 and §5.2 items that are **not** implemented:
+
+- **Moving a workspace** through a verified copy (PRD §5.1). The only way to move one is to close
+  mmap, copy the folder by hand and open the copy with "Open existing workspace folder".
+- **Deleting a workspace** with a confirmation that names the folder and backup implications
+  (PRD §5.1). "Remove from list" only forgets the recent entry; it never deletes files.
+- **Multiple app windows** (PRD §5.1). The app has a single window. Revision checks are in place
+  and reject stale writes, so a second window can be added on top of the same services.
+- **Timeline UI.** Events are recorded; the Timeline view is Phase 4.
+- **Search UI.** The FTS5 index is maintained on every save; search and title lookup are Phase 2.
+- **Opening a node from search, graph, timeline, map or backlink** (PRD §5.2). Only the Library
+  opens nodes; the other entry points arrive with their views.
+
+Other gaps found while checking the code:
+
+- **Worker thread for heavy database work** (carried from Phase 0). Not done: all SQLite and file
+  work runs on the main process thread. Phase 1 workloads are small; revisit before imports,
+  exports and layouts.
+- **Missing attachment files are not shown in the UI.** Reconciliation detects rows whose file is
+  missing and keeps them, but the report is only computed, not displayed. Opening such a file
+  shows "This file could not be opened." Double-clicking a file chip in a note gives no message
+  when opening fails.
+- **Delete preview counts for relationships and referencing notes are always 0** until Phase 2
+  writes those tables.
+- **UI text mentions features that do not exist yet:** the cloud-sync warning in Settings advises
+  "use backups or export", and the node delete dialog says "Backups and exports you made earlier
+  are not affected". Backups and exports arrive in Phase 5.
+- **Attachments in the packaged smoke test.** Adding files needs a native dialog, so attachments
+  are covered by Node-level tests only. No test drives the real UI.
+- **Accessibility pass** (PRD §6, §11): components use labels, roles and keyboard-reachable
+  controls, but no structured accessibility check has been run (Phase 5).
