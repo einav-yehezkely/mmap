@@ -26,6 +26,12 @@ export const IPC_CHANNELS = {
   nodesDuplicate: 'nodes:duplicate',
   nodesPreviewDelete: 'nodes:preview-delete',
   nodesDelete: 'nodes:delete',
+  nodesAddTag: 'nodes:add-tag',
+  nodesRemoveTag: 'nodes:remove-tag',
+  tagsList: 'tags:list',
+  tagsCreate: 'tags:create',
+  tagsRename: 'tags:rename',
+  tagsDelete: 'tags:delete',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

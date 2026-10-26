@@ -7,6 +7,7 @@
  */
 
 export * from './application/knowledge-node-service';
+export * from './application/tag-service';
 export * from './application/workspace-service';
 export * from './clock';
 export * from './errors';

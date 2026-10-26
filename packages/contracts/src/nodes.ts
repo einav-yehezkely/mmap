@@ -18,6 +18,10 @@ const revisionSchema = z.number().int().positive();
 const titleInput = z.string().max(1_000);
 const summaryInput = z.string().max(10_000).nullable();
 
+export const tagSummarySchema = z.strictObject({ id: z.uuid(), label: z.string() });
+export type TagSummaryView = z.infer<typeof tagSummarySchema>;
+const tagListSchema = z.array(tagSummarySchema).readonly();
+
 const noteDocumentOutput = z.custom<NoteDocument>(
   (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
 );
@@ -30,6 +34,7 @@ export const nodeViewSchema = z.strictObject({
   revision: revisionSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
+  tags: tagListSchema,
 });
 
 export const nodeSummarySchema = z.strictObject({
@@ -37,6 +42,7 @@ export const nodeSummarySchema = z.strictObject({
   title: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  tags: tagListSchema,
 });
 
 export const nodeDependentsSchema = z.strictObject({
@@ -56,6 +62,8 @@ export const nodeContracts = {
       sort: z.enum(NODE_SORT_ORDERS),
       limit: z.number().int().min(1).max(200),
       cursor: z.string().max(1_000).optional(),
+      /** Only nodes carrying all of these tags. */
+      tagIds: z.array(z.uuid()).max(20).optional(),
     }),
     response: z.strictObject({
       items: z.array(nodeSummarySchema).readonly(),
@@ -93,6 +101,44 @@ export const nodeContracts = {
   },
   delete: {
     request: z.strictObject({ nodeId: nodeIdSchema, expectedRevision: revisionSchema }),
+    response: z.strictObject({ deleted: z.literal(true) }),
+  },
+  addTag: {
+    request: z.strictObject({ nodeId: nodeIdSchema, label: z.string().max(500) }),
+    response: z.strictObject({ tags: tagListSchema }),
+  },
+  removeTag: {
+    request: z.strictObject({ nodeId: nodeIdSchema, tagId: z.uuid() }),
+    response: z.strictObject({ tags: tagListSchema }),
+  },
+} as const;
+
+/** Workspace tag management (PRD §5.8). */
+export const tagContracts = {
+  list: {
+    request: z.undefined(),
+    response: z.strictObject({
+      items: z
+        .array(
+          z.strictObject({
+            id: z.uuid(),
+            label: z.string(),
+            nodeCount: z.number().int().nonnegative(),
+          }),
+        )
+        .readonly(),
+    }),
+  },
+  create: {
+    request: z.strictObject({ label: z.string().max(500) }),
+    response: tagSummarySchema,
+  },
+  rename: {
+    request: z.strictObject({ tagId: z.uuid(), label: z.string().max(500) }),
+    response: tagSummarySchema,
+  },
+  delete: {
+    request: z.strictObject({ tagId: z.uuid() }),
     response: z.strictObject({ deleted: z.literal(true) }),
   },
 } as const;

@@ -17,6 +17,7 @@ import { NoteEditor } from '../notes/note-editor';
 import { errorMessage, unwrap } from '../lib/ipc';
 import type { SaveStatus } from './node-draft-saver';
 import { notifyNodesChanged } from './node-events';
+import { NodeTagsEditor } from './node-tags-editor';
 import { useNodeEditor, type ConflictChoice } from './use-node-editor';
 
 export interface NodeDetailPanelProps {
@@ -192,6 +193,8 @@ export function NodeDetailPanel({
           className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
+
+      <NodeTagsEditor nodeId={node.id} initialTags={node.tags} />
 
       <section aria-label="Note">
         <NoteEditor

@@ -15,7 +15,7 @@
 
 import type { Clock } from '../clock';
 import { DomainError } from '../errors';
-import type { IdGenerator, NodeId, TimelineEventId, WorkspaceId } from '../ids';
+import type { IdGenerator, NodeId, TagId, TimelineEventId, WorkspaceId } from '../ids';
 import { duplicateTitle, normalizeNodeSummary, normalizeNodeTitle } from '../knowledge/node-fields';
 import {
   emptyNoteDocument,
@@ -28,10 +28,12 @@ import { clampPageSize, type PageRequest } from '../ports/pagination';
 import type {
   KnowledgeNodeRecord,
   KnowledgeNodeRepository,
+  KnowledgeNodeSummary,
   NodeDependents,
-  NodeListPage,
   NodeSortOrder,
   Revision,
+  TagRepository,
+  TagSummary,
   TimelineEventRepository,
 } from '../ports/repositories';
 import type { TransactionRunner } from '../ports/transaction';
@@ -42,6 +44,7 @@ export interface KnowledgeNodeServiceDependencies {
   readonly transactions: TransactionRunner;
   readonly nodes: KnowledgeNodeRepository;
   readonly timeline: TimelineEventRepository;
+  readonly tags: TagRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -55,6 +58,18 @@ export interface KnowledgeNodeView {
   readonly revision: Revision;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** Tags sorted by label. Tag changes go through the tag service and do not bump the revision. */
+  readonly tags: readonly TagSummary[];
+}
+
+export interface NodeListItem extends KnowledgeNodeSummary {
+  readonly tags: readonly TagSummary[];
+}
+
+export interface NodeListResult {
+  readonly items: readonly NodeListItem[];
+  readonly nextCursor: string | null;
+  readonly totalCount: number;
 }
 
 export interface NodeChanges {
@@ -67,7 +82,11 @@ export interface NodeChanges {
 export interface KnowledgeNodeService {
   create(input: { title: string; summary?: string | null }): Promise<KnowledgeNodeView>;
   get(nodeId: NodeId): Promise<KnowledgeNodeView>;
-  list(query: { sort: NodeSortOrder; page: PageRequest }): Promise<NodeListPage>;
+  list(query: {
+    sort: NodeSortOrder;
+    page: PageRequest;
+    tagIds?: readonly TagId[];
+  }): Promise<NodeListResult>;
   update(
     nodeId: NodeId,
     expectedRevision: Revision,
@@ -81,7 +100,12 @@ export interface KnowledgeNodeService {
 export function createKnowledgeNodeService(
   dependencies: KnowledgeNodeServiceDependencies,
 ): KnowledgeNodeService {
-  const { workspaceId, transactions, nodes, timeline, ids, clock } = dependencies;
+  const { workspaceId, transactions, nodes, timeline, tags, ids, clock } = dependencies;
+
+  async function toView(record: KnowledgeNodeRecord): Promise<KnowledgeNodeView> {
+    const nodeTags = (await tags.listForNodes(workspaceId, [record.id])).get(record.id) ?? [];
+    return { ...toViewWithoutTags(record), tags: nodeTags };
+  }
 
   async function requireNode(nodeId: NodeId): Promise<KnowledgeNodeRecord> {
     const record = await nodes.findById(workspaceId, nodeId);
@@ -170,11 +194,21 @@ export function createKnowledgeNodeService(
 
     get: async (nodeId) => toView(await requireNode(nodeId)),
 
-    list: ({ sort, page }) =>
-      nodes.list(workspaceId, {
+    list: async ({ sort, page, tagIds = [] }) => {
+      const result = await nodes.list(workspaceId, {
         sort,
         page: { limit: clampPageSize(page.limit), cursor: page.cursor },
-      }),
+        tagIds,
+      });
+      const tagsByNode = await tags.listForNodes(
+        workspaceId,
+        result.items.map((item) => item.id),
+      );
+      return {
+        ...result,
+        items: result.items.map((item) => ({ ...item, tags: tagsByNode.get(item.id) ?? [] })),
+      };
+    },
 
     update: (nodeId, expectedRevision, changes) =>
       transactions.runInTransaction(async () => {
@@ -214,16 +248,18 @@ export function createKnowledgeNodeService(
 
     duplicate: (nodeId) =>
       transactions.runInTransaction(async () => {
-        const source = toView(await requireNode(nodeId));
-        // Copies content only. Relationships, map placements and references are not duplicated:
-        // they describe the original node's identity and position (PRD §4).
-        return toView(
-          await insertNode({
-            title: duplicateTitle(source.title),
-            summary: source.summary,
-            note: source.note,
-          }),
-        );
+        const source = await toView(await requireNode(nodeId));
+        // Copies content and tags. Relationships, map placements and references are not
+        // duplicated: they describe the original node's identity and position (PRD §4).
+        const copy = await insertNode({
+          title: duplicateTitle(source.title),
+          summary: source.summary,
+          note: source.note,
+        });
+        for (const tag of source.tags) {
+          await tags.attach(workspaceId, copy.id, tag.id, copy.createdAt);
+        }
+        return toView(copy);
       }),
 
     previewDelete: async (nodeId) => {
@@ -246,7 +282,7 @@ function revisionConflict(): DomainError {
   );
 }
 
-function toView(record: KnowledgeNodeRecord): KnowledgeNodeView {
+function toViewWithoutTags(record: KnowledgeNodeRecord): Omit<KnowledgeNodeView, 'tags'> {
   return {
     id: record.id,
     title: record.title,

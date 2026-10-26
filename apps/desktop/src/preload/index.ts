@@ -37,6 +37,14 @@ const api: MmapRendererApi = {
     duplicate: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesDuplicate, request),
     previewDelete: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesPreviewDelete, request),
     delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesDelete, request),
+    addTag: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesAddTag, request),
+    removeTag: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesRemoveTag, request),
+  },
+  tags: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.tagsList),
+    create: (request) => ipcRenderer.invoke(IPC_CHANNELS.tagsCreate, request),
+    rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.tagsRename, request),
+    delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.tagsDelete, request),
   },
 };
 

@@ -38,5 +38,13 @@ export interface MmapRendererApi {
     readonly duplicate: BridgeCall<'nodes:duplicate'>;
     readonly previewDelete: BridgeCall<'nodes:preview-delete'>;
     readonly delete: BridgeCall<'nodes:delete'>;
+    readonly addTag: BridgeCall<'nodes:add-tag'>;
+    readonly removeTag: BridgeCall<'nodes:remove-tag'>;
+  };
+  readonly tags: {
+    readonly list: BridgeCall<'tags:list'>;
+    readonly create: BridgeCall<'tags:create'>;
+    readonly rename: BridgeCall<'tags:rename'>;
+    readonly delete: BridgeCall<'tags:delete'>;
   };
 }

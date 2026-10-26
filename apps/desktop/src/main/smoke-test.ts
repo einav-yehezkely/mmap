@@ -100,6 +100,10 @@ export async function runSmokeTest(window: BrowserWindow): Promise<SmokeTestRepo
           if (stale.ok || stale.error.code !== 'REVISION_CONFLICT') return 'stale save was not rejected';
           const reloaded = await api.get({ nodeId: created.data.id });
           if (!reloaded.ok || reloaded.data.note.content[0].content[0].text !== 'Saved text') return 'note did not round-trip';
+          const tagged = await api.addTag({ nodeId: created.data.id, label: 'Smoke Tag' });
+          if (!tagged.ok || tagged.data.tags[0].label !== 'Smoke Tag') return 'tagging failed';
+          const filtered = await api.list({ sort: 'title-asc', limit: 10, tagIds: [tagged.data.tags[0].id] });
+          if (!filtered.ok || filtered.data.totalCount !== 1) return 'tag filter failed';
           const deleted = await api.delete({ nodeId: created.data.id, expectedRevision: 2 });
           return deleted.ok ? 'ok' : 'delete failed';
         })()`)) as string;

@@ -13,7 +13,7 @@
  */
 
 import type { UtcTimestamp } from '../clock';
-import type { NodeId, RelationshipTypeId, TimelineEventId, WorkspaceId } from '../ids';
+import type { NodeId, RelationshipTypeId, TagId, TimelineEventId, WorkspaceId } from '../ids';
 import type { RelationshipDirectionality } from '../knowledge/relationship-rules';
 import type { Page, PageRequest } from './pagination';
 
@@ -42,16 +42,24 @@ export interface KnowledgeNodeSummary {
   readonly updatedAt: UtcTimestamp;
 }
 
+/** A tag as attached to a node. */
+export interface TagSummary {
+  readonly id: TagId;
+  readonly label: string;
+}
+
 export const NODE_SORT_ORDERS = ['updated-desc', 'created-desc', 'title-asc'] as const;
 export type NodeSortOrder = (typeof NODE_SORT_ORDERS)[number];
 
 export interface NodeListQuery {
   readonly sort: NodeSortOrder;
   readonly page: PageRequest;
+  /** When non-empty, only nodes carrying every one of these tags are listed. */
+  readonly tagIds: readonly TagId[];
 }
 
 export interface NodeListPage extends Page<KnowledgeNodeSummary> {
-  /** Number of nodes in the workspace, so the UI can say "showing 50 of 1,240". */
+  /** Number of nodes matching the query, so the UI can say "showing 50 of 1,240". */
   readonly totalCount: number;
 }
 
@@ -153,4 +161,54 @@ export interface RelationshipTypeRecord {
 export interface RelationshipTypeRepository {
   insert(record: RelationshipTypeRecord): Promise<void>;
   listByWorkspace(workspaceId: WorkspaceId): Promise<readonly RelationshipTypeRecord[]>;
+}
+
+export interface TagRecord {
+  readonly id: TagId;
+  readonly workspaceId: WorkspaceId;
+  /** What the user typed (trimmed, whitespace collapsed). */
+  readonly displayLabel: string;
+  /** Uniqueness key within the workspace (see `toNormalizedLabel`). */
+  readonly normalizedLabel: string;
+  readonly createdAt: UtcTimestamp;
+  readonly updatedAt: UtcTimestamp;
+}
+
+export interface TagWithUsage {
+  readonly id: TagId;
+  readonly label: string;
+  /** Number of nodes carrying the tag. */
+  readonly nodeCount: number;
+}
+
+export interface TagRepository {
+  listWithUsage(workspaceId: WorkspaceId): Promise<readonly TagWithUsage[]>;
+  findById(workspaceId: WorkspaceId, tagId: TagId): Promise<TagRecord | null>;
+  findByNormalizedLabel(
+    workspaceId: WorkspaceId,
+    normalizedLabel: string,
+  ): Promise<TagRecord | null>;
+  insert(record: TagRecord): Promise<void>;
+  rename(
+    workspaceId: WorkspaceId,
+    tagId: TagId,
+    displayLabel: string,
+    normalizedLabel: string,
+    updatedAt: UtcTimestamp,
+  ): Promise<void>;
+  /** Deletes the tag and its assignments. Nodes are never deleted. */
+  delete(workspaceId: WorkspaceId, tagId: TagId): Promise<void>;
+  /** Tags of each requested node, sorted by label. Nodes without tags map to an empty list. */
+  listForNodes(
+    workspaceId: WorkspaceId,
+    nodeIds: readonly NodeId[],
+  ): Promise<ReadonlyMap<NodeId, readonly TagSummary[]>>;
+  /** Attaches a tag to a node; attaching an already attached tag changes nothing. */
+  attach(
+    workspaceId: WorkspaceId,
+    nodeId: NodeId,
+    tagId: TagId,
+    createdAt: UtcTimestamp,
+  ): Promise<void>;
+  detach(workspaceId: WorkspaceId, nodeId: NodeId, tagId: TagId): Promise<void>;
 }

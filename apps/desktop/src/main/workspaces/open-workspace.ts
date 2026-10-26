@@ -5,9 +5,11 @@
 
 import {
   createKnowledgeNodeService,
+  createTagService,
   createWorkspaceService,
   type Clock,
   type KnowledgeNodeService,
+  type TagService,
   type IdGenerator,
   type WorkspaceId,
   type WorkspaceRecord,
@@ -21,6 +23,7 @@ import {
   SchemaTooNewError,
   SqliteKnowledgeNodeRepository,
   SqliteRelationshipTypeRepository,
+  SqliteTagRepository,
   SqliteTimelineEventRepository,
   SqliteWorkspaceRepository,
   type SqliteConnections,
@@ -33,6 +36,7 @@ import type { WorkspaceLock } from './workspace-lock';
 export interface WorkspaceServices {
   readonly workspace: WorkspaceService;
   readonly nodes: KnowledgeNodeService;
+  readonly tags: TagService;
 }
 
 export interface OpenWorkspace {
@@ -57,12 +61,23 @@ export function createWorkspaceServices(
   workspaceId: WorkspaceId,
   dependencies: ServiceDependencies,
 ): WorkspaceServices {
+  const nodeRepository = new SqliteKnowledgeNodeRepository(connections);
+  const tagRepository = new SqliteTagRepository(connections);
   return {
     nodes: createKnowledgeNodeService({
       workspaceId,
       transactions: connections,
-      nodes: new SqliteKnowledgeNodeRepository(connections),
+      nodes: nodeRepository,
       timeline: new SqliteTimelineEventRepository(connections),
+      tags: tagRepository,
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+    }),
+    tags: createTagService({
+      workspaceId,
+      transactions: connections,
+      tags: tagRepository,
+      nodes: nodeRepository,
       ids: dependencies.ids,
       clock: dependencies.clock,
     }),

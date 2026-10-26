@@ -17,6 +17,7 @@ import {
   type NodeListQuery,
   type NodeSortOrder,
   type Revision,
+  type TagId,
   type UtcTimestamp,
   type WorkspaceId,
 } from '@mmap/domain';
@@ -24,6 +25,7 @@ import {
 import type { SQLOutputValue } from 'node:sqlite';
 
 import type { SqliteConnections } from '../sqlite-connections';
+import { placeholders } from './sqlite-tag-repository';
 
 interface SortDefinition {
   /** SQL expression for the sort key, also used in the cursor comparison. */
@@ -67,18 +69,20 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
     const cursor = query.page.cursor === undefined ? null : decodeCursor(query.page.cursor);
     const comparison = sort.direction === 'DESC' ? '<' : '>';
     const database = this.connections.forRead();
+    const filter = tagFilter(workspaceId, query.tagIds);
 
     // Fetch one extra row to learn whether another page exists.
     const rows = database
       .prepare(
         `SELECT id, title, created_at, updated_at FROM knowledge_nodes
-         WHERE workspace_id = ?
+         WHERE workspace_id = ? ${filter.sql}
            ${cursor === null ? '' : `AND (${sort.keyExpression} ${comparison} ? OR (${sort.keyExpression} = ? AND id ${comparison} ?))`}
          ORDER BY ${sort.keyExpression} ${sort.direction}, id ${sort.direction}
          LIMIT ?`,
       )
       .all(
         workspaceId,
+        ...filter.parameters,
         ...(cursor === null ? [] : [cursor.key, cursor.key, cursor.id]),
         query.page.limit + 1,
       );
@@ -86,8 +90,8 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
     const pageRows = rows.slice(0, query.page.limit);
     const last = pageRows.at(-1);
     const total = database
-      .prepare('SELECT count(*) AS total FROM knowledge_nodes WHERE workspace_id = ?')
-      .get(workspaceId);
+      .prepare(`SELECT count(*) AS total FROM knowledge_nodes WHERE workspace_id = ? ${filter.sql}`)
+      .get(workspaceId, ...filter.parameters);
 
     return {
       items: pageRows.map(toSummary),
@@ -203,6 +207,28 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
 }
 
 type Row = Record<string, SQLOutputValue>;
+
+/**
+ * SQL condition restricting nodes to those carrying every tag in `tagIds` ("match all", which is
+ * what narrowing a list by several tags means to users). Tag IDs are bound parameters.
+ */
+function tagFilter(
+  workspaceId: WorkspaceId,
+  tagIds: readonly TagId[],
+): { sql: string; parameters: (string | number)[] } {
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) {
+    return { sql: '', parameters: [] };
+  }
+  return {
+    sql: `AND id IN (
+      SELECT node_id FROM node_tags
+      WHERE workspace_id = ? AND tag_id IN (${placeholders(unique.length)})
+      GROUP BY node_id HAVING count(DISTINCT tag_id) = ?
+    )`,
+    parameters: [workspaceId, ...unique, unique.length],
+  };
+}
 
 function toRecord(row: Row): KnowledgeNodeRecord {
   return {

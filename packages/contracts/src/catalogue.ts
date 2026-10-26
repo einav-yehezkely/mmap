@@ -11,7 +11,7 @@ import type { z } from 'zod';
 
 import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
-import { nodeContracts } from './nodes';
+import { nodeContracts, tagContracts } from './nodes';
 import { workspaceContracts } from './workspace';
 
 export interface IpcContract<
@@ -40,6 +40,12 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.nodesDuplicate]: nodeContracts.duplicate,
   [IPC_CHANNELS.nodesPreviewDelete]: nodeContracts.previewDelete,
   [IPC_CHANNELS.nodesDelete]: nodeContracts.delete,
+  [IPC_CHANNELS.nodesAddTag]: nodeContracts.addTag,
+  [IPC_CHANNELS.nodesRemoveTag]: nodeContracts.removeTag,
+  [IPC_CHANNELS.tagsList]: tagContracts.list,
+  [IPC_CHANNELS.tagsCreate]: tagContracts.create,
+  [IPC_CHANNELS.tagsRename]: tagContracts.rename,
+  [IPC_CHANNELS.tagsDelete]: tagContracts.delete,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;
