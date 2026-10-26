@@ -14,6 +14,11 @@ export interface OpenDatabaseOptions {
    * Bounded so a stuck process produces a visible error instead of an endless hang (PRD §7.3).
    */
   readonly busyTimeoutMs?: number;
+  /**
+   * Opens the file read-only. Used for the reader connection that serves queries outside write
+   * transactions; under WAL it sees only committed data. The file must already exist.
+   */
+  readonly readOnly?: boolean;
 }
 
 export const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
@@ -50,6 +55,7 @@ export function openDatabase(filePath: string, options: OpenDatabaseOptions = {}
     enableForeignKeyConstraints: true,
     enableDoubleQuotedStringLiterals: false,
     allowExtension: false,
+    readOnly: options.readOnly ?? false,
     timeout: options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS,
   });
 
@@ -59,7 +65,11 @@ export function openDatabase(filePath: string, options: OpenDatabaseOptions = {}
     database.exec('PRAGMA synchronous = FULL;');
 
     if (filePath !== IN_MEMORY_DATABASE) {
-      const journalMode = readPragmaText(database, 'journal_mode = WAL');
+      // A read-only connection cannot change the journal mode; it only confirms the writer set it.
+      const journalMode = readPragmaText(
+        database,
+        options.readOnly === true ? 'journal_mode' : 'journal_mode = WAL',
+      );
       if (journalMode !== 'wal') {
         // Happens on filesystems without shared-memory support (e.g. some network shares).
         throw new DatabaseConfigurationError(

@@ -72,3 +72,18 @@ create an empty workspace in its place.
   locking that these filesystems do not guarantee. Rejected.
 - **Single global database for all workspaces.** Breaks workspace isolation and portability
   (PRD §5.1, §13 criterion 2). Rejected.
+
+## Amendment (2026-10-26, Phase 1 implementation)
+
+- Implemented in `apps/desktop/src/main/workspaces/`. The default root is
+  `app.getPath('userData')/workspaces`, which is `%APPDATA%\mmap\workspaces` because
+  `productName` is `mmap`. First launch creates `My Knowledge` there, or adopts it if the folder
+  already exists (settings lost), and never overwrites it.
+- Network (UNC) paths are **blocked** for both creating and opening workspaces.
+- Cloud-sync folders (OneDrive, Dropbox, Google Drive, iCloud Drive, Box: detected by folder name)
+  are **allowed with a persistent warning** in Settings, because the name heuristic can be wrong
+  and blocking would strand data the user already has there.
+- If SQLite cannot enable WAL in the chosen location, opening fails with
+  `WORKSPACE_UNSUPPORTED_LOCATION` (covers mapped network drives the path check cannot see).
+- A missing folder or database file is reported as `WORKSPACE_MISSING` / `WORKSPACE_DAMAGED`; a new
+  empty workspace is never created in its place.

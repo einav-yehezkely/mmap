@@ -75,6 +75,16 @@ export async function runSmokeTest(window: BrowserWindow): Promise<SmokeTestRepo
     }),
   );
   checks.push(
+    await check('first-run workspace is created and open', async () => {
+      const result = (await window.webContents.executeJavaScript(
+        'window.mmap.workspace.getState()',
+      )) as { ok: boolean; data?: { status?: string } };
+      if (!result.ok || result.data?.status !== 'open') {
+        throw new Error(`Unexpected workspace state: ${JSON.stringify(result)}`);
+      }
+    }),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",

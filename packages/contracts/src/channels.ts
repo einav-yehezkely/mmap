@@ -10,6 +10,14 @@
  */
 export const IPC_CHANNELS = {
   appGetInfo: 'app:get-info',
+  workspaceGetState: 'workspace:get-state',
+  workspaceListRecent: 'workspace:list-recent',
+  workspaceCreate: 'workspace:create',
+  workspaceOpenFolder: 'workspace:open-folder',
+  workspaceOpenRecent: 'workspace:open-recent',
+  workspaceForgetRecent: 'workspace:forget-recent',
+  workspaceRename: 'workspace:rename',
+  workspaceRevealFolder: 'workspace:reveal-folder',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

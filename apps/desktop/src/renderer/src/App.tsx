@@ -12,9 +12,24 @@ import { cn } from './lib/utils';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
 import { ComingSoonView } from './views/coming-soon-view';
 import { SettingsView } from './views/settings-view';
+import { useWorkspace } from './workspace/workspace-context';
+import { WorkspaceSetupView } from './workspace/workspace-setup-view';
 
 export function App() {
+  const { state } = useWorkspace();
   const [activeView, setActiveView] = useState<ViewId>('library');
+
+  if (state === null) {
+    return (
+      <p role="status" className="p-6 text-muted-foreground">
+        Opening workspace…
+      </p>
+    );
+  }
+  if (state.status !== 'open') {
+    return <WorkspaceSetupView state={state} />;
+  }
+
   const activeItem = NAVIGATION_ITEMS.find((item) => item.id === activeView) ?? NAVIGATION_ITEMS[0];
 
   return (
@@ -27,7 +42,12 @@ export function App() {
       </a>
 
       <nav aria-label="Main" className="flex w-56 shrink-0 flex-col gap-1 border-r p-3">
-        <p className="px-2 pb-3 text-lg font-semibold tracking-tight">mmap</p>
+        <div className="px-2 pb-3">
+          <p className="text-lg font-semibold tracking-tight">mmap</p>
+          <p className="truncate text-xs text-muted-foreground" title={state.workspace.name}>
+            {state.workspace.name}
+          </p>
+        </div>
         {NAVIGATION_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = item.id === activeView;
@@ -74,7 +94,7 @@ export function App() {
           className="flex-1 overflow-auto p-6 focus:outline-none"
         >
           {activeItem?.id === 'settings' ? (
-            <SettingsView />
+            <SettingsView workspace={state.workspace} />
           ) : (
             activeItem && <ComingSoonView item={activeItem} />
           )}

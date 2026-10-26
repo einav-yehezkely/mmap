@@ -13,7 +13,8 @@
  */
 
 import type { UtcTimestamp } from '../clock';
-import type { NodeId, WorkspaceId } from '../ids';
+import type { NodeId, RelationshipTypeId, WorkspaceId } from '../ids';
+import type { RelationshipDirectionality } from '../knowledge/relationship-rules';
 import type { Page, PageRequest } from './pagination';
 
 /** Monotonically increasing revision number, starting at 1 when a record is created. */
@@ -49,4 +50,36 @@ export interface KnowledgeNodeRepository {
    * `expectedRevision + 1`.
    */
   update(record: KnowledgeNodeRecord, expectedRevision: Revision): Promise<void>;
+}
+
+export interface WorkspaceRecord {
+  readonly id: WorkspaceId;
+  readonly name: string;
+  /** IANA timezone used only for display (PRD §5.9). Storage is always UTC. */
+  readonly timezone: string;
+  readonly createdAt: UtcTimestamp;
+  readonly updatedAt: UtcTimestamp;
+}
+
+export interface WorkspaceRepository {
+  findById(workspaceId: WorkspaceId): Promise<WorkspaceRecord | null>;
+  insert(record: WorkspaceRecord): Promise<void>;
+  rename(workspaceId: WorkspaceId, name: string, updatedAt: UtcTimestamp): Promise<void>;
+}
+
+export interface RelationshipTypeRecord {
+  readonly id: RelationshipTypeId;
+  readonly workspaceId: WorkspaceId;
+  readonly label: string;
+  readonly normalizedLabel: string;
+  readonly directionality: RelationshipDirectionality;
+  readonly isArchived: boolean;
+  readonly isBuiltin: boolean;
+  readonly createdAt: UtcTimestamp;
+  readonly updatedAt: UtcTimestamp;
+}
+
+export interface RelationshipTypeRepository {
+  insert(record: RelationshipTypeRecord): Promise<void>;
+  listByWorkspace(workspaceId: WorkspaceId): Promise<readonly RelationshipTypeRecord[]>;
 }
