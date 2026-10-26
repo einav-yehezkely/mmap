@@ -96,6 +96,13 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Repositories implement async ports over the synchronous node:sqlite driver. Declaring the
+    // methods `async` (even without `await`) guarantees that a thrown error becomes a rejected
+    // promise, which callers of the port contract rely on.
+    files: ['packages/storage-sqlite/src/repositories/**/*.ts'],
+    rules: { '@typescript-eslint/require-await': 'off' },
+  },
+  {
     // Async mocks without `await` are idiomatic in tests.
     files: ['**/*.test.ts', '**/test-support/**/*.ts'],
     rules: { '@typescript-eslint/require-await': 'off' },

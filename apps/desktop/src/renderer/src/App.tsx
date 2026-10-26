@@ -1,15 +1,20 @@
 /**
- * Application shell: sidebar navigation, persistent search and "new node" entry points, and the
- * active view (PRD §6). Phase 0 renders empty states for views delivered in later phases.
+ * Application shell (PRD §6): workspace gate, sidebar navigation, persistent search and
+ * "new node" entry points, the active view, and the node detail panel shared by all views.
  */
 
+import type { WorkspaceSummary } from '@mmap/contracts';
 import { Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
+import { errorMessage, unwrap } from './lib/ipc';
 import { cn } from './lib/utils';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
+import { LibraryView } from './nodes/library-view';
+import { NodeDetailPanel } from './nodes/node-detail-panel';
+import { notifyNodesChanged } from './nodes/node-events';
 import { ComingSoonView } from './views/coming-soon-view';
 import { SettingsView } from './views/settings-view';
 import { useWorkspace } from './workspace/workspace-context';
@@ -17,7 +22,6 @@ import { WorkspaceSetupView } from './workspace/workspace-setup-view';
 
 export function App() {
   const { state } = useWorkspace();
-  const [activeView, setActiveView] = useState<ViewId>('library');
 
   if (state === null) {
     return (
@@ -29,8 +33,29 @@ export function App() {
   if (state.status !== 'open') {
     return <WorkspaceSetupView state={state} />;
   }
+  // Keyed by workspace: switching workspaces discards all view state of the previous one, so
+  // nothing from workspace A can be shown or saved while workspace B is open.
+  return <Workbench key={state.workspace.id} workspace={state.workspace} />;
+}
+
+function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
+  const [activeView, setActiveView] = useState<ViewId>('library');
+  const [openNodeId, setOpenNodeId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const activeItem = NAVIGATION_ITEMS.find((item) => item.id === activeView) ?? NAVIGATION_ITEMS[0];
+
+  /** Creating a node is always an explicit action (PRD §5.6); it opens straight away. */
+  const createNode = async () => {
+    setCreateError(null);
+    try {
+      const node = await unwrap(window.mmap.nodes.create({ title: 'Untitled node' }));
+      notifyNodesChanged();
+      setOpenNodeId(node.id);
+    } catch (error) {
+      setCreateError(errorMessage(error));
+    }
+  };
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -44,8 +69,8 @@ export function App() {
       <nav aria-label="Main" className="flex w-56 shrink-0 flex-col gap-1 border-r p-3">
         <div className="px-2 pb-3">
           <p className="text-lg font-semibold tracking-tight">mmap</p>
-          <p className="truncate text-xs text-muted-foreground" title={state.workspace.name}>
-            {state.workspace.name}
+          <p className="truncate text-xs text-muted-foreground" title={workspace.name}>
+            {workspace.name}
           </p>
         </div>
         {NAVIGATION_ITEMS.map((item) => {
@@ -81,24 +106,48 @@ export function App() {
               disabled
             />
           </div>
-          {/* Node creation arrives with the node library in Phase 1. */}
-          <Button disabled title="Available in Phase 1">
+          <Button onClick={() => void createNode()}>
             <Plus aria-hidden="true" />
             New node
           </Button>
         </header>
+        {createError && (
+          <p role="alert" className="border-b px-6 py-2 text-sm text-destructive">
+            {createError}
+          </p>
+        )}
 
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="flex-1 overflow-auto p-6 focus:outline-none"
-        >
-          {activeItem?.id === 'settings' ? (
-            <SettingsView workspace={state.workspace} />
-          ) : (
-            activeItem && <ComingSoonView item={activeItem} />
+        <div className="flex min-h-0 flex-1">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="min-w-0 flex-1 overflow-auto p-6 focus:outline-none"
+          >
+            {activeItem?.id === 'settings' && <SettingsView workspace={workspace} />}
+            {activeItem?.id === 'library' && (
+              <LibraryView
+                timeZone={workspace.timezone}
+                selectedNodeId={openNodeId}
+                onOpenNode={setOpenNodeId}
+                onCreateNode={() => void createNode()}
+              />
+            )}
+            {activeItem && activeItem.id !== 'settings' && activeItem.id !== 'library' && (
+              <ComingSoonView item={activeItem} />
+            )}
+          </main>
+
+          {openNodeId !== null && (
+            <NodeDetailPanel
+              key={openNodeId}
+              workspaceId={workspace.id}
+              timeZone={workspace.timezone}
+              nodeId={openNodeId}
+              onClose={() => setOpenNodeId(null)}
+              onOpenNode={setOpenNodeId}
+            />
           )}
-        </main>
+        </div>
       </div>
     </div>
   );

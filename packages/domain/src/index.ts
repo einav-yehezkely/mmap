@@ -6,12 +6,14 @@
  * `tests/architecture.test.ts`.
  */
 
+export * from './application/knowledge-node-service';
 export * from './application/workspace-service';
 export * from './clock';
 export * from './errors';
 export * from './files/attachment-policy';
 export * from './ids';
 export * from './knowledge/builtin-relationship-types';
+export * from './knowledge/node-fields';
 export * from './knowledge/relationship-rules';
 export * from './notes/link-policy';
 export * from './notes/note-document';

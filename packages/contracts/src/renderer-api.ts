@@ -29,4 +29,13 @@ export interface MmapRendererApi {
     readonly rename: BridgeCall<'workspace:rename'>;
     readonly revealFolder: BridgeCall<'workspace:reveal-folder'>;
   };
+  readonly nodes: {
+    readonly list: BridgeCall<'nodes:list'>;
+    readonly get: BridgeCall<'nodes:get'>;
+    readonly create: BridgeCall<'nodes:create'>;
+    readonly update: BridgeCall<'nodes:update'>;
+    readonly duplicate: BridgeCall<'nodes:duplicate'>;
+    readonly previewDelete: BridgeCall<'nodes:preview-delete'>;
+    readonly delete: BridgeCall<'nodes:delete'>;
+  };
 }

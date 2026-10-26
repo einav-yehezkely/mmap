@@ -13,7 +13,7 @@
  */
 
 import type { UtcTimestamp } from '../clock';
-import type { NodeId, RelationshipTypeId, WorkspaceId } from '../ids';
+import type { NodeId, RelationshipTypeId, TimelineEventId, WorkspaceId } from '../ids';
 import type { RelationshipDirectionality } from '../knowledge/relationship-rules';
 import type { Page, PageRequest } from './pagination';
 
@@ -38,18 +38,76 @@ export interface KnowledgeNodeRecord {
 export interface KnowledgeNodeSummary {
   readonly id: NodeId;
   readonly title: string;
+  readonly createdAt: UtcTimestamp;
   readonly updatedAt: UtcTimestamp;
+}
+
+export const NODE_SORT_ORDERS = ['updated-desc', 'created-desc', 'title-asc'] as const;
+export type NodeSortOrder = (typeof NODE_SORT_ORDERS)[number];
+
+export interface NodeListQuery {
+  readonly sort: NodeSortOrder;
+  readonly page: PageRequest;
+}
+
+export interface NodeListPage extends Page<KnowledgeNodeSummary> {
+  /** Number of nodes in the workspace, so the UI can say "showing 50 of 1,240". */
+  readonly totalCount: number;
+}
+
+/** What deleting a node would remove or affect (PRD §5.2: preview before deleting). */
+export interface NodeDependents {
+  /** Semantic relationships that will be deleted with the node. */
+  readonly relationships: number;
+  /** Notes that link to this node; their link labels stay readable as unresolved links. */
+  readonly referencingNotes: number;
+  /** Map placements that will be removed (one per map the node appears on). */
+  readonly mapPlacements: number;
+  readonly attachments: number;
 }
 
 export interface KnowledgeNodeRepository {
   findById(workspaceId: WorkspaceId, nodeId: NodeId): Promise<KnowledgeNodeRecord | null>;
-  listByUpdatedAt(workspaceId: WorkspaceId, page: PageRequest): Promise<Page<KnowledgeNodeSummary>>;
+  list(workspaceId: WorkspaceId, query: NodeListQuery): Promise<NodeListPage>;
   insert(record: KnowledgeNodeRecord): Promise<void>;
   /**
-   * Replaces mutable fields when the stored revision equals `expectedRevision`, then stores
-   * `expectedRevision + 1`.
+   * Replaces the mutable fields and stores `record.revision`, but only when the stored revision
+   * equals `expectedRevision`. Returns false (and changes nothing) on a revision mismatch.
    */
-  update(record: KnowledgeNodeRecord, expectedRevision: Revision): Promise<void>;
+  update(record: KnowledgeNodeRecord, expectedRevision: Revision): Promise<boolean>;
+  countDependents(workspaceId: WorkspaceId, nodeId: NodeId): Promise<NodeDependents>;
+  /**
+   * Deletes the node and everything that cannot exist without it (relationships, placements,
+   * references from it, attachment rows). Child placements on maps are promoted to the deleted
+   * placement's parent so no subtree disappears silently.
+   */
+  delete(workspaceId: WorkspaceId, nodeId: NodeId): Promise<void>;
+}
+
+export const TIMELINE_EVENT_TYPES = [
+  'node_created',
+  'note_updated',
+  'relationship_created',
+  'reviewed',
+] as const;
+export type TimelineEventType = (typeof TIMELINE_EVENT_TYPES)[number];
+
+export interface TimelineEventRecord {
+  readonly id: TimelineEventId;
+  readonly workspaceId: WorkspaceId;
+  readonly nodeId: NodeId | null;
+  /** Title at the time of the event, so history stays readable after deletion. */
+  readonly nodeTitleSnapshot: string | null;
+  readonly eventType: TimelineEventType;
+  readonly occurredAt: UtcTimestamp;
+  readonly lastActivityAt: UtcTimestamp;
+  readonly reflection: string | null;
+  readonly isImported: boolean;
+  readonly importOrigin: string | null;
+}
+
+export interface TimelineEventRepository {
+  insert(record: TimelineEventRecord): Promise<void>;
 }
 
 export interface WorkspaceRecord {

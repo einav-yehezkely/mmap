@@ -18,6 +18,13 @@ export const IPC_CHANNELS = {
   workspaceForgetRecent: 'workspace:forget-recent',
   workspaceRename: 'workspace:rename',
   workspaceRevealFolder: 'workspace:reveal-folder',
+  nodesList: 'nodes:list',
+  nodesGet: 'nodes:get',
+  nodesCreate: 'nodes:create',
+  nodesUpdate: 'nodes:update',
+  nodesDuplicate: 'nodes:duplicate',
+  nodesPreviewDelete: 'nodes:preview-delete',
+  nodesDelete: 'nodes:delete',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

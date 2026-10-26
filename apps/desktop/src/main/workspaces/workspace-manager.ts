@@ -275,7 +275,11 @@ export class WorkspaceManager {
     const lock = await acquireWorkspaceLock(paths.lock, this.dependencies.lockEnvironment);
     try {
       const { connections, schemaVersion } = await openWorkspaceStorage(paths);
-      const services = createWorkspaceServices(connections, this.dependencies);
+      const services = createWorkspaceServices(
+        connections,
+        manifest.workspaceId as WorkspaceId,
+        this.dependencies,
+      );
       const workspace = createOpenWorkspace({
         paths,
         manifest,
@@ -344,11 +348,11 @@ export class WorkspaceManager {
     try {
       const { connections } = await openWorkspaceStorage(paths);
       try {
-        await createWorkspaceServices(connections, this.dependencies).workspace.initialize(
+        await createWorkspaceServices(
+          connections,
           workspaceId,
-          name,
-          this.dependencies.timezone(),
-        );
+          this.dependencies,
+        ).workspace.initialize(workspaceId, name, this.dependencies.timezone());
       } finally {
         await connections.close();
       }

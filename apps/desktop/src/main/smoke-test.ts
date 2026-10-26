@@ -85,6 +85,30 @@ export async function runSmokeTest(window: BrowserWindow): Promise<SmokeTestRepo
     }),
   );
   checks.push(
+    await check('node create, save, conflict and delete through the bridge', async () => {
+      // Runs in the renderer, exactly like the UI does, so request and response contracts are
+      // validated by the real IPC layer.
+      const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const api = window.mmap.nodes;
+          const created = await api.create({ title: 'Smoke test node' });
+          if (!created.ok) return 'create failed: ' + created.error.code;
+          const note = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Saved text' }] }] };
+          const saved = await api.update({ nodeId: created.data.id, expectedRevision: 1, changes: { note } });
+          if (!saved.ok || saved.data.revision !== 2) return 'save failed';
+          const stale = await api.update({ nodeId: created.data.id, expectedRevision: 1, changes: { title: 'stale' } });
+          if (stale.ok || stale.error.code !== 'REVISION_CONFLICT') return 'stale save was not rejected';
+          const reloaded = await api.get({ nodeId: created.data.id });
+          if (!reloaded.ok || reloaded.data.note.content[0].content[0].text !== 'Saved text') return 'note did not round-trip';
+          const deleted = await api.delete({ nodeId: created.data.id, expectedRevision: 2 });
+          return deleted.ok ? 'ok' : 'delete failed';
+        })()`)) as string;
+      if (outcome !== 'ok') {
+        throw new Error(outcome);
+      }
+    }),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",

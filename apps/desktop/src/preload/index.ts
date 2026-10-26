@@ -28,6 +28,15 @@ const api: MmapRendererApi = {
     rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceRename, request),
     revealFolder: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceRevealFolder),
   },
+  nodes: {
+    list: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesList, request),
+    get: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesGet, request),
+    create: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesCreate, request),
+    update: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesUpdate, request),
+    duplicate: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesDuplicate, request),
+    previewDelete: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesPreviewDelete, request),
+    delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesDelete, request),
+  },
 };
 
 contextBridge.exposeInMainWorld('mmap', api);

@@ -14,7 +14,7 @@ import type { SqliteConnections } from '../sqlite-connections';
 export class SqliteRelationshipTypeRepository implements RelationshipTypeRepository {
   public constructor(private readonly connections: SqliteConnections) {}
 
-  public insert(record: RelationshipTypeRecord): Promise<void> {
+  public async insert(record: RelationshipTypeRecord): Promise<void> {
     this.connections
       .forWrite()
       .prepare(
@@ -34,10 +34,11 @@ export class SqliteRelationshipTypeRepository implements RelationshipTypeReposit
         record.createdAt,
         record.updatedAt,
       );
-    return Promise.resolve();
   }
 
-  public listByWorkspace(workspaceId: WorkspaceId): Promise<readonly RelationshipTypeRecord[]> {
+  public async listByWorkspace(
+    workspaceId: WorkspaceId,
+  ): Promise<readonly RelationshipTypeRecord[]> {
     const rows = this.connections
       .forRead()
       .prepare(
@@ -46,18 +47,16 @@ export class SqliteRelationshipTypeRepository implements RelationshipTypeReposit
          FROM relationship_types WHERE workspace_id = ? ORDER BY normalized_label`,
       )
       .all(workspaceId);
-    return Promise.resolve(
-      rows.map((row) => ({
-        id: String(row.id) as RelationshipTypeId,
-        workspaceId: String(row.workspace_id) as WorkspaceId,
-        label: String(row.label),
-        normalizedLabel: String(row.normalized_label),
-        directionality: String(row.directionality) as RelationshipDirectionality,
-        isArchived: row.is_archived === 1,
-        isBuiltin: row.is_builtin === 1,
-        createdAt: String(row.created_at) as UtcTimestamp,
-        updatedAt: String(row.updated_at) as UtcTimestamp,
-      })),
-    );
+    return rows.map((row) => ({
+      id: String(row.id) as RelationshipTypeId,
+      workspaceId: String(row.workspace_id) as WorkspaceId,
+      label: String(row.label),
+      normalizedLabel: String(row.normalized_label),
+      directionality: String(row.directionality) as RelationshipDirectionality,
+      isArchived: row.is_archived === 1,
+      isBuiltin: row.is_builtin === 1,
+      createdAt: String(row.created_at) as UtcTimestamp,
+      updatedAt: String(row.updated_at) as UtcTimestamp,
+    }));
   }
 }

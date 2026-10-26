@@ -4,8 +4,10 @@
  */
 
 import {
+  createKnowledgeNodeService,
   createWorkspaceService,
   type Clock,
+  type KnowledgeNodeService,
   type IdGenerator,
   type WorkspaceId,
   type WorkspaceRecord,
@@ -17,7 +19,9 @@ import {
   MigrationHistoryError,
   openWorkspaceDatabase,
   SchemaTooNewError,
+  SqliteKnowledgeNodeRepository,
   SqliteRelationshipTypeRepository,
+  SqliteTimelineEventRepository,
   SqliteWorkspaceRepository,
   type SqliteConnections,
 } from '@mmap/storage-sqlite';
@@ -28,6 +32,7 @@ import type { WorkspaceLock } from './workspace-lock';
 
 export interface WorkspaceServices {
   readonly workspace: WorkspaceService;
+  readonly nodes: KnowledgeNodeService;
 }
 
 export interface OpenWorkspace {
@@ -46,12 +51,21 @@ export interface ServiceDependencies {
   readonly ids: IdGenerator;
 }
 
-/** Binds application services to an opened database. */
+/** Binds application services to an opened database, scoped to one workspace ID. */
 export function createWorkspaceServices(
   connections: SqliteConnections,
+  workspaceId: WorkspaceId,
   dependencies: ServiceDependencies,
 ): WorkspaceServices {
   return {
+    nodes: createKnowledgeNodeService({
+      workspaceId,
+      transactions: connections,
+      nodes: new SqliteKnowledgeNodeRepository(connections),
+      timeline: new SqliteTimelineEventRepository(connections),
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+    }),
     workspace: createWorkspaceService({
       transactions: connections,
       workspaces: new SqliteWorkspaceRepository(connections),

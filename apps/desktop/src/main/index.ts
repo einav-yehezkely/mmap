@@ -32,6 +32,7 @@ import {
 import { guardAllWebContents, hardenSession } from './security/harden-electron';
 import { resolveRendererLocation } from './security/trusted-origins';
 import { createAppInfoService } from './services/app-info-service';
+import { createNodeIpcServices } from './services/node-ipc-services';
 import {
   createWorkspaceIpcServices,
   type NativeWorkspaceInteractions,
@@ -164,6 +165,7 @@ async function startApplication(): Promise<void> {
         },
       }),
       ...createWorkspaceIpcServices(workspaces, nativeInteractions),
+      ...createNodeIpcServices(workspaces),
     },
     {
       trustedOrigins: rendererLocation.trustedOrigins,
