@@ -1,0 +1,48 @@
+# Packaging configuration (see docs/adr/0004-installer-signing-and-updates.md).
+# Phase 0 produces an UNSIGNED NSIS installer for Windows x64. Code signing and signed update
+# feeds are Phase 5 release gates and must be configured before any public release.
+appId: app.mmap.desktop
+productName: mmap
+copyright: Copyright © 2026 mmap contributors
+
+directories:
+  output: release
+  buildResources: resources
+
+# Everything is bundled by electron-vite into out/; the app has no runtime node_modules.
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+asar: true
+npmRebuild: false
+# No auto-update feed yet. Update checks must stay visible, configurable and content-free (PRD §8).
+publish: null
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  executableName: mmap
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # Workspaces and settings live under %APPDATA%\mmap and must survive uninstall (PRD §5.1, §13.17).
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: mmap-setup-${version}-${arch}.${ext}
+
+# Electron fuses are flipped in the packaged binary and cannot be changed at runtime. They remove
+# ways to turn the installed app into a generic Node.js runtime or to tamper with its code.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false

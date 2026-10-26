@@ -1,0 +1,301 @@
+# mmap - Your Personal Knowledge Graph
+
+Product Requirements Document (PRD)  
+Version: 2.0 — Desktop / local storage  
+Date: 2026-10-26  
+Status: Implementation baseline
+
+## 1. Product vision
+
+mmap is an installable desktop application with a private, user-curated workspace for collecting knowledge, explaining relationships, organizing ideas in reusable mind maps, and revisiting learning over time. Notes, mind maps, and the global graph are different views of the same underlying knowledge.
+
+The user decides what to record and how concepts relate. There must be no LLM integration, AI generation, embeddings, AI recommendations, automatic summarization, or inferred semantic relationships. Search and layouts use deterministic, conventional algorithms.
+
+## 2. Audience and outcomes
+
+Primary users are independent learners, students, researchers, and professionals building a durable personal knowledge base.
+
+The product must let a user:
+
+- Capture a concept once and reuse it across multiple maps.
+- Write rich notes and navigate explicit references and backlinks.
+- Create meaningful, typed connections manually.
+- Switch between a structured mind map and the global knowledge graph.
+- Find previous learning through search, tags, and a learning timeline.
+- Export their data and restore it without losing relationships.
+
+Success measures after launch include activation (first three nodes, one relationship, and one map), successful searches, export/import success, crash-free sessions, and local recovery success. No telemetry is enabled by default; evaluate through opt-in testing without collecting private content.
+
+## 3. Scope and exclusions
+
+Version 1 is a Windows 10/11 x64 desktop application that stores all data on the user's computer and works fully offline. It includes local workspaces, all knowledge features below, installation, updates, and local backup/restore. No registration, cloud subscription, hosted backend, or separately installed runtime/database service is required. Bundle fonts, scripts, editor resources, and math assets; no CDN dependency is permitted.
+
+Hosted accounts, email/Google authentication, a web client, remote storage, server deployment, multi-device synchronization, collaboration, publishing, mobile apps, spaced repetition, and external ingestion are outside version 1. Keep platform-specific code isolated for later macOS/Linux releases. Preserve domain and adapter boundaries for an optional future server/web phase.
+
+## 4. Core concepts and invariants
+
+### 4.1 Knowledge node
+
+A node is a canonical knowledge item with a stable ID, title, optional summary, rich note, tags, timestamps, and attachment references. Titles may repeat; identity is always the stable ID. Renaming a node must preserve its connections, map placements, and resolved wikilinks.
+
+### 4.2 Semantic relationship
+
+A relationship connects two distinct nodes and has a user-selected type, directionality, and optional description. Initial types include `related to` (undirected), `depends on` (directed), `part of` (directed), `example of` (directed), and `contradicts` (undirected). Users can create, rename, and archive custom relationship types.
+
+For a directed relationship, source-to-target meaning must be visible in both the editor and graph. Undirected relationships must have no arrow and use canonical endpoint ordering to prevent reversed duplicates. Reject self-links and duplicate relationships with the same endpoints, type, and direction. Different types between the same endpoints are allowed. Type directionality cannot change while used; provide an explicit migration flow or require a new type.
+
+### 4.3 Note reference
+
+A wikilink is a reference inside a note, separate from a typed semantic relationship. Writing a wikilink must not silently create a semantic edge. Backlinks are derived from saved note references. The graph may display note-reference connections as a separately styled, optional layer.
+
+### 4.4 Mind map
+
+A mind map contains placements of canonical nodes and map-specific visual connections. A node can appear in many maps and at most once within each map in version 1. Its content remains shared; position, collapse state, parent, and styling belong to the map placement.
+
+Map hierarchy is organizational and must not automatically create semantic `part of` edges. A map connection may optionally reference an existing semantic relationship; creating one requires an explicit user action.
+
+## 5. Functional requirements
+
+### 5.1 Local workspaces and desktop lifecycle
+
+- Launch directly without login or internet. Create/open/rename/switch workspaces using native dialogs and remember the last location.
+- A workspace folder contains a version manifest, SQLite database, managed attachments directory, and recovery metadata. Show its actual path and an Open Folder action in Settings.
+- Default to a dedicated mmap folder under OS application data; permit user-selected local folders. Network shares and live cloud-sync folders are unsupported; use backup/export for transfer instead.
+- Use one writer coordinator and a process lock per workspace with safe stale-lock recovery. Multiple windows use the same service and revision checks.
+- Move only a closed, checkpointed workspace through a verified copy. Preserve the original until the destination opens successfully.
+- Flush pending saves on close or offer recovery. Updates/uninstall preserve data by default. Workspace deletion requires confirmation identifying the folder and backup implications.
+- Handle missing folders/drives without silently replacing the original with an empty workspace.
+
+### 5.2 Node library
+
+- Create, view, edit, duplicate, and delete nodes.
+- List nodes with title, tags, last updated time, sorting, and pagination.
+- Open a node from the library, search, graph, timeline, map, or backlink.
+- Autosave edits with clear saving, saved, and failure states. Failed saves must retain the current editor content and offer retry.
+- Use revision checks to prevent a stale application window from silently overwriting newer content.
+- Deleting a map or placement must leave canonical nodes intact.
+- Deleting a canonical node requires a preview of affected relationships, references, and placements. Remove dependent relationships and placements transactionally; preserve readable unresolved reference labels in other notes.
+
+### 5.3 Rich notes
+
+Use Tiptap for paragraphs, headings, bold, italic, lists, checklists, links, blockquotes, code blocks, tables, and image/file attachments. Support inline and display mathematics rendered with KaTeX.
+
+Store validated, versioned Tiptap JSON as the source of truth. Maintain a derived plain-text representation for search. Sanitize rendered content and restrict links and embeds to safe schemes. Treat imported notes as untrusted input.
+
+### 5.4 Wikilinks and backlinks
+
+- Typing `[[` opens a searchable node picker; users select a target or explicitly create a new node.
+- Store resolved references by target ID with a display label; offer `[[target|label]]` behavior without relying on title matching for identity.
+- When raw/imported text has an ambiguous title, require selection instead of choosing an arbitrary node.
+- Show backlinks with source title and a short contextual excerpt.
+- Reconcile references on each successful note save, removing obsolete backlinks.
+- Show missing or deleted targets as unresolved links with a repair action.
+
+### 5.5 Manual relationship editing
+
+Users can create relationships from a node detail panel or graph action, select endpoints and type, inspect direction, and add explanatory text. Editing and deletion must immediately update connected views after the local database transaction commits. Archiving a type preserves existing edges but removes the type from new-edge choices.
+
+### 5.6 Multiple mind maps
+
+- Create, rename, duplicate, and delete maps; add existing nodes or explicitly create new ones.
+- Freeform mode supports drag positioning, pan, zoom, fit-to-view, selection, and map-specific connectors.
+- Hierarchical mode supports roots, parent-child placement, sibling ordering, subtree collapse, and deterministic tree layout. A map may have multiple roots; each non-root placement has exactly one parent.
+- Reject hierarchy cycles. Reparenting must preserve canonical node identity and note content.
+- Persist viewport, coordinates, styling, and hierarchy across sessions.
+- Switching to hierarchical mode requires a reviewed parent assignment when freeform connections are ambiguous. Preserve the previous freeform coordinates for switching back.
+- Provide keyboard alternatives for adding, opening, and moving items within a hierarchy.
+
+Use React Flow for map interaction. Freeform connectors can form cycles; hierarchical parent-child structure cannot.
+
+### 5.7 Global knowledge graph
+
+Use Cytoscape to display canonical nodes and semantic relationships across the active workspace. Show directed arrows, relationship labels on demand, and distinct optional note-reference connections.
+
+Support pan, zoom, deterministic layouts, node selection, opening details, filters by tags and relationship types, text filtering, and expansion of a node's neighborhood. Layout coordinates are visual state and must not alter knowledge relationships. Use bounded neighborhood loading and visible result limits for large workspaces; never silently imply that a partial view contains all nodes.
+
+### 5.8 Search and tags
+
+Use SQLite FTS5 full-text search for titles, summaries, and derived note text. Give title matches higher ranking; provide deterministic prefix/title lookup for pickers. Support tag filters, relationship-type filters where applicable, pagination, and highlighted plain-text snippets.
+
+Tags are workspace-scoped and reusable. Support creation, assignment, removal, rename, and deletion without deleting nodes. Normalize tag uniqueness within a workspace while preserving a display label. Search and tag queries must always stay within the active workspace.
+
+### 5.9 Learning timeline
+
+Record explicit node creation, substantive note updates, relationship creation, and user-triggered `reviewed` events. Group autosave updates into one activity per editing session rather than recording every keystroke. Define an editing session as a continuous edit period ending after 30 minutes of inactivity.
+
+Display a reverse-chronological timeline with date range, tag, event-type, and node filters. Store UTC timestamps and display dates in the user's selected timezone. Users can mark a node as learned/reviewed and add a short reflection. The timeline represents recorded activity, not an inferred measure of understanding. Imported history is marked as imported and must not create artificial new learning events.
+
+### 5.10 Local attachments
+
+Copy files into the workspace's managed attachments directory; store relative paths, original names, types, sizes, and checksums in SQLite. Use generated storage names and leave source files untouched. Moving/deleting a source must not break the managed copy.
+
+Validate types and sizes, reject executables, sanitize previews, and never execute files. Default maximum is 20 MB per file, configurable locally; there is no cloud quota. Report disk-full and permission errors. Open external files only on explicit user action. Restrict local preview access to approved workspace files and prevent traversal/symlink escapes.
+
+Stage copies, verify checksums, commit metadata, and reconcile interrupted operations on startup. Retry orphan cleanup. Do not require online malware scanning; use OS protection where available without guaranteeing file safety.
+
+### 5.11 Export and import
+
+- Provide a complete portable ZIP export containing a versioned JSON manifest, nodes, rich notes, tags, relationship types, edges, map placements, map structure, timeline records, and attachment files with checksums.
+- Provide a readable Markdown export with one file per node, stable-ID metadata, wikilinks, math source, and attachment references. Explain that JSON/ZIP is the lossless restore format; arbitrary Markdown import is outside version 1.
+- Export only workspace data; exclude locks, temporary files, logs, machine-specific settings, and any future credentials.
+- Import the versioned ZIP format with schema validation, archive size/entry limits, path traversal protection, checksums, and a preview of changes and warnings.
+- Default import creates new records with an explicit ID mapping and rewrites all internal references. Re-importing the same archive must show a duplicate warning before proceeding.
+- Validate the whole package before mutation. Stage attachments, apply database records transactionally, and clean staged local files on failure. Do not report completion until all required files are available.
+- Round-trip export/import must preserve note content, directionality, relationships, hierarchy, tags, placements, and file bytes.
+
+## 6. Experience and accessibility
+
+The main navigation contains Library, Mind Maps, Knowledge Graph, Timeline, and Settings. A persistent search entry and node-creation action must be easy to reach. Selecting a node opens the same detail editor from every view.
+
+Use React, TypeScript, and Vite inside Electron; Tailwind CSS and shadcn/ui supply consistent controls. Include readable empty states, loading indicators, actionable errors, destructive-action confirmation, and unsaved/conflicting edit recovery.
+
+Target WCAG 2.2 AA for primary flows: visible focus, keyboard navigation, accessible labels, sufficient contrast, reduced-motion support, and no color-only meaning. Provide a navigable list alternative to graph information. Rich notes must support Unicode and bidirectional text; the initial interface is English.
+
+## 7. Technical architecture
+
+### 7.1 Stack
+
+| Layer | Required technology |
+| --- | --- |
+| Desktop shell | Electron / TypeScript; Windows installer initially |
+| Frontend | React / TypeScript / Vite |
+| UI | Tailwind CSS / shadcn/ui |
+| Maps / global graph | React Flow / Cytoscape |
+| Notes / mathematics | Tiptap / KaTeX |
+| Local services | Node.js / TypeScript in main process or dedicated workers |
+| Local database | Embedded SQLite, FTS5, versioned SQL migrations |
+| Attachments | Managed workspace filesystem |
+| Future server | Fastify, PostgreSQL/Prisma, S3-compatible storage |
+
+Pin supported versions and lockfiles during implementation. Use a maintained SQLite driver with parameterized queries; package its native dependencies for Electron and test the installed build. Users must not install Node.js, Docker, or database services. Prisma is reserved for the future PostgreSQL adapter.
+
+### 7.2 Boundaries and future server/web support
+
+Use a monorepo separating desktop main/preload/renderer, shared domain modules/contracts, and storage/transport adapters. Domain modules cover knowledge, maps, references, search, timeline, files, and transfers; they must not import Electron, React, SQLite, Prisma, or HTTP frameworks.
+
+The renderer calls a minimal typed preload bridge. Main-process handlers validate input and sender, then delegate to application services. Never expose arbitrary SQL, filesystem paths, shell commands, or unrestricted IPC. Use explicit DTOs, errors, revisions, pagination, cancellation/progress, and idempotency for retryable transfers. Run heavy database/archive/layout work away from the renderer.
+
+Define repository, search, attachment-store, transaction, clock, and application-service interfaces. Local adapters use SQLite/FTS5 and filesystem storage. Use stable locally generated UUIDs, workspace scope, UTC timestamps, and versioned schemas/exports. Contract tests specify behavior without leaking engine-specific syntax into the UI.
+
+A future phase may add Fastify REST endpoints, PostgreSQL/Prisma repositories, S3 files, email/Google authentication, and a web shell reusing UI/domain contracts. Authorization belongs on the server boundary. A local-to-server migration tool must preview changes, map IDs, verify counts/checksums, and retain original local data.
+
+Server/web support does not automatically include sync. Specify change tracking, operation IDs, tombstones, conflict resolution, retries, attachments, and device security in a separate sync PRD. Never upload data or switch the source of truth silently. Local workspaces remain usable after an optional server disconnects.
+
+### 7.3 Logical data model
+
+| Entity | Key fields and constraints |
+| --- | --- |
+| Workspace | ID, name, schema version, timezone, timestamps |
+| KnowledgeNode | ID, workspace ID, title, summary, note JSON, plain text, revision, timestamps |
+| RelationshipType | ID, workspace ID, label, directionality, archived state |
+| Relationship | ID, workspace ID, source/target IDs, type ID, description |
+| NoteReference | Source node ID, target node ID, label; unresolved references retained in note content |
+| Tag / NodeTag | Workspace-scoped normalized tag name; unique node/tag pair |
+| MindMap | ID, workspace ID, title, mode, viewport, revision |
+| MapPlacement | Map ID, node ID, coordinates, parent placement ID, sibling order, collapsed state, style |
+| MapConnection | Map ID, placement endpoints, optional relationship ID, visual metadata |
+| TimelineEvent | Workspace ID, optional node ID, event type, UTC time, reflection, import origin |
+| Attachment | Workspace ID, node ID, relative file path, MIME type, byte size, checksum, import state |
+| TransferJob | Workspace ID, kind, state, progress, result relative file path, expiration, error code |
+
+Enforce workspace consistency in services and constraints; prohibit cross-workspace links. Enable SQLite foreign keys per connection. Index workspace/title/date lookup, endpoints, maps, references, timeline, and FTS5. Use WAL on supported local disks, a single write coordinator, bounded busy handling, and transactional cycle/reference updates.
+
+## 8. Security and privacy
+
+- Disable renderer Node integration; enable context isolation and sandboxing. Validate IPC requests and sender/origin; expose only a narrow preload API.
+- Sanitize notes; restrict navigation/window creation, use CSP, and disable trusted HTML/arbitrary URLs in KaTeX.
+- Open approved HTTP(S) links through the OS only after user action; reject executable/custom command schemes.
+- Prevent traversal, symlink escapes, and arbitrary file access. Native dialogs authorize selected import/export locations only.
+- Use current OS-user permissions. Version 1 has no app-level database encryption; document OS account/full-disk protections. Do not describe an app lock as encryption.
+- Keep content out of logs. Diagnostics are local, redacted, and explicitly exported. No telemetry is enabled by default.
+- Core workflows make no network calls. Update checks are visible/configurable, send no content, and verify signed packages.
+- Document that deletion does not erase independent backups/exports/OS snapshots. Run dependency/secret scanning and fix critical vulnerabilities before release.
+
+## 9. Reliability, performance, and desktop operations
+
+Test the installed release offline on a documented four-core, 16 GB Windows computer with SSD. Dataset: 10,000 nodes, 30,000 relationships, 100 maps, up to 500 placements per active map.
+
+- Search p95 below 500 ms; ordinary node reads/writes below 300 ms, excluding file copies.
+- Open a 200-placement map within 2 seconds of data availability.
+- Render an initial graph capped at 1,000 nodes/3,000 edges within 3 seconds of data availability.
+- Warm launch reaches an interactive workspace within 5 seconds. Keep the UI responsive with workers and bounded rendering.
+
+Autosave starts after approximately 1 second idle; show Saved only after a durable local commit. Flush on normal exit and retain recoverable drafts on failure/crash. Handle disk-full, permission, missing-drive, lock, and busy errors without discarding edits.
+
+Create consistent backups using SQLite's backup mechanism plus verified attachments, never a raw live-database copy that ignores WAL. Back up on first launch each day and before migrations. Default retention: seven daily and four weekly snapshots; configurable destination/retention and visible last-success status. Same-drive backups do not protect against drive failure; support a separate-drive destination. Restore works offline, with a 15-minute target for the validation dataset and recorded measured results.
+
+Back up before schema changes, migrate transactionally where possible, and keep a recoverable original on failure. Refuse newer schemas without modification. Prevent incompatible downgrades from opening migrated databases.
+
+Provide a signed Windows installer and documented update/uninstall flow. Verify clean-machine install, offline launch, upgrade, recovery, and data preservation. Additional platforms require separate packaging, signing, filesystem, and restore checks.
+
+## 10. Mandatory engineering quality requirements
+
+These requirements are release gates, not optional preferences.
+
+1. **Readable code:** Use clear English names, explicit types at module boundaries, small focused functions, consistent formatting, and straightforward control flow. Avoid clever abstractions, unexplained abbreviations, duplicated business rules, and oversized components or services.
+2. **Explanatory English comments:** Write comments in English explaining intent, invariants, non-obvious algorithms, security decisions, edge cases, and tradeoffs. Document public interfaces and complex behavior. Comments must stay accurate when code changes; do not replace explanations with comments that merely restate syntax.
+3. **Modularity:** Separate presentation, state, domain rules, persistence, and external integrations. Use cohesive modules with explicit contracts. Centralize workspace validation, storage boundaries, and future authorization contracts.
+4. **Maintainability:** Prefer supported dependencies, strict TypeScript, linting, automated formatting, reproducible lockfiles, migrations, predictable error handling, and minimal global state. Record consequential architectural choices in short decision records.
+5. **Documentation:** Supply a root README, local setup instructions, environment-variable reference without real secrets, architecture overview, entity/relationship explanation, IPC/service contracts, workspace layout, migration/backup/restore procedures, test instructions, packaging/signing/update runbook, future adapter design, and user guidance for linking and import/export.
+6. **Testing:** Add meaningful automated coverage for domain rules and user-visible workflows. Every bug fix requires an appropriate regression test. Mock external boundaries where appropriate and test SQLite transactions, FTS5, constraints, and migrations using real temporary databases. Future PostgreSQL adapters require separate integration tests.
+7. **Review and handoff:** A reviewer must be able to explain the module's purpose and invariants using its code and documentation. Unexplained complex logic, missing critical tests, stale comments, or undocumented operational steps block completion.
+
+## 11. Test strategy
+
+- Unit: relationship rules, cycles, references, tags, search parsing, import ID mapping, and domain services.
+- Integration: real SQLite transactions/FTS5/migrations, workspace isolation, revisions, file staging/cleanup, locks.
+- Installed-app end-to-end: workspace lifecycle, notes/math/links, reused map nodes, graph, search, timeline, attachments, export/import, backup/restore.
+- Offline: first launch, all core workflows, restart, and restore without network or cloud credentials.
+- Security: hostile IPC/navigation, unsafe notes, malicious archives, traversal, symlinks, and file escapes.
+- Recovery: termination during save/import, disk full, permission loss, interrupted copies, stale locks, failed migrations, and full snapshot restore.
+- Performance/accessibility: stated dataset, launch, large graphs, keyboard workflows, screen-reader smoke tests.
+- Architecture: replaceable test adapters and checks preventing Electron/database imports into domain modules.
+
+CI must pass formatting, linting, strict types, unit/integration tests, builds, and desktop smoke tests. Verify native dependencies and critical flows in the installed Windows build on a clean environment. Future authentication/sync phases require their own test gates.
+
+## 12. Phased delivery and exit criteria
+
+| Phase | Deliverables | Exit criteria |
+| --- | --- | --- |
+| 0 — Foundation | Electron shell, SQLite schema, contracts, CI, local setup, architectural decisions | Clean setup works; packaged app launches offline; migrations/builds pass |
+| 1 — Private knowledge base | Local workspaces, node CRUD, Tiptap, KaTeX, tags, managed files | Workspace isolation passes; content survives restart; workflows work offline |
+| 2 — Connections and discovery | Typed semantic relationships, wikilinks, backlinks, search | Direction and uniqueness rules pass; rename/delete references behave correctly; search targets measured |
+| 3 — Mind maps | Multiple maps, reusable nodes, freeform/hierarchical modes, persistence | Shared content stays consistent; map deletion preserves nodes; hierarchy cycles rejected |
+| 4 — Graph and timeline | Cytoscape graph, filters, bounded expansion, review history | Graph limits are visible; timeline uses correct timezone and event grouping |
+| 5 — Portability and release | ZIP/Markdown export, ZIP import, backup/restore, signed installer/updates, security, accessibility | Round-trip/recovery tests pass; documentation complete; all release gates satisfied |
+
+| Future — Optional server/web | Fastify, PostgreSQL/Prisma, S3, email/Google auth, web shell, migration | Separate scope approved; adapter/security tests pass; local originals preserved; sync specified separately |
+
+Deliver each phase as a reviewable working increment. Establish calendar estimates after the initial technical spike and team capacity review; these phases specify dependencies rather than promised dates.
+
+## 13. Acceptance criteria
+
+1. A user installs mmap, creates/opens a local workspace, and completes every core workflow offline without an account, server, or separately installed runtime.
+2. Workspace A cannot accidentally expose/link workspace B records. Renderer calls cannot execute commands or access arbitrary filesystem paths.
+3. A node with formatted text, a table, a code block, inline/display math, tags, and an attachment retains its content after save, exit, and restart.
+4. Creating A `depends on` B visibly shows A → B; creating A `related to` B shows no arrow. Reversing an undirected duplicate is rejected, and unrelated edge types remain allowed.
+5. A selected `[[wikilink]]` navigates to its stable target after a rename. Its source appears in backlinks; removing the link removes that backlink after save. No semantic relationship is silently added.
+6. One node reused in two maps displays the same updated note in both, while moving it in one map leaves its other placement unchanged.
+7. Hierarchical reparenting rejects cycles and preserves sibling order and collapse state. Freeform position and viewport survive reopening; mode changes follow the defined conversion flow.
+8. Deleting a map leaves all canonical nodes intact. Deleting a node displays affected items and leaves remaining note references readable and repairable.
+9. The global graph shows canonical nodes and typed relationships, supports filters and bounded expansion, and identifies when results are partial.
+10. Search finds title and note-text matches, applies tags, and meets the measured local performance target. Results never cross workspace boundaries.
+11. A user-triggered review appears in the timeline in the selected timezone. Continuous autosaves are grouped, and imported history is clearly marked.
+12. A workspace exported and imported into a fresh local workspace preserves every supported entity, stable internal mapping, direction, hierarchy, note content, and attachment checksum. Invalid or interrupted imports leave no partially visible workspace changes.
+13. Conflicting edits produce a visible conflict with recovery options, never silent data loss. Failed autosaves keep the edited content available for retry.
+14. Primary workflows pass the defined accessibility checks, and graph information is available through an accessible list.
+15. CI, installed-app security, offline performance, verified restore, explanatory English comments, and mandatory documentation are complete before release.
+16. Crash, disk-full, import, and migration failures preserve recoverable committed data and identify unsaved edits.
+17. Updates/uninstall preserve workspaces by default; backups restore all supported entities and attachment checksums offline.
+18. Domain modules are independent of Electron/database engines; documented adapters support future server/web development.
+
+## 14. Risks and implementation decisions
+
+- **Confusion between visual structure and meaning:** Keep map connectors, hierarchy, semantic relationships, and note references distinct in storage and clearly labeled in the UI.
+- **Graph scale:** Default to bounded neighborhoods, debounce filters, and isolate expensive layouts; benchmark before expanding limits.
+- **Editor/reference divergence:** Save note JSON and reconcile derived references within one database transaction.
+- **Database/filesystem consistency:** Stage local files, reconcile interrupted operations on startup, and finalize visibility after validation.
+- **Concurrent edits:** Require revision checks for both nodes and map structure; provide a user-visible resolution flow.
+- **Data portability:** Version export schemas and document migrations. Reject unknown future versions with an actionable message.
+
+Before implementation, record Electron/SQLite-driver versions, installer/signing/update approach, workspace location, supported filesystems, and backup policy. Validate these in a packaged technical spike. Hosting, mail, OAuth, PostgreSQL, and S3 decisions belong to the future phase. No AI service is permitted in any phase.

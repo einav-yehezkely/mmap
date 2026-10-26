@@ -1,0 +1,10 @@
+{
+  // Root project: type-checks repository-level tests and tooling only. Each workspace package
+  // has its own tsconfig; see `npm run typecheck`.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": false
+  },
+  "include": ["tests/**/*.ts", "tooling/**/*.d.mts", "vitest.config.ts"]
+}

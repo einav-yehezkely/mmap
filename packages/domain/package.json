@@ -1,0 +1,13 @@
+{
+  "name": "@mmap/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure domain rules and ports for mmap. Must not depend on Electron, React, SQLite or HTTP frameworks.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
+  }
+}

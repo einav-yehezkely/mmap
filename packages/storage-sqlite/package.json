@@ -1,0 +1,16 @@
+{
+  "name": "@mmap/storage-sqlite",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local storage adapter for mmap built on Node's embedded SQLite (node:sqlite) with FTS5.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mmap/domain": "0.1.0"
+  }
+}

@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens (shadcn/ui convention). Colors meet WCAG 2.2 AA contrast for text on their
+ * paired background in both themes. The theme follows the operating system preference.
+ */
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.21 0.02 265);
+  --muted: oklch(0.967 0.003 265);
+  --muted-foreground: oklch(0.45 0.02 265);
+  --border: oklch(0.9 0.005 265);
+  --primary: oklch(0.42 0.15 265);
+  --primary-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.94 0.02 265);
+  --accent-foreground: oklch(0.21 0.02 265);
+  --destructive: oklch(0.5 0.2 27);
+  --ring: oklch(0.55 0.18 265);
+  --radius: 0.5rem;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.01 265);
+    --foreground: oklch(0.96 0.005 265);
+    --muted: oklch(0.24 0.01 265);
+    --muted-foreground: oklch(0.75 0.01 265);
+    --border: oklch(0.32 0.01 265);
+    --primary: oklch(0.75 0.12 265);
+    --primary-foreground: oklch(0.17 0.01 265);
+    --accent: oklch(0.28 0.03 265);
+    --accent-foreground: oklch(0.96 0.005 265);
+    --destructive: oklch(0.7 0.18 27);
+    --ring: oklch(0.75 0.12 265);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--ring);
+  --radius-md: var(--radius);
+  /* System fonts only: no web fonts are downloaded (PRD §3, offline). */
+  --font-sans: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+}
+
+/* Respect the OS "reduce motion" setting (PRD §6). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

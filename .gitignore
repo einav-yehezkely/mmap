@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+release/
+coverage/
+*.log
+*.tsbuildinfo
+.vite/
+# Local test databases and scratch workspaces must never be committed.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
+!.env.example

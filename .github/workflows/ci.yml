@@ -1,0 +1,124 @@
+# Release gates (PRD §8, §11): formatting, linting, strict types, unit/integration tests, builds,
+# desktop smoke tests, plus dependency and secret scanning.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per ref. Superseded PR runs are cancelled; runs on main always finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Verify, package and smoke test (Windows)
+    # Windows-only on purpose: the product ships as a Windows NSIS installer, packaging uses
+    # electron-builder --win, and the smoke test launches the packaged mmap.exe.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js from .nvmrc
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # npm ci honors the root package.json allowScripts policy (electron-winstaller's
+      # install script stays blocked).
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run unit and integration tests
+        run: npm test
+
+      # Runs the electron-vite build, then electron-builder. The installer is unsigned in this
+      # phase, so no signing secrets are needed.
+      - name: Build and package Windows installer
+        run: npm run package -w @mmap/desktop
+
+      # Launches the packaged app hidden with --smoke-test and routes all traffic to a dead
+      # proxy, so the app must pass fully offline.
+      - name: Smoke test packaged app (offline)
+        run: npm run smoke:packaged
+
+      - name: Upload installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mmap-installer-windows-x64
+          path: apps/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js from .nvmrc
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Only the lockfile tree is needed for auditing; skip all install scripts.
+      - name: Install dependencies (no scripts)
+        run: npm ci --ignore-scripts
+
+      # Dev dependencies are audited on purpose: the app bundles its devDependencies (React,
+      # Zod, Radix, ...) into the build output, so they ship to users.
+      - name: Audit dependencies (fail on critical)
+        run: npm audit --audit-level=critical
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Lets gitleaks list the commits of a pull request.
+      pull-requests: read
+    steps:
+      - name: Check out repository (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # v3 is the Node 24 release of gitleaks-action; v2 (Node 20) no longer runs on
+      # GitHub-hosted runners.
+      - name: Scan for secrets with gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Organization-owned repositories need a free GITLEAKS_LICENSE secret
+          # (https://gitleaks.io); repositories under a personal account do not.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # PR comments would need pull-requests: write; findings are reported in the job
+          # summary and log instead.
+          GITLEAKS_ENABLE_COMMENTS: false

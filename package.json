@@ -1,0 +1,47 @@
+{
+  "name": "mmap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mmap — a private, local-first personal knowledge graph for the desktop.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "workspaces": [
+    "packages/domain",
+    "packages/contracts",
+    "packages/storage-sqlite",
+    "apps/desktop"
+  ],
+  "engines": {
+    "node": ">=24.11.0 <25",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json && npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "npm run dev -w @mmap/desktop",
+    "build": "npm run build -w @mmap/desktop",
+    "package": "npm run package -w @mmap/desktop",
+    "package:dir": "npm run package:dir -w @mmap/desktop",
+    "smoke:packaged": "npm run smoke:packaged -w @mmap/desktop",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  }
+}
