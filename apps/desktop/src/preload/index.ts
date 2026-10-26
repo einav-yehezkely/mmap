@@ -46,6 +46,16 @@ const api: MmapRendererApi = {
     rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.tagsRename, request),
     delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.tagsDelete, request),
   },
+  attachments: {
+    add: (request) => ipcRenderer.invoke(IPC_CHANNELS.attachmentsAdd, request),
+    list: (request) => ipcRenderer.invoke(IPC_CHANNELS.attachmentsList, request),
+    open: (request) => ipcRenderer.invoke(IPC_CHANNELS.attachmentsOpen, request),
+    remove: (request) => ipcRenderer.invoke(IPC_CHANNELS.attachmentsRemove, request),
+  },
+  preferences: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.preferencesGet),
+    update: (request) => ipcRenderer.invoke(IPC_CHANNELS.preferencesUpdate, request),
+  },
 };
 
 contextBridge.exposeInMainWorld('mmap', api);

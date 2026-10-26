@@ -24,10 +24,20 @@ const recentWorkspaceSchema = z.object({
   lastOpenedAt: z.string(),
 });
 
+/** PRD §5.10: 20 MB per attachment by default, configurable on this computer. */
+export const DEFAULT_MAX_ATTACHMENT_MEGABYTES = 20;
+
 const settingsSchema = z.object({
   version: z.literal(1),
   lastWorkspacePath: z.string().nullable(),
   recentWorkspaces: z.array(recentWorkspaceSchema).max(MAX_RECENT_WORKSPACES),
+  // Defaulted so settings files written before this preference existed stay valid.
+  maxAttachmentMegabytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(1_024)
+    .default(DEFAULT_MAX_ATTACHMENT_MEGABYTES),
 });
 
 export type AppSettings = z.infer<typeof settingsSchema>;
@@ -37,6 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
   lastWorkspacePath: null,
   recentWorkspaces: [],
+  maxAttachmentMegabytes: DEFAULT_MAX_ATTACHMENT_MEGABYTES,
 };
 
 export interface SettingsStore {

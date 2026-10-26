@@ -2,6 +2,7 @@ export * from './backup';
 export * from './capabilities';
 export * from './connection';
 export * from './migrations';
+export * from './repositories/sqlite-attachment-repository';
 export * from './repositories/sqlite-knowledge-node-repository';
 export * from './repositories/sqlite-relationship-type-repository';
 export * from './repositories/sqlite-tag-repository';

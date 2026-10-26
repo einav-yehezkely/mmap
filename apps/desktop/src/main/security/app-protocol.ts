@@ -8,8 +8,10 @@
 
 import { pathToFileURL } from 'node:url';
 
+import { ATTACHMENT_PREVIEW_SCHEME } from '@mmap/contracts';
 import { net, protocol } from 'electron';
 
+import type { PreviewResolution } from '../attachments/attachment-preview';
 import { buildContentSecurityPolicy } from './content-security-policy';
 import { resolveRendererAsset } from './resolve-renderer-asset';
 import { APP_SCHEME } from './trusted-origins';
@@ -24,6 +26,11 @@ export function registerAppSchemeAsPrivileged(): void {
     {
       scheme: APP_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true },
+    },
+    {
+      // Image previews only. Not fetchable from scripts and not a CSP bypass.
+      scheme: ATTACHMENT_PREVIEW_SCHEME,
+      privileges: { standard: true, secure: true },
     },
   ]);
 }
@@ -52,5 +59,33 @@ export function serveRendererFromAppProtocol(rendererRoot: string): void {
     headers.set('Content-Security-Policy', contentSecurityPolicy);
     headers.set('X-Content-Type-Options', 'nosniff');
     return new Response(fileResponse.body, { status: fileResponse.status, headers });
+  });
+}
+
+/**
+ * Serves attachment image previews. `resolve` applies all access rules (see
+ * `attachment-preview.ts`); this handler only streams the approved file with safe headers.
+ */
+export function serveAttachmentPreviews(
+  resolve: (requestUrl: string) => Promise<PreviewResolution>,
+): void {
+  protocol.handle(ATTACHMENT_PREVIEW_SCHEME, async (request) => {
+    const resolution = await resolve(request.url);
+    if (resolution.kind === 'rejected') {
+      return new Response(null, {
+        status: resolution.status,
+        statusText: STATUS_TEXT[resolution.status] ?? 'Error',
+      });
+    }
+    const fileResponse = await net.fetch(pathToFileURL(resolution.absolutePath).toString());
+    return new Response(fileResponse.body, {
+      status: fileResponse.status,
+      headers: {
+        'Content-Type': resolution.mimeType,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'",
+      },
+    });
   });
 }

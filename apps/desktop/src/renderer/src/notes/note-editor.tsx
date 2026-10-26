@@ -27,6 +27,7 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Paperclip,
   Pi,
   Quote,
   Redo2,
@@ -43,6 +44,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { FormDialog } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
+import type { AttachmentNodeAttributes } from './attachment-node';
 import { createNoteExtensions, KATEX_OPTIONS } from './editor-extensions';
 
 export interface NoteEditorProps {
@@ -50,6 +52,11 @@ export interface NoteEditorProps {
   readonly onChange: (note: NoteDocument) => void;
   /** Called with a user-facing message when the current content cannot be saved. */
   readonly onInvalid: (message: string) => void;
+  /**
+   * Lets the user pick files to attach (native dialog in the main process). Resolves with the
+   * attachments that were stored, which are then inserted at the cursor.
+   */
+  readonly onAttachFiles: () => Promise<readonly AttachmentNodeAttributes[]>;
 }
 
 interface MathEditState {
@@ -59,7 +66,7 @@ interface MathEditState {
   readonly position: number | null;
 }
 
-export function NoteEditor({ initialNote, onChange, onInvalid }: NoteEditorProps) {
+export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: NoteEditorProps) {
   // Callbacks change on every render; the editor is created once, so it reads them via a ref.
   const callbacks = useRef({ onChange, onInvalid });
   useEffect(() => {
@@ -87,6 +94,19 @@ export function NoteEditor({ initialNote, onChange, onInvalid }: NoteEditorProps
       },
       // Ctrl+click (Cmd+click on macOS) opens a link outside the app. Plain clicks only place the
       // cursor, so editing a link's text never navigates anywhere by accident.
+      // Double-clicking a file attachment opens it with its default application. The main
+      // process re-checks the attachment before asking the OS to open it.
+      handleDoubleClick: (_view, _position, event) => {
+        const element = (event.target as HTMLElement | null)?.closest(
+          '[data-attachment-kind="file"]',
+        );
+        const attachmentId = element?.getAttribute('data-attachment-id');
+        if (attachmentId) {
+          void window.mmap.attachments.open({ attachmentId });
+          return true;
+        }
+        return false;
+      },
       handleClick: (_view, _position, event) => {
         if (!(event.ctrlKey || event.metaKey)) return false;
         const href = (event.target as HTMLElement | null)?.closest('a')?.getAttribute('href');
@@ -114,10 +134,18 @@ export function NoteEditor({ initialNote, onChange, onInvalid }: NoteEditorProps
         editor={editor}
         onEditLink={() => setLinkEdit({ href: String(editor.getAttributes('link').href ?? '') })}
         onInsertMath={(kind) => setMathEdit({ kind, latex: '', position: null })}
+        onAttachFiles={() =>
+          void onAttachFiles().then((attachments) => {
+            if (attachments.length > 0) {
+              editor.chain().focus().insertAttachments(attachments).run();
+            }
+          })
+        }
       />
       <EditorContent editor={editor} />
       <p className="mt-1 text-xs text-muted-foreground">
-        Tip: Ctrl+click a link to open it in your browser. Click a formula to edit it.
+        Tip: Ctrl+click a link to open it in your browser. Click a formula to edit it. Double-click
+        an attached file to open it.
       </p>
       {mathEdit && (
         <MathDialog
@@ -188,9 +216,10 @@ interface ToolbarProps {
   readonly editor: Editor;
   readonly onEditLink: () => void;
   readonly onInsertMath: (kind: 'inline' | 'block') => void;
+  readonly onAttachFiles: () => void;
 }
 
-function Toolbar({ editor, onEditLink, onInsertMath }: ToolbarProps) {
+function Toolbar({ editor, onEditLink, onInsertMath, onAttachFiles }: ToolbarProps) {
   const active = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -313,6 +342,7 @@ function Toolbar({ editor, onEditLink, onInsertMath }: ToolbarProps) {
         <Separator />
         <ToolbarButton icon={Pi} label="Inline formula" onClick={() => onInsertMath('inline')} />
         <ToolbarButton icon={Sigma} label="Display formula" onClick={() => onInsertMath('block')} />
+        <ToolbarButton icon={Paperclip} label="Attach files" onClick={onAttachFiles} />
         <Separator />
         <ToolbarButton
           icon={Undo2}

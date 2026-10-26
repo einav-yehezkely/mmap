@@ -7,6 +7,7 @@ import type { AppInfo, IpcError, WorkspaceSummary } from '@mmap/contracts';
 import { useEffect, useState } from 'react';
 
 import { WorkspaceSettings } from '../workspace/workspace-settings';
+import { AttachmentPreferences } from './attachment-preferences';
 
 type LoadState =
   | { readonly status: 'loading' }
@@ -48,6 +49,10 @@ export function SettingsView({ workspace }: { workspace: WorkspaceSummary }) {
       <h2 className="mt-6 text-lg font-medium">Workspace</h2>
       <div className="mt-3">
         <WorkspaceSettings key={workspace.id} workspace={workspace} />
+      </div>
+      <h2 className="mt-10 text-lg font-medium">Attachments</h2>
+      <div className="mt-3">
+        <AttachmentPreferences />
       </div>
       <h2 className="mt-10 text-lg font-medium">About this installation</h2>
       <div aria-live="polite" className="mt-3">

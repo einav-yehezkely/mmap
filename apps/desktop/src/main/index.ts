@@ -25,13 +25,19 @@ import { app, dialog, Menu, session, shell } from 'electron';
 import { registerIpcHandlers } from './ipc/register-ipc-handlers';
 import { createRedactedLogger } from './logging';
 import { createMainWindow, resolvePreloadPath, resolveRendererRoot } from './main-window';
+import { resolveAttachmentPreview } from './attachments/attachment-preview';
 import {
   registerAppSchemeAsPrivileged,
+  serveAttachmentPreviews,
   serveRendererFromAppProtocol,
 } from './security/app-protocol';
 import { guardAllWebContents, hardenSession } from './security/harden-electron';
 import { resolveRendererLocation } from './security/trusted-origins';
 import { createAppInfoService } from './services/app-info-service';
+import {
+  createAttachmentIpcServices,
+  type AttachmentNativeInteractions,
+} from './services/attachment-ipc-services';
 import { createExternalLinkService } from './services/external-link-service';
 import { createNodeIpcServices } from './services/node-ipc-services';
 import {
@@ -72,6 +78,7 @@ const workspaces = new WorkspaceManager({
     now: () => new Date(),
     isProcessAlive,
   },
+  logFailure: (operation, error) => logger.error(operation, error),
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -136,6 +143,22 @@ const nativeInteractions: NativeWorkspaceInteractions = {
   },
 };
 
+const attachmentInteractions: AttachmentNativeInteractions = {
+  async chooseFiles() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Attach files',
+      properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : result.filePaths;
+  },
+  async openFile(absolutePath) {
+    return (await shell.openPath(absolutePath)) === '';
+  },
+};
+
 async function startApplication(): Promise<void> {
   if (app.isPackaged) {
     // Removes the default menu, which exposes developer tools and reload shortcuts.
@@ -144,6 +167,21 @@ async function startApplication(): Promise<void> {
 
   hardenSession(session.defaultSession, rendererLocation);
   serveRendererFromAppProtocol(resolveRendererRoot(mainDirectory));
+  serveAttachmentPreviews((requestUrl) =>
+    resolveAttachmentPreview(requestUrl, {
+      findAttachment: async (attachmentId) => {
+        const workspace = workspaces.current;
+        if (workspace === null) return null;
+        try {
+          return await workspace.services.attachments.getStoredFile(attachmentId);
+        } catch {
+          return null;
+        }
+      },
+      resolveStoredFile: async (relativePath) =>
+        (await workspaces.current?.attachmentStore.resolveExisting(relativePath)) ?? null,
+    }),
+  );
 
   try {
     await workspaces.startup();
@@ -168,6 +206,15 @@ async function startApplication(): Promise<void> {
       'app:open-external-link': createExternalLinkService((url) => shell.openExternal(url)),
       ...createWorkspaceIpcServices(workspaces, nativeInteractions),
       ...createNodeIpcServices(workspaces),
+      ...createAttachmentIpcServices({
+        currentWorkspace: () => workspaces.current,
+        maxAttachmentBytes: async () =>
+          (await workspaces.getPreferences()).maxAttachmentMegabytes * 1024 * 1024,
+        native: attachmentInteractions,
+        logFailure: (operation, error) => logger.error(operation, error),
+      }),
+      'preferences:get': () => workspaces.getPreferences(),
+      'preferences:update': (changes) => workspaces.updatePreferences(changes),
     },
     {
       trustedOrigins: rendererLocation.trustedOrigins,

@@ -23,6 +23,8 @@ import { TableKit } from '@tiptap/extension-table';
 import StarterKit from '@tiptap/starter-kit';
 import type { KatexOptions } from 'katex';
 
+import { AttachmentNode } from './attachment-node';
+
 export const KATEX_OPTIONS: KatexOptions = {
   throwOnError: false,
   trust: false,
@@ -55,6 +57,7 @@ export function createNoteExtensions(callbacks: EditorExtensionCallbacks = {}): 
     TaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
+    AttachmentNode,
     Mathematics.configure({
       katexOptions: KATEX_OPTIONS,
       inlineOptions: {

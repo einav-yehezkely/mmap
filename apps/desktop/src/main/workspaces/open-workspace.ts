@@ -4,9 +4,11 @@
  */
 
 import {
+  createAttachmentService,
   createKnowledgeNodeService,
   createTagService,
   createWorkspaceService,
+  type AttachmentService,
   type Clock,
   type KnowledgeNodeService,
   type TagService,
@@ -21,6 +23,7 @@ import {
   MigrationHistoryError,
   openWorkspaceDatabase,
   SchemaTooNewError,
+  SqliteAttachmentRepository,
   SqliteKnowledgeNodeRepository,
   SqliteRelationshipTypeRepository,
   SqliteTagRepository,
@@ -29,6 +32,7 @@ import {
   type SqliteConnections,
 } from '@mmap/storage-sqlite';
 
+import { FileAttachmentStore } from '../attachments/file-attachment-store';
 import { WorkspaceError } from './workspace-errors';
 import type { WorkspaceManifest, WorkspacePaths } from './workspace-folder';
 import type { WorkspaceLock } from './workspace-lock';
@@ -37,6 +41,7 @@ export interface WorkspaceServices {
   readonly workspace: WorkspaceService;
   readonly nodes: KnowledgeNodeService;
   readonly tags: TagService;
+  readonly attachments: AttachmentService;
 }
 
 export interface OpenWorkspace {
@@ -46,6 +51,8 @@ export interface OpenWorkspace {
   readonly schemaVersion: number;
   readonly connections: SqliteConnections;
   readonly services: WorkspaceServices;
+  /** Managed copies of attached files in `<workspace>/attachments`. */
+  readonly attachmentStore: FileAttachmentStore;
   /** Flushes queued writes, closes the database and releases the lock. */
   close(): Promise<void>;
 }
@@ -77,6 +84,14 @@ export function createWorkspaceServices(
       workspaceId,
       transactions: connections,
       tags: tagRepository,
+      nodes: nodeRepository,
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+    }),
+    attachments: createAttachmentService({
+      workspaceId,
+      transactions: connections,
+      attachments: new SqliteAttachmentRepository(connections),
       nodes: nodeRepository,
       ids: dependencies.ids,
       clock: dependencies.clock,
@@ -147,6 +162,7 @@ export function createOpenWorkspace(parts: {
     schemaVersion: parts.schemaVersion,
     connections: parts.connections,
     services: parts.services,
+    attachmentStore: new FileAttachmentStore(parts.paths.attachments),
     close() {
       closing ??= (async () => {
         try {

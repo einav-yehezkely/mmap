@@ -13,7 +13,9 @@ import type { ReactNode } from 'react';
 import { ConfirmDialog } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
 import { formatDateTime } from '../lib/format-date';
+import type { AttachmentNodeAttributes } from '../notes/attachment-node';
 import { NoteEditor } from '../notes/note-editor';
+import { NodeAttachments } from './node-attachments';
 import { errorMessage, unwrap } from '../lib/ipc';
 import type { SaveStatus } from './node-draft-saver';
 import { notifyNodesChanged } from './node-events';
@@ -50,6 +52,26 @@ export function NodeDetailPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletePreview, setDeletePreview] = useState<NodeDependentsView | null>(null);
   const [noteProblem, setNoteProblem] = useState<string | null>(null);
+  const [attachmentsVersion, setAttachmentsVersion] = useState(0);
+  const [attachNotices, setAttachNotices] = useState<readonly string[]>([]);
+
+  /** Opens the native file picker in the main process and returns the stored attachments. */
+  const attachFiles = async (): Promise<readonly AttachmentNodeAttributes[]> => {
+    setAttachNotices([]);
+    try {
+      const result = await unwrap(window.mmap.attachments.add({ nodeId }));
+      setAttachNotices(result.rejected.map((item) => `${item.fileName}: ${item.reason}`));
+      if (result.added.length > 0) setAttachmentsVersion((version) => version + 1);
+      return result.added.map((attachment) => ({
+        attachmentId: attachment.id,
+        displayName: attachment.displayName,
+        kind: attachment.previewable ? 'image' : 'file',
+      }));
+    } catch (error) {
+      setAttachNotices([errorMessage(error)]);
+      return [];
+    }
+  };
 
   if (editor.phase === 'loading') {
     return <PanelShell onClose={onClose}>{<p role="status">Loading…</p>}</PanelShell>;
@@ -205,6 +227,7 @@ export function NodeDetailPanel({
             editor.edit({ note });
           }}
           onInvalid={setNoteProblem}
+          onAttachFiles={attachFiles}
         />
         {noteProblem && (
           <p role="alert" className="mt-2 text-sm text-destructive">
@@ -212,6 +235,8 @@ export function NodeDetailPanel({
           </p>
         )}
       </section>
+
+      <NodeAttachments nodeId={node.id} version={attachmentsVersion} notices={attachNotices} />
 
       <p className="text-xs text-muted-foreground">
         Created {formatDateTime(node.createdAt, timeZone)} · Revision {state.revision}

@@ -59,6 +59,8 @@ export interface WorkspaceManagerDependencies extends ServiceDependencies {
   readonly lockEnvironment: LockEnvironment;
   /** IANA timezone recorded for new workspaces. */
   readonly timezone: () => string;
+  /** Receives redacted background failures (e.g. attachment cleanup). */
+  readonly logFailure?: (operation: string, error: unknown) => void;
 }
 
 interface OpenedState {
@@ -251,6 +253,44 @@ export class WorkspaceManager {
     this.unavailable = null;
     await previous?.workspace.close();
     await this.remember(next.workspace, next.record);
+    // Not awaited: cleanup must never delay opening the workspace. It is retried on every open.
+    void this.reconcileAttachments(next.workspace);
+  }
+
+  /**
+   * Finishes interrupted attachment operations (PRD §5.10): removes staged leftovers and files
+   * no database row refers to (e.g. after a crash between copying and recording, or a deleted
+   * node). Rows whose file is missing are kept and shown as missing, never silently deleted.
+   */
+  private async reconcileAttachments(workspace: OpenWorkspace): Promise<void> {
+    try {
+      const known = new Set(await workspace.services.attachments.listAllRelativePaths());
+      await workspace.attachmentStore.reconcile(known);
+    } catch (error) {
+      this.dependencies.logFailure?.('attachment reconciliation', error);
+    }
+  }
+
+  /** Machine-local preferences, stored with the other settings. */
+  public getPreferences(): Promise<{ maxAttachmentMegabytes: number }> {
+    return this.serialize(async () => {
+      const settings = await this.dependencies.settings.load();
+      return { maxAttachmentMegabytes: settings.maxAttachmentMegabytes };
+    });
+  }
+
+  public updatePreferences(changes: {
+    maxAttachmentMegabytes?: number | undefined;
+  }): Promise<{ maxAttachmentMegabytes: number }> {
+    return this.serialize(async () => {
+      const settings = await this.dependencies.settings.load();
+      const next = {
+        ...settings,
+        maxAttachmentMegabytes: changes.maxAttachmentMegabytes ?? settings.maxAttachmentMegabytes,
+      };
+      await this.dependencies.settings.save(next);
+      return { maxAttachmentMegabytes: next.maxAttachmentMegabytes };
+    });
   }
 
   private async openWorkspaceAt(folderPath: string): Promise<OpenedState> {

@@ -10,6 +10,7 @@
 import type { z } from 'zod';
 
 import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
+import { attachmentContracts, preferenceContracts } from './attachments';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
 import { nodeContracts, tagContracts } from './nodes';
 import { workspaceContracts } from './workspace';
@@ -46,6 +47,12 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.tagsCreate]: tagContracts.create,
   [IPC_CHANNELS.tagsRename]: tagContracts.rename,
   [IPC_CHANNELS.tagsDelete]: tagContracts.delete,
+  [IPC_CHANNELS.attachmentsAdd]: attachmentContracts.add,
+  [IPC_CHANNELS.attachmentsList]: attachmentContracts.list,
+  [IPC_CHANNELS.attachmentsOpen]: attachmentContracts.open,
+  [IPC_CHANNELS.attachmentsRemove]: attachmentContracts.remove,
+  [IPC_CHANNELS.preferencesGet]: preferenceContracts.get,
+  [IPC_CHANNELS.preferencesUpdate]: preferenceContracts.update,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

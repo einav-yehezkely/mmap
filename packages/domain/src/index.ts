@@ -6,6 +6,7 @@
  * `tests/architecture.test.ts`.
  */
 
+export * from './application/attachment-service';
 export * from './application/knowledge-node-service';
 export * from './application/tag-service';
 export * from './application/workspace-service';

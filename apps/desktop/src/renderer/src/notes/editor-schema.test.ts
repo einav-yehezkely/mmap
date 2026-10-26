@@ -91,6 +91,22 @@ const EVERYTHING = {
       ],
     },
     { type: 'blockMath', attrs: { latex: '\\int_0^1 x\\,dx' } },
+    {
+      type: 'attachment',
+      attrs: {
+        attachmentId: '3f2c9a4e-1b7d-4c2e-9f00-0123456789ab',
+        displayName: 'diagram.png',
+        kind: 'image',
+      },
+    },
+    {
+      type: 'attachment',
+      attrs: {
+        attachmentId: '3f2c9a4e-1b7d-4c2e-9f00-0123456789ac',
+        displayName: 'paper.pdf',
+        kind: 'file',
+      },
+    },
   ],
 };
 

@@ -13,7 +13,14 @@
  */
 
 import type { UtcTimestamp } from '../clock';
-import type { NodeId, RelationshipTypeId, TagId, TimelineEventId, WorkspaceId } from '../ids';
+import type {
+  AttachmentId,
+  NodeId,
+  RelationshipTypeId,
+  TagId,
+  TimelineEventId,
+  WorkspaceId,
+} from '../ids';
 import type { RelationshipDirectionality } from '../knowledge/relationship-rules';
 import type { Page, PageRequest } from './pagination';
 
@@ -211,4 +218,29 @@ export interface TagRepository {
     createdAt: UtcTimestamp,
   ): Promise<void>;
   detach(workspaceId: WorkspaceId, nodeId: NodeId, tagId: TagId): Promise<void>;
+}
+
+export interface AttachmentRecord {
+  readonly id: AttachmentId;
+  readonly workspaceId: WorkspaceId;
+  readonly nodeId: NodeId;
+  /** Generated storage path relative to the workspace attachments folder (never user-chosen). */
+  readonly relativePath: string;
+  /** Sanitized original file name, used only for display and export. */
+  readonly originalName: string;
+  readonly mimeType: string;
+  readonly byteSize: number;
+  readonly sha256: string;
+  readonly state: 'staged' | 'committed';
+  readonly createdAt: UtcTimestamp;
+  readonly updatedAt: UtcTimestamp;
+}
+
+export interface AttachmentRepository {
+  insert(record: AttachmentRecord): Promise<void>;
+  findById(workspaceId: WorkspaceId, attachmentId: AttachmentId): Promise<AttachmentRecord | null>;
+  listForNode(workspaceId: WorkspaceId, nodeId: NodeId): Promise<readonly AttachmentRecord[]>;
+  delete(workspaceId: WorkspaceId, attachmentId: AttachmentId): Promise<void>;
+  /** Every stored relative path in the workspace; used to reconcile files on startup. */
+  listAllRelativePaths(workspaceId: WorkspaceId): Promise<readonly string[]>;
 }

@@ -184,3 +184,33 @@
     border-radius: 0.25rem;
   }
 }
+
+/* Attachments inside notes. Images are capped so a large photo does not dominate the note. */
+@layer components {
+  .note-content .note-attachment {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.5em;
+  }
+  .note-content .note-attachment-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 28rem;
+    margin-inline: auto;
+  }
+  .note-content .note-attachment-caption {
+    display: block;
+    margin-top: 0.25em;
+    text-align: center;
+    font-size: 0.85em;
+    color: var(--color-muted-foreground);
+  }
+  .note-content .note-attachment-file {
+    display: inline-flex;
+    cursor: pointer;
+    background: var(--color-muted);
+  }
+  .note-content .note-attachment-file .note-attachment-label::before {
+    content: '📎 ';
+  }
+}

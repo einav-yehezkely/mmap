@@ -32,6 +32,12 @@ export const IPC_CHANNELS = {
   tagsCreate: 'tags:create',
   tagsRename: 'tags:rename',
   tagsDelete: 'tags:delete',
+  attachmentsAdd: 'attachments:add',
+  attachmentsList: 'attachments:list',
+  attachmentsOpen: 'attachments:open',
+  attachmentsRemove: 'attachments:remove',
+  preferencesGet: 'preferences:get',
+  preferencesUpdate: 'preferences:update',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
