@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { ConfirmDialog } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
 import { formatDateTime } from '../lib/format-date';
+import { NoteEditor } from '../notes/note-editor';
 import { errorMessage, unwrap } from '../lib/ipc';
 import type { SaveStatus } from './node-draft-saver';
 import { notifyNodesChanged } from './node-events';
@@ -47,6 +48,7 @@ export function NodeDetailPanel({
   const summaryId = useId();
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletePreview, setDeletePreview] = useState<NodeDependentsView | null>(null);
+  const [noteProblem, setNoteProblem] = useState<string | null>(null);
 
   if (editor.phase === 'loading') {
     return <PanelShell onClose={onClose}>{<p role="status">Loading…</p>}</PanelShell>;
@@ -191,11 +193,21 @@ export function NodeDetailPanel({
         />
       </div>
 
-      <section
-        aria-label="Note"
-        className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
-      >
-        The rich note editor (formatting, tables, math, attachments) arrives in the next step.
+      <section aria-label="Note">
+        <NoteEditor
+          key={editor.contentVersion}
+          initialNote={state.draft.note}
+          onChange={(note) => {
+            setNoteProblem(null);
+            editor.edit({ note });
+          }}
+          onInvalid={setNoteProblem}
+        />
+        {noteProblem && (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            {noteProblem} Your latest edits are not saved yet.
+          </p>
+        )}
       </section>
 
       <p className="text-xs text-muted-foreground">

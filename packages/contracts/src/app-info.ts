@@ -27,3 +27,12 @@ export const appInfoSchema = z.strictObject({
 });
 
 export type AppInfo = z.infer<typeof appInfoSchema>;
+
+/**
+ * `app:open-external-link`: opens a link from a note in the system browser or mail client.
+ * The main process re-validates the URL against the domain's safe-scheme allow-list.
+ */
+export const openExternalLinkContract = {
+  request: z.strictObject({ href: z.string().max(2_048) }),
+  response: z.strictObject({ opened: z.boolean() }),
+} as const;

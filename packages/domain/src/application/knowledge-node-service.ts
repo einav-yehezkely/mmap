@@ -35,6 +35,7 @@ import type {
   TimelineEventRepository,
 } from '../ports/repositories';
 import type { TransactionRunner } from '../ports/transaction';
+import { continuesEditingSession } from '../timeline/editing-session';
 
 export interface KnowledgeNodeServiceDependencies {
   readonly workspaceId: WorkspaceId;
@@ -131,6 +132,30 @@ export function createKnowledgeNodeService(
     return record;
   }
 
+  /**
+   * Records a substantive note update in the timeline, grouping saves of one editing session into
+   * a single event (PRD §5.9). Title or summary changes alone are not recorded.
+   */
+  async function recordNoteActivity(node: KnowledgeNodeRecord): Promise<void> {
+    const latest = await timeline.findLatestForNode(workspaceId, node.id, 'note_updated');
+    if (latest !== null && continuesEditingSession(latest.lastActivityAt, node.updatedAt)) {
+      await timeline.extendSession(workspaceId, latest.id, node.updatedAt, node.title);
+      return;
+    }
+    await timeline.insert({
+      id: ids.newId() as TimelineEventId,
+      workspaceId,
+      nodeId: node.id,
+      nodeTitleSnapshot: node.title,
+      eventType: 'note_updated',
+      occurredAt: node.updatedAt,
+      lastActivityAt: node.updatedAt,
+      reflection: null,
+      isImported: false,
+      importOrigin: null,
+    });
+  }
+
   return {
     create: ({ title, summary = null }) =>
       transactions.runInTransaction(async () =>
@@ -176,6 +201,9 @@ export function createKnowledgeNodeService(
           revision: current.revision + 1,
           updatedAt: clock.now(),
         };
+        if (next.noteJson !== current.noteJson) {
+          await recordNoteActivity(next);
+        }
         if (!(await nodes.update(next, expectedRevision))) {
           // Cannot happen while local writes are serialized; guards adapters that allow
           // concurrent writers (e.g. a future server).

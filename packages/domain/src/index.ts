@@ -24,4 +24,5 @@ export * from './ports/repositories';
 export * from './ports/search';
 export * from './ports/transaction';
 export * from './text/labels';
+export * from './timeline/editing-session';
 export * from './workspace/workspace-name';

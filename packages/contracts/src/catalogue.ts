@@ -9,7 +9,7 @@
 
 import type { z } from 'zod';
 
-import { appInfoRequestSchema, appInfoSchema } from './app-info';
+import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
 import { nodeContracts } from './nodes';
 import { workspaceContracts } from './workspace';
@@ -24,6 +24,7 @@ export interface IpcContract<
 
 export const IPC_CATALOGUE = {
   [IPC_CHANNELS.appGetInfo]: { request: appInfoRequestSchema, response: appInfoSchema },
+  [IPC_CHANNELS.appOpenExternalLink]: openExternalLinkContract,
   [IPC_CHANNELS.workspaceGetState]: workspaceContracts.getState,
   [IPC_CHANNELS.workspaceListRecent]: workspaceContracts.listRecent,
   [IPC_CHANNELS.workspaceCreate]: workspaceContracts.create,

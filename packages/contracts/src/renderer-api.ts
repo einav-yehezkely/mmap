@@ -18,6 +18,7 @@ type BridgeCall<Channel extends IpcChannel> =
 export interface MmapRendererApi {
   readonly app: {
     readonly getInfo: BridgeCall<'app:get-info'>;
+    readonly openExternalLink: BridgeCall<'app:open-external-link'>;
   };
   readonly workspace: {
     readonly getState: BridgeCall<'workspace:get-state'>;

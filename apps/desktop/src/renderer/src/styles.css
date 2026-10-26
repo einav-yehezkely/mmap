@@ -75,3 +75,112 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Rich note content (Tiptap / ProseMirror). Kept as plain CSS because the markup is produced by
+ * the editor, not by React components.
+ */
+@layer components {
+  .note-content {
+    line-height: 1.65;
+  }
+  .note-content > * + * {
+    margin-top: 0.75em;
+  }
+  .note-content h1 {
+    font-size: 1.6em;
+    font-weight: 600;
+  }
+  .note-content h2 {
+    font-size: 1.35em;
+    font-weight: 600;
+  }
+  .note-content h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+  }
+  .note-content h4,
+  .note-content h5,
+  .note-content h6 {
+    font-weight: 600;
+  }
+  .note-content ul {
+    list-style: disc;
+    padding-inline-start: 1.5em;
+  }
+  .note-content ol {
+    list-style: decimal;
+    padding-inline-start: 1.5em;
+  }
+  .note-content ul[data-type='taskList'] {
+    list-style: none;
+    padding-inline-start: 0.25em;
+  }
+  .note-content ul[data-type='taskList'] li {
+    display: flex;
+    gap: 0.5em;
+    align-items: flex-start;
+  }
+  .note-content ul[data-type='taskList'] li > label {
+    margin-top: 0.3em;
+  }
+  .note-content blockquote {
+    border-inline-start: 3px solid var(--color-border);
+    padding-inline-start: 1em;
+    color: var(--color-muted-foreground);
+  }
+  .note-content code {
+    background: var(--color-muted);
+    border-radius: 0.25rem;
+    padding: 0.1em 0.3em;
+    font-size: 0.9em;
+  }
+  .note-content pre {
+    background: var(--color-muted);
+    border-radius: var(--radius);
+    padding: 0.75em 1em;
+    overflow-x: auto;
+    direction: ltr;
+  }
+  .note-content pre code {
+    background: none;
+    padding: 0;
+  }
+  .note-content a {
+    color: var(--color-primary);
+    text-decoration: underline;
+  }
+  .note-content hr {
+    border-top: 1px solid var(--color-border);
+  }
+  .note-content table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .note-content th,
+  .note-content td {
+    border: 1px solid var(--color-border);
+    padding: 0.35em 0.6em;
+    vertical-align: top;
+  }
+  .note-content th {
+    background: var(--color-muted);
+    font-weight: 600;
+    text-align: start;
+  }
+  .note-content .selectedCell {
+    outline: 2px solid var(--color-ring);
+  }
+  .note-content [data-type='inline-math'],
+  .note-content [data-type='block-math'] {
+    cursor: pointer;
+  }
+  .note-content [data-type='block-math'] {
+    text-align: center;
+    overflow-x: auto;
+  }
+  .note-content .ProseMirror-selectednode {
+    outline: 2px solid var(--color-ring);
+    border-radius: 0.25rem;
+  }
+}

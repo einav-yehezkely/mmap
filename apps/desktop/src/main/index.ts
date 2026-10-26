@@ -32,6 +32,7 @@ import {
 import { guardAllWebContents, hardenSession } from './security/harden-electron';
 import { resolveRendererLocation } from './security/trusted-origins';
 import { createAppInfoService } from './services/app-info-service';
+import { createExternalLinkService } from './services/external-link-service';
 import { createNodeIpcServices } from './services/node-ipc-services';
 import {
   createWorkspaceIpcServices,
@@ -164,6 +165,7 @@ async function startApplication(): Promise<void> {
           node: process.versions.node,
         },
       }),
+      'app:open-external-link': createExternalLinkService((url) => shell.openExternal(url)),
       ...createWorkspaceIpcServices(workspaces, nativeInteractions),
       ...createNodeIpcServices(workspaces),
     },

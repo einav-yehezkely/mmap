@@ -200,6 +200,54 @@ describe('update and revisions (PRD §5.2, §13 criterion 13)', () => {
   });
 });
 
+describe('timeline editing sessions (PRD §5.9)', () => {
+  function noteEvents(nodeId: NodeId) {
+    return connections
+      .forRead()
+      .prepare(
+        `SELECT occurred_at, last_activity_at FROM timeline_events
+         WHERE node_id = ? AND event_type = 'note_updated' ORDER BY occurred_at`,
+      )
+      .all(nodeId);
+  }
+
+  it('groups note saves into one event per session and starts a new one after 30 minutes', async () => {
+    const service = nodeService(WORKSPACE_A);
+    const node = await service.create({ title: 'Session' });
+    let revision = node.revision;
+    for (const word of ['a', 'ab', 'abc']) {
+      revision = (await service.update(node.id, revision, { note: paragraph(word) })).revision;
+    }
+    expect(noteEvents(node.id)).toHaveLength(1);
+    const [session] = noteEvents(node.id);
+    expect(session?.last_activity_at).not.toBe(session?.occurred_at);
+
+    clockMillis += 31 * 60 * 1_000;
+    await service.update(node.id, revision, { note: paragraph('after a break') });
+
+    expect(noteEvents(node.id)).toHaveLength(2);
+  });
+
+  it('does not record title-only changes as note updates', async () => {
+    const service = nodeService(WORKSPACE_A);
+    const node = await service.create({ title: 'Before' });
+
+    await service.update(node.id, 1, { title: 'After' });
+
+    expect(noteEvents(node.id)).toHaveLength(0);
+  });
+
+  it('does not record a save that leaves the note unchanged', async () => {
+    const service = nodeService(WORKSPACE_A);
+    const node = await service.create({ title: 'Same' });
+    const saved = await service.update(node.id, 1, { note: paragraph('x') });
+
+    await service.update(node.id, saved.revision, { note: paragraph('x'), title: 'Renamed' });
+
+    expect(noteEvents(node.id)).toHaveLength(1);
+  });
+});
+
 describe('list and pagination', () => {
   it('pages through all nodes without gaps or duplicates in every sort order', async () => {
     const service = nodeService(WORKSPACE_A);

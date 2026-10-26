@@ -108,6 +108,19 @@ export interface TimelineEventRecord {
 
 export interface TimelineEventRepository {
   insert(record: TimelineEventRecord): Promise<void>;
+  /** Most recent non-imported event of `eventType` for a node, or null. */
+  findLatestForNode(
+    workspaceId: WorkspaceId,
+    nodeId: NodeId,
+    eventType: TimelineEventType,
+  ): Promise<TimelineEventRecord | null>;
+  /** Extends an editing session: updates `lastActivityAt` and the title snapshot. */
+  extendSession(
+    workspaceId: WorkspaceId,
+    eventId: TimelineEventId,
+    lastActivityAt: UtcTimestamp,
+    nodeTitleSnapshot: string,
+  ): Promise<void>;
 }
 
 export interface WorkspaceRecord {

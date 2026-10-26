@@ -27,6 +27,11 @@ export type NodeEditor =
       readonly node: NodeView;
       readonly state: DraftState;
       readonly recovered: RecoveredDraft | null;
+      /**
+       * Increments whenever the draft is replaced from outside the editor (conflict resolution,
+       * draft recovery). Use as a React key so the rich-text editor reloads its content.
+       */
+      readonly contentVersion: number;
       readonly edit: (changes: Partial<NodeFields>) => void;
       readonly retry: () => void;
       readonly flush: () => Promise<void>;
@@ -58,6 +63,7 @@ export function useNodeEditor(workspaceId: string, nodeId: string): NodeEditor {
     | { phase: 'ready'; node: NodeView; saver: NodeDraftSaver; recovered: RecoveredDraft | null }
   >({ phase: 'loading' });
   const saverRef = useRef<NodeDraftSaver | null>(null);
+  const [contentVersion, setContentVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +134,9 @@ export function useNodeEditor(workspaceId: string, nodeId: string): NodeEditor {
       } else {
         await saver.resolveConflict(latest, choice);
       }
+      if (choice !== 'keep-mine') {
+        setContentVersion((version) => version + 1);
+      }
       notifyNodesChanged();
     },
     [saver, nodeId],
@@ -143,6 +152,7 @@ export function useNodeEditor(workspaceId: string, nodeId: string): NodeEditor {
       node,
       state,
       recovered,
+      contentVersion,
       edit: (changes) => activeSaver.edit(changes),
       retry: () => void activeSaver.retry(),
       flush: () => activeSaver.flush(),
@@ -151,11 +161,12 @@ export function useNodeEditor(workspaceId: string, nodeId: string): NodeEditor {
         if (recovered === null) return;
         activeSaver.edit(recovered.fields);
         setLoaded({ ...loaded, recovered: null });
+        setContentVersion((version) => version + 1);
       },
       discardRecovered: () => {
         writeRecoveredDraft(workspaceId, node.id, null);
         setLoaded({ ...loaded, recovered: null });
       },
     };
-  }, [loaded, state, resolveConflict, workspaceId]);
+  }, [loaded, state, resolveConflict, workspaceId, contentVersion]);
 }

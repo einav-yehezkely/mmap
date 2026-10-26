@@ -17,6 +17,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 const api: MmapRendererApi = {
   app: {
     getInfo: () => ipcRenderer.invoke(IPC_CHANNELS.appGetInfo),
+    openExternalLink: (request) => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternalLink, request),
   },
   workspace: {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceGetState),
