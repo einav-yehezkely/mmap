@@ -8,15 +8,15 @@
  *    can never display files of another workspace.
  * 2. The path is exactly one canonical attachment ID; no file names or paths are accepted.
  * 3. The attachment exists in the open workspace's database and is a raster image whose type was
- *    confirmed from its bytes when it was added. SVG and every other type are refused: SVG can
- *    contain scripts, and nothing but images is ever rendered inline.
+ *    confirmed from its bytes when it was added, with a matching file extension. SVG and every
+ *    other type are refused: SVG can contain scripts, and nothing but images is rendered inline.
  * 4. The stored relative path resolves to a regular file inside the attachments folder
  *    (`FileAttachmentStore.resolveExisting` checks traversal and symlink escapes).
  * The response carries the type recorded at import, `nosniff`, and no caching.
  */
 
-import { isCanonicalUuid, PREVIEWABLE_IMAGE_TYPES, type AttachmentId } from '@mmap/domain';
 import { ATTACHMENT_PREVIEW_SCHEME } from '@mmap/contracts';
+import { isCanonicalUuid, isPreviewableAttachment, type AttachmentId } from '@mmap/domain';
 
 export type PreviewResolution =
   | { readonly kind: 'file'; readonly absolutePath: string; readonly mimeType: string }
@@ -26,7 +26,7 @@ export interface PreviewDependencies {
   /** Looks up an attachment in the open workspace; null when none is open or it does not exist. */
   readonly findAttachment: (
     attachmentId: AttachmentId,
-  ) => Promise<{ relativePath: string; mimeType: string } | null>;
+  ) => Promise<{ relativePath: string; mimeType: string; originalName: string } | null>;
   /** Resolves a stored relative path to an absolute path inside the store, or null. */
   readonly resolveStoredFile: (relativePath: string) => Promise<string | null>;
 }
@@ -57,7 +57,7 @@ export async function resolveAttachmentPreview(
   if (attachment === null) {
     return { kind: 'rejected', status: 404 };
   }
-  if (!PREVIEWABLE_IMAGE_TYPES.has(attachment.mimeType)) {
+  if (!isPreviewableAttachment(attachment.mimeType, attachment.originalName)) {
     return { kind: 'rejected', status: 403 };
   }
 

@@ -6,15 +6,26 @@ import { resolveAttachmentPreview, type PreviewDependencies } from './attachment
 const PNG_ID = '90000000-0000-4000-8000-00000000000a';
 const SVG_ID = '90000000-0000-4000-8000-00000000000b';
 const MISSING_FILE_ID = '90000000-0000-4000-8000-00000000000c';
+const MISNAMED_ID = '90000000-0000-4000-8000-00000000000d';
 
 function dependencies(): PreviewDependencies & {
   findAttachment: ReturnType<typeof vi.fn<PreviewDependencies['findAttachment']>>;
 } {
-  const records: Record<string, { relativePath: string; mimeType: string }> = {
-    [PNG_ID]: { relativePath: '90/png.png', mimeType: 'image/png' },
-    [SVG_ID]: { relativePath: '90/svg.svg', mimeType: 'image/svg+xml' },
-    [MISSING_FILE_ID]: { relativePath: '90/gone.png', mimeType: 'image/png' },
-  };
+  const records: Record<string, { relativePath: string; mimeType: string; originalName: string }> =
+    {
+      [PNG_ID]: { relativePath: '90/png.png', mimeType: 'image/png', originalName: 'a.png' },
+      [SVG_ID]: { relativePath: '90/svg.svg', mimeType: 'image/svg+xml', originalName: 'a.svg' },
+      [MISSING_FILE_ID]: {
+        relativePath: '90/gone.png',
+        mimeType: 'image/png',
+        originalName: 'b.png',
+      },
+      [MISNAMED_ID]: {
+        relativePath: '90/x.png',
+        mimeType: 'image/jpeg',
+        originalName: 'photo.png',
+      },
+    };
   return {
     findAttachment: vi.fn((id: AttachmentId) => Promise.resolve(records[id] ?? null)),
     resolveStoredFile: (relativePath) =>
@@ -31,6 +42,12 @@ describe('resolveAttachmentPreview', () => {
       absolutePath: 'C:\\ws\\attachments\\90\\png.png',
       mimeType: 'image/png',
     });
+  });
+
+  it('refuses an image whose extension does not match its bytes', async () => {
+    await expect(
+      resolveAttachmentPreview(`mmap-attachment://current/${MISNAMED_ID}`, dependencies()),
+    ).resolves.toEqual({ kind: 'rejected', status: 403 });
   });
 
   it('refuses SVG, which can contain scripts', async () => {

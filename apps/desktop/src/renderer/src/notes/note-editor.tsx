@@ -43,6 +43,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import { FormDialog } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
+import { errorMessage, unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
 import type { AttachmentNodeAttributes } from './attachment-node';
 import { createNoteExtensions, KATEX_OPTIONS } from './editor-extensions';
@@ -75,6 +76,7 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
 
   const [mathEdit, setMathEdit] = useState<MathEditState | null>(null);
   const [linkEdit, setLinkEdit] = useState<{ href: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const editor = useEditor({
     extensions: createNoteExtensions({
@@ -102,7 +104,14 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
         );
         const attachmentId = element?.getAttribute('data-attachment-id');
         if (attachmentId) {
-          void window.mmap.attachments.open({ attachmentId });
+          // Feedback when opening fails: the file may be missing, removed, or refused on re-check.
+          void unwrap(window.mmap.attachments.open({ attachmentId })).then(
+            ({ opened }) =>
+              setNotice(
+                opened ? null : 'This file could not be opened. It may be missing or was removed.',
+              ),
+            (error: unknown) => setNotice(errorMessage(error)),
+          );
           return true;
         }
         return false;
@@ -147,6 +156,11 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
         Tip: Ctrl+click a link to open it in your browser. Click a formula to edit it. Double-click
         an attached file to open it.
       </p>
+      {notice && (
+        <p role="alert" className="mt-1 text-sm text-destructive">
+          {notice}
+        </p>
+      )}
       {mathEdit && (
         <MathDialog
           state={mathEdit}

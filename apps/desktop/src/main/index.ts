@@ -56,6 +56,10 @@ if (smokeTest) {
   // Isolate the smoke test from the user's real profile, settings and workspaces, and from a
   // running mmap instance: all of them live under `userData`.
   app.setPath('userData', mkdtempSync(join(tmpdir(), 'mmap-smoke-profile-')));
+} else if (!app.isPackaged) {
+  // Development builds use their own profile (`%APPDATA%\mmap-dev`). Otherwise a dev build could
+  // hold the lock on, or run an unreleased migration against, the user's real workspaces.
+  app.setPath('userData', join(app.getPath('appData'), 'mmap-dev'));
 }
 
 const rendererLocation = resolveRendererLocation(app.isPackaged, process.env.ELECTRON_RENDERER_URL);
@@ -233,7 +237,7 @@ async function startApplication(): Promise<void> {
   });
 
   if (smokeTest) {
-    const report = await runSmokeTest(mainWindow);
+    const report = await runSmokeTest(mainWindow, workspaces);
     await workspaces.close();
     writeSmokeReport(report, smokeReportPath(process.argv));
     app.exit(report.passed ? 0 : 1);

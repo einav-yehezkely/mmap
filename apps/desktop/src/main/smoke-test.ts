@@ -15,6 +15,9 @@ import { join } from 'node:path';
 import { verifySchemaOnFreshDatabase } from '@mmap/storage-sqlite';
 import type { BrowserWindow } from 'electron';
 
+import { checkAttachmentPreview } from './smoke-attachments';
+import type { WorkspaceManager } from './workspaces/workspace-manager';
+
 export interface SmokeTestCheck {
   readonly name: string;
   readonly passed: boolean;
@@ -40,7 +43,10 @@ export function smokeReportPath(argv: readonly string[]): string | undefined {
     ?.slice(REPORT_FLAG_PREFIX.length);
 }
 
-export async function runSmokeTest(window: BrowserWindow): Promise<SmokeTestReport> {
+export async function runSmokeTest(
+  window: BrowserWindow,
+  workspaces: WorkspaceManager,
+): Promise<SmokeTestReport> {
   const checks: SmokeTestCheck[] = [];
 
   checks.push(await check('sqlite migrations, FTS5 and integrity on a fresh file', verifyStorage));
@@ -134,6 +140,17 @@ export async function runSmokeTest(window: BrowserWindow): Promise<SmokeTestRepo
         })`)) as boolean;
       if (executed) {
         throw new Error('An injected inline script executed.');
+      }
+    }),
+  );
+
+  checks.push(
+    await check('attachment stored and previewed through mmap-attachment', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-attachment-'));
+      try {
+        await checkAttachmentPreview(window, workspaces, directory);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
       }
     }),
   );

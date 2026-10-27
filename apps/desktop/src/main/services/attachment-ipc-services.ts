@@ -91,9 +91,18 @@ export function createAttachmentIpcServices(
       return { cancelled: false, added, rejected };
     },
 
-    'attachments:list': async ({ nodeId }) => ({
-      items: await requireWorkspace().services.attachments.listForNode(nodeId as NodeId),
-    }),
+    'attachments:list': async ({ nodeId }) => {
+      const workspace = requireWorkspace();
+      const views = await workspace.services.attachments.listForNode(nodeId as NodeId);
+      return {
+        items: await Promise.all(
+          views.map(async (view) => ({
+            ...view,
+            fileAvailable: await isFileAvailable(workspace, view.id),
+          })),
+        ),
+      };
+    },
 
     'attachments:open': async ({ attachmentId }) => {
       const workspace = requireWorkspace();
@@ -162,17 +171,30 @@ async function addOneFile(
     maxBytes,
   );
   try {
-    return await workspace.services.attachments.register(nodeId, {
+    const view = await workspace.services.attachments.register(nodeId, {
       relativePath: stored.relativePath,
       displayName: classification.displayName,
       mimeType: classification.mimeType,
       byteSize: stored.byteSize,
       sha256: stored.sha256,
     });
+    return { ...view, fileAvailable: true };
   } catch (error) {
     await store.remove(stored.relativePath);
     throw error;
   }
+}
+
+/**
+ * Whether the managed copy exists. Files can go missing if someone edits the workspace folder by
+ * hand or restores an incomplete copy; the UI then says so instead of failing silently.
+ */
+async function isFileAvailable(
+  workspace: OpenWorkspace,
+  attachmentId: AttachmentId,
+): Promise<boolean> {
+  const record = await workspace.services.attachments.getStoredFile(attachmentId);
+  return (await workspace.attachmentStore.resolveExisting(record.relativePath)) !== null;
 }
 
 /** A file refused by the attachment policy; its message is shown to the user. */

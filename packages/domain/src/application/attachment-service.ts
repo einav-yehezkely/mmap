@@ -17,13 +17,28 @@ import type {
 } from '../ports/repositories';
 import type { TransactionRunner } from '../ports/transaction';
 
-/** Raster image types that may be previewed inside the app. SVG is excluded (it can carry scripts). */
-export const PREVIEWABLE_IMAGE_TYPES: ReadonlySet<string> = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
+/**
+ * Raster image types that may be previewed inside the app, with the file extensions that must
+ * match them. SVG is excluded (it can carry scripts).
+ */
+const PREVIEWABLE_EXTENSIONS_BY_TYPE: ReadonlyMap<string, readonly string[]> = new Map([
+  ['image/png', ['png']],
+  ['image/jpeg', ['jpg', 'jpeg']],
+  ['image/gif', ['gif']],
+  ['image/webp', ['webp']],
 ]);
+
+/**
+ * True when an attachment may be shown inline: its type was confirmed from its bytes when it was
+ * added (`mimeType`) AND its name carries a matching extension (`classifyAttachment` applies the
+ * same rule). A JPEG named `.png` is kept and can be opened, but is not previewed.
+ */
+export function isPreviewableAttachment(mimeType: string, displayName: string): boolean {
+  const extensions = PREVIEWABLE_EXTENSIONS_BY_TYPE.get(mimeType);
+  const dot = displayName.lastIndexOf('.');
+  const extension = dot === -1 ? '' : displayName.slice(dot + 1).toLowerCase();
+  return extensions !== undefined && extensions.includes(extension);
+}
 
 export interface AttachmentView {
   readonly id: AttachmentId;
@@ -31,7 +46,7 @@ export interface AttachmentView {
   readonly displayName: string;
   readonly mimeType: string;
   readonly byteSize: number;
-  /** True for raster images whose type was confirmed from their bytes. */
+  /** See `isPreviewableAttachment`. */
   readonly previewable: boolean;
   readonly createdAt: string;
 }
@@ -127,7 +142,7 @@ function toView(record: AttachmentRecord): AttachmentView {
     displayName: record.originalName,
     mimeType: record.mimeType,
     byteSize: record.byteSize,
-    previewable: PREVIEWABLE_IMAGE_TYPES.has(record.mimeType),
+    previewable: isPreviewableAttachment(record.mimeType, record.originalName),
     createdAt: record.createdAt,
   };
 }

@@ -14,6 +14,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { errorMessage, unwrap } from '../lib/ipc';
 import { useWorkspace } from './workspace-context';
+import { CloudSyncWarning } from './cloud-sync-warning';
 import { WorkspaceSwitcher } from './workspace-switcher';
 
 export function WorkspaceSettings({ workspace }: { workspace: WorkspaceSummary }) {
@@ -71,13 +72,7 @@ export function WorkspaceSettings({ workspace }: { workspace: WorkspaceSummary }
             Open folder
           </Button>
         </div>
-        {workspace.cloudSyncProvider && (
-          <p role="note" className="text-sm text-destructive">
-            This folder appears to be synced by {workspace.cloudSyncProvider}. Live sync can damage
-            an open database. Move the workspace to a local folder and use backups or export to
-            transfer it.
-          </p>
-        )}
+        {workspace.cloudSyncProvider && <CloudSyncWarning provider={workspace.cloudSyncProvider} />}
       </div>
 
       {message && (

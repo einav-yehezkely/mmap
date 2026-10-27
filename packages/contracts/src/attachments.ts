@@ -16,6 +16,8 @@ export const attachmentViewSchema = z.strictObject({
   byteSize: z.number().int().nonnegative(),
   /** Raster image confirmed from its bytes; may be shown inline via the preview protocol. */
   previewable: z.boolean(),
+  /** False when the managed copy is missing from the workspace folder (reported, never hidden). */
+  fileAvailable: z.boolean(),
   createdAt: z.string(),
 });
 

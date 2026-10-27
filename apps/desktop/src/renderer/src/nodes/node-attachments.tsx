@@ -97,12 +97,22 @@ export function NodeAttachments({
                 <span dir="auto" className="min-w-0 flex-1 truncate" title={item.displayName}>
                   {item.displayName}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {formatByteSize(item.byteSize)}
-                </span>
+                {item.fileAvailable ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {formatByteSize(item.byteSize)}
+                  </span>
+                ) : (
+                  <span
+                    className="shrink-0 rounded-full border border-destructive px-2 text-xs text-destructive"
+                    title="The copy in the workspace folder is missing. Remove this entry and attach the file again."
+                  >
+                    File missing
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
+                  disabled={!item.fileAvailable}
                   aria-label={`Open ${item.displayName}`}
                   title="Open with the default application"
                   onClick={() =>

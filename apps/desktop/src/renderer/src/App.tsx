@@ -17,6 +17,7 @@ import { NodeDetailPanel } from './nodes/node-detail-panel';
 import { notifyNodesChanged } from './nodes/node-events';
 import { ComingSoonView } from './views/coming-soon-view';
 import { SettingsView } from './views/settings-view';
+import { CloudSyncWarning } from './workspace/cloud-sync-warning';
 import { useWorkspace } from './workspace/workspace-context';
 import { WorkspaceSetupView } from './workspace/workspace-setup-view';
 
@@ -115,6 +116,11 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
           <p role="alert" className="border-b px-6 py-2 text-sm text-destructive">
             {createError}
           </p>
+        )}
+        {workspace.cloudSyncProvider && (
+          <div className="border-b px-6 py-2">
+            <CloudSyncWarning provider={workspace.cloudSyncProvider} />
+          </div>
         )}
 
         <div className="flex min-h-0 flex-1">

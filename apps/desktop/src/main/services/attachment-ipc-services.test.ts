@@ -193,6 +193,27 @@ describe('attachments:open', () => {
   });
 });
 
+describe('attachments:list', () => {
+  it('reports a managed copy that went missing instead of hiding it', async () => {
+    const nodeId = await createNode();
+    chosenFiles = [source('kept.txt', 'kept'), source('lost.txt', 'lost')];
+    const { added } = await services()['attachments:add']({ nodeId });
+    const lost = added.find((item) => item.displayName === 'lost.txt');
+    const record = await manager.current!.services.attachments.getStoredFile(lost!.id as never);
+    rmSync((await manager.current!.attachmentStore.resolveExisting(record.relativePath))!);
+
+    const { items } = await services()['attachments:list']({ nodeId });
+
+    expect(items.map((item) => [item.displayName, item.fileAvailable])).toEqual([
+      ['kept.txt', true],
+      ['lost.txt', false],
+    ]);
+    await expect(services()['attachments:open']({ attachmentId: lost!.id })).resolves.toEqual({
+      opened: false,
+    });
+  });
+});
+
 describe('removal and cleanup', () => {
   it('removes the managed copy with the attachment', async () => {
     const nodeId = await createNode();

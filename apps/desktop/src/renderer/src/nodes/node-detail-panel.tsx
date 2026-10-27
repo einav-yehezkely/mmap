@@ -282,7 +282,9 @@ function DeletePreview({ dependents }: { dependents: NodeDependentsView }) {
   const affected = lines.filter(([count]) => count > 0);
   return (
     <>
-      <p>This cannot be undone. Backups and exports you made earlier are not affected.</p>
+      <p>
+        This cannot be undone. Copies of the workspace folder you made earlier are not affected.
+      </p>
       {affected.length === 0 ? (
         <p>Nothing else refers to this node.</p>
       ) : (
