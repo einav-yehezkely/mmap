@@ -4,11 +4,22 @@
  *
  * Opening an item opens its node in the shared detail panel, the same editor used everywhere
  * else (PRD §6); edits there show up on every map because maps only place nodes.
+ *
+ * Connector changes (drawing, removing, moving an end) can be undone: a notice with "Undo"
+ * appears after each one, and Ctrl+Z undoes them one by one, most recent first.
  */
 
 import type { MapViewDto } from '@mmap/contracts';
-import { ArrowLeft, GitFork, Move } from 'lucide-react';
-import { useCallback, useId, useMemo, useState } from 'react';
+import { ArrowLeft, GitFork, Move, Undo2, X } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 
 import { Button } from '../components/ui/button';
 import { notifyNodesChanged } from '../nodes/node-events';
@@ -19,6 +30,30 @@ import { MapOutline } from './map-outline';
 import { PLACEMENT_COLOR_OPTIONS, type PlacementColor } from './placement-colors';
 import { SwitchToHierarchyDialog } from './switch-to-hierarchy-dialog';
 import { useMapDocument } from './use-map-document';
+
+/** What is needed to draw a connector again. */
+interface ConnectorSnapshot {
+  readonly sourcePlacementId: string;
+  readonly targetPlacementId: string;
+  readonly label: string | null;
+  readonly relationshipId: string | null;
+}
+
+/** A connector change that can be undone. */
+type ConnectorChange =
+  | { readonly kind: 'added'; readonly connectionId: string }
+  | { readonly kind: 'removed'; readonly connectors: readonly ConnectorSnapshot[] }
+  | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot };
+
+const UNDO_LIMIT = 20;
+/** How long the "Undo" notice stays; Ctrl+Z keeps working afterwards. */
+const UNDO_NOTICE_MS = 10_000;
+
+const CHANGE_TEXT: Record<ConnectorChange['kind'], string> = {
+  added: 'Connector added.',
+  removed: 'Connector removed.',
+  moved: 'Connector moved.',
+};
 
 export interface MapEditorProps {
   readonly mapId: string;
@@ -71,6 +106,96 @@ function LoadedMapEditor({
   const [adding, setAdding] = useState<{ parentId: string | null } | null>(null);
   const [reviewingHierarchy, setReviewingHierarchy] = useState(false);
   const colorSelectId = useId();
+  const [undoStack, setUndoStack] = useState<readonly ConnectorChange[]>([]);
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (noticeTimer.current !== null) clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
+
+  const remember = useCallback((change: ConnectorChange) => {
+    setUndoStack((stack) => [...stack.slice(-(UNDO_LIMIT - 1)), change]);
+    setNoticeVisible(true);
+    if (noticeTimer.current !== null) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNoticeVisible(false), UNDO_NOTICE_MS);
+  }, []);
+
+  /** Draws a connector; resolves with its ID, or null when it was not added. */
+  const createConnector = useCallback(
+    async (connector: ConnectorSnapshot): Promise<string | null> => {
+      let createdId: string | null = null;
+      const ok = await apply(async (mapId, expectedRevision, current) => {
+        const result = await window.mmap.maps.addConnection({
+          mapId,
+          expectedRevision,
+          ...connector,
+        });
+        if (result.ok) {
+          createdId =
+            result.data.connections.find(
+              (connection) => !current.connections.some((old) => old.id === connection.id),
+            )?.id ?? null;
+        }
+        return result;
+      });
+      return ok ? createdId : null;
+    },
+    [apply],
+  );
+
+  const deleteConnector = useCallback(
+    (connectionId: string) =>
+      apply((mapId, expectedRevision) =>
+        window.mmap.maps.removeConnection({ mapId, expectedRevision, connectionId }),
+      ),
+    [apply],
+  );
+
+  const snapshotOf = (connectionId: string): ConnectorSnapshot | null => {
+    const connection = view.connections.find((item) => item.id === connectionId);
+    return connection === undefined
+      ? null
+      : {
+          sourcePlacementId: connection.sourcePlacementId,
+          targetPlacementId: connection.targetPlacementId,
+          label: connection.label,
+          relationshipId: connection.relationshipId,
+        };
+  };
+
+  /** Reverses the most recent connector change. */
+  const undo = useCallback(async () => {
+    const change = undoStack.at(-1);
+    if (change === undefined) return;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setNoticeVisible(false);
+    switch (change.kind) {
+      case 'added':
+        await deleteConnector(change.connectionId);
+        break;
+      case 'removed':
+        for (const connector of change.connectors) await createConnector(connector);
+        break;
+      case 'moved':
+        if (await deleteConnector(change.connectionId)) await createConnector(change.previous);
+        break;
+    }
+  }, [undoStack, createConnector, deleteConnector]);
+
+  /** Ctrl+Z anywhere in the editor, except while typing in a field. */
+  const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z' || event.shiftKey) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, select, [contenteditable="true"]') !== null) return;
+    if (undoStack.length === 0) return;
+    event.preventDefault();
+    void undo();
+  };
 
   const selected = view.placements.find((placement) => placement.id === selectedId) ?? null;
   const isHierarchy = view.map.mode === 'hierarchical';
@@ -110,35 +235,65 @@ function LoadedMapEditor({
     [apply],
   );
 
-  const onRemove = useCallback(
-    (placementIds: readonly string[], connectionIds: readonly string[]) => {
+  const onRemove = (placementIds: readonly string[], connectionIds: readonly string[]) => {
+    const removed = connectionIds
+      .map(snapshotOf)
+      .filter((connector): connector is ConnectorSnapshot => connector !== null);
+    void (async () => {
+      let allRemoved = true;
       for (const connectionId of connectionIds) {
-        void apply((mapId, expectedRevision) =>
-          window.mmap.maps.removeConnection({ mapId, expectedRevision, connectionId }),
-        );
+        allRemoved = (await deleteConnector(connectionId)) && allRemoved;
       }
-      for (const placementId of placementIds) {
-        void apply((mapId, expectedRevision) =>
-          window.mmap.maps.removePlacement({ mapId, expectedRevision, placementId }),
-        );
-      }
-      setSelectedId(null);
-    },
-    [apply],
-  );
-
-  const onConnect = useCallback(
-    (sourcePlacementId: string, targetPlacementId: string) =>
+      if (removed.length > 0 && allRemoved) remember({ kind: 'removed', connectors: removed });
+    })();
+    for (const placementId of placementIds) {
       void apply((mapId, expectedRevision) =>
-        window.mmap.maps.addConnection({
-          mapId,
-          expectedRevision,
-          sourcePlacementId,
-          targetPlacementId,
-        }),
-      ),
-    [apply],
-  );
+        window.mmap.maps.removePlacement({ mapId, expectedRevision, placementId }),
+      );
+    }
+    if (placementIds.length > 0) setSelectedId(null);
+  };
+
+  const onConnect = (sourcePlacementId: string, targetPlacementId: string) =>
+    void createConnector({
+      sourcePlacementId,
+      targetPlacementId,
+      label: null,
+      relationshipId: null,
+    }).then((connectionId) => {
+      if (connectionId !== null) remember({ kind: 'added', connectionId });
+    });
+
+  /**
+   * Moves a connector's end to another item: the old connector is replaced by one with the same
+   * label. A link to a relationship is kept only while the connector still joins the same nodes.
+   */
+  const onReconnect = (
+    connectionId: string,
+    sourcePlacementId: string,
+    targetPlacementId: string,
+  ) => {
+    const previous = snapshotOf(connectionId);
+    if (previous === null) return;
+    const nodeOf = (placementId: string) =>
+      view.placements.find((placement) => placement.id === placementId)?.nodeId;
+    const sameNodes =
+      new Set([nodeOf(sourcePlacementId), nodeOf(targetPlacementId)]).size === 2 &&
+      [nodeOf(sourcePlacementId), nodeOf(targetPlacementId)].every((node) =>
+        [nodeOf(previous.sourcePlacementId), nodeOf(previous.targetPlacementId)].includes(node),
+      );
+    void (async () => {
+      if (!(await deleteConnector(connectionId))) return;
+      const createdId = await createConnector({
+        sourcePlacementId,
+        targetPlacementId,
+        label: previous.label,
+        relationshipId: sameNodes ? previous.relationshipId : null,
+      });
+      if (createdId !== null) remember({ kind: 'moved', connectionId: createdId, previous });
+      else await createConnector(previous);
+    })();
+  };
 
   const switchToHierarchy = async (
     parents: readonly { placementId: string; parentPlacementId: string | null }[],
@@ -160,7 +315,7 @@ function LoadedMapEditor({
     );
 
   return (
-    <div className="flex h-full min-h-[520px] flex-col gap-3">
+    <div className="flex h-full min-h-[520px] flex-col gap-3" onKeyDown={onEditorKeyDown}>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
@@ -240,7 +395,28 @@ function LoadedMapEditor({
       )}
 
       <div className="flex min-h-0 flex-1 gap-3">
-        <div className="min-w-0 flex-1 rounded-md border">
+        <div className="relative min-w-0 flex-1 rounded-md border">
+          {noticeVisible && undoStack.length > 0 && (
+            <div
+              role="status"
+              className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border bg-background px-3 py-1.5 text-sm shadow-md"
+            >
+              <span>{CHANGE_TEXT[undoStack.at(-1)!.kind]}</span>
+              <Button size="sm" variant="outline" onClick={() => void undo()}>
+                <Undo2 aria-hidden="true" />
+                Undo
+              </Button>
+              <span className="text-xs text-muted-foreground">Ctrl+Z</span>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Dismiss"
+                onClick={() => setNoticeVisible(false)}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+          )}
           <MapCanvas
             view={view}
             selectedPlacementId={selectedId}
@@ -250,6 +426,7 @@ function LoadedMapEditor({
             onConnect={onConnect}
             onToggleCollapse={onToggleCollapse}
             onRemove={onRemove}
+            onReconnect={onReconnect}
             onViewportChange={document.saveViewport}
           />
         </div>
@@ -306,34 +483,39 @@ function LoadedMapEditor({
   );
 }
 
-/** Explains the two kinds of lines (PRD §14: keep visual structure and meaning distinct). */
+/**
+ * What the lines mean and how to edit them (PRD §14: keep visual structure and meaning distinct).
+ * Collapsed by default, like the keyboard shortcuts, so the outline keeps the space.
+ */
 function MapLegend({ isHierarchy }: { isHierarchy: boolean }) {
   return (
-    <div className="space-y-1 rounded-md border p-2 text-xs text-muted-foreground">
-      <p className="font-medium text-foreground">On this map</p>
-      {isHierarchy && (
-        <p>
-          <span aria-hidden="true">└─ </span>Gray angled lines: hierarchy. It organizes this map
-          only and does not create relationships.
-        </p>
-      )}
-      <p>
-        <span aria-hidden="true">- → </span>Dashed arrows: map connectors. They are visual only; a
-        type in brackets means the connector shows an existing relationship.
-      </p>
-      <p>
-        <span aria-hidden="true" className="text-[var(--relationship-line)]">
-          ⌒{' '}
-        </span>
-        Colored curved lines: relationships between nodes on this map, with their type (an arrow
-        when the relationship has a direction). Every map with both nodes shows them; edit them on
-        the node.
-      </p>
-      <p>
-        {isHierarchy
-          ? 'Use the outline to add, reorder, indent and outdent items.'
-          : 'Drag from the right edge of an item to another item to draw a connector. Double-click an item to open it.'}
-      </p>
-    </div>
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">How this map works</summary>
+      <ul className="mt-1 space-y-1">
+        {isHierarchy && (
+          <li>
+            <span aria-hidden="true">└─ </span>Gray lines: the map's hierarchy (no meaning).
+          </li>
+        )}
+        <li>
+          <span aria-hidden="true">- → </span>Dashed: connectors, on this map only.
+        </li>
+        <li>
+          <span aria-hidden="true" className="text-[var(--relationship-line)]">
+            ⌒{' '}
+          </span>
+          Colored: relationships between nodes; edit them on the node.
+        </li>
+        {isHierarchy ? (
+          <li>Use the outline to add, move and indent items.</li>
+        ) : (
+          <>
+            <li>Drag from an item's right dot to another item to connect.</li>
+            <li>Click a connector, then × or Delete to remove it; drag its end to move it.</li>
+            <li>Ctrl+Z undoes connector changes. Double-click an item to open it.</li>
+          </>
+        )}
+      </ul>
+    </details>
   );
 }

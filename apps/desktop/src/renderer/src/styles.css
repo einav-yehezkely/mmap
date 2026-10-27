@@ -264,6 +264,32 @@
   stroke-dasharray: 6 4;
 }
 
+/* Connection dots on map items: large enough to grab, highlighted on hover. */
+.react-flow__node .react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--background);
+  background: var(--muted-foreground);
+}
+
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  background: var(--primary);
+}
+
+/* The line following the cursor while a connector is drawn or moved. */
+.react-flow__connection-path {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
+/* A selected connector is drawn thicker. */
+.react-flow__edge.mmap-connector-line.selected .react-flow__edge-path {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
 /* Semantic relationships between nodes on a map: solid, colored, not editable on the map. */
 .react-flow__edge.mmap-relationship-line .react-flow__edge-path {
   stroke: var(--relationship-line);
