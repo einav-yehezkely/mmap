@@ -284,6 +284,15 @@
   stroke-width: 2.5;
 }
 
+/* The ends of a selected connector show round grips: drag one to move that end. */
+.react-flow__edge.mmap-connector-line.selected .react-flow__edgeupdater {
+  r: 7px;
+  fill: var(--primary);
+  stroke: var(--background);
+  stroke-width: 2px;
+  cursor: grab;
+}
+
 /* A selected connector is drawn thicker. */
 .react-flow__edge.mmap-connector-line.selected .react-flow__edge-path {
   stroke: var(--primary);

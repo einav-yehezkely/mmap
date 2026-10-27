@@ -9,8 +9,8 @@
  * Keyboard: items are focusable; arrow keys move selected items in freeform mode (saved like a
  * drag); Delete removes the selection from the map while focus is in the canvas. The outline next to the canvas offers the full keyboard workflow.
  *
- * Connectors (freeform mode): drag from the dot on an item's right edge to another item to draw
- * one. A connector is easy to hit (wide invisible stroke); a selected one shows a remove button.
+ * Connectors (freeform mode): drag from either dot of an item to another item to draw one; a
+ * dashed line follows the cursor. A connector is easy to hit (wide invisible stroke); a selected one shows a remove button.
  * Dragging either end of a connector onto another item moves it there; dropping the end on empty
  * canvas removes it. The editor offers Undo for all of these.
  */
@@ -24,6 +24,7 @@ import {
   Background,
   BaseEdge,
   ConnectionLineType,
+  ConnectionMode,
   EdgeLabelRenderer,
   getBezierPath,
   Controls,
@@ -126,7 +127,7 @@ const PlacementNode = memo(function PlacementNode({
         selected && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
       )}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle id="in" type="target" position={Position.Left} />
       <span dir="auto" className="min-w-0 break-words">
         {placement.nodeTitle}
       </span>
@@ -153,7 +154,7 @@ const PlacementNode = memo(function PlacementNode({
           )}
         </button>
       )}
-      <Handle type="source" position={Position.Right} />
+      <Handle id="out" type="source" position={Position.Right} />
     </div>
   );
 });
@@ -222,6 +223,8 @@ export function MapCanvas({
     (connectionId: string) => latestOnRemove.current([], [connectionId]),
     [],
   );
+  /** Item a new connector is being drawn from (see onConnect). */
+  const connectFrom = useRef<string | null>(null);
   /** Whether the connector end being dragged landed on an item (see onReconnectEnd). */
   const reconnected = useRef(true);
   const model = useMemo(() => buildCanvasModel(view), [view]);
@@ -426,11 +429,24 @@ export function MapCanvas({
         connectionLineType={ConnectionLineType.Bezier}
         connectionLineStyle={{ stroke: 'var(--primary)', strokeWidth: 2.5, strokeDasharray: '6 4' }}
         connectionRadius={40}
+        // Either dot of an item starts or ends a connector (the left one used to do nothing when
+        // dragged), and a connector's end can be grabbed from a little way off.
+        connectionMode={ConnectionMode.Loose}
+        reconnectRadius={18}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
+        onConnectStart={(_event, { nodeId }) => {
+          connectFrom.current = nodeId;
+        }}
         onConnect={(connection: Connection) => {
-          if (connection.source !== connection.target) {
+          if (connection.source === connection.target) return;
+          // A connector always points away from the item the drag started on, whichever of its
+          // dots was used (with either dot allowed, a drag from the left dot reports that item as
+          // the target).
+          if (connectFrom.current === connection.target) {
+            onConnect(connection.target, connection.source);
+          } else {
             onConnect(connection.source, connection.target);
           }
         }}

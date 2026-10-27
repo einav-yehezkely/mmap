@@ -494,24 +494,29 @@ function MapLegend({ isHierarchy }: { isHierarchy: boolean }) {
       <ul className="mt-1 space-y-1">
         {isHierarchy && (
           <li>
-            <span aria-hidden="true">└─ </span>Gray lines: the map's hierarchy (no meaning).
+            <span aria-hidden="true">└─ </span>Gray lines connect an item to the items placed under
+            it.
           </li>
         )}
         <li>
-          <span aria-hidden="true">- → </span>Dashed: connectors, on this map only.
+          <span aria-hidden="true">- → </span>Dashed arrows are lines you drew here yourself. Other
+          maps don&apos;t show them.
         </li>
         <li>
           <span aria-hidden="true" className="text-[var(--relationship-line)]">
             ⌒{' '}
           </span>
-          Colored: relationships between nodes; edit them on the node.
+          Colored lines are relationships between notes (like &ldquo;depends on&rdquo;). Every map
+          with both notes shows them; change them in the note.
         </li>
         {isHierarchy ? (
           <li>Use the outline to add, move and indent items.</li>
         ) : (
           <>
-            <li>Drag from an item's right dot to another item to connect.</li>
-            <li>Click a connector, then × or Delete to remove it; drag its end to move it.</li>
+            <li>Drag from an item's dot to another item to connect them.</li>
+            <li>
+              Click a connector, then × or Delete to remove it; drag its round end to move it.
+            </li>
             <li>Ctrl+Z undoes connector changes. Double-click an item to open it.</li>
           </>
         )}
