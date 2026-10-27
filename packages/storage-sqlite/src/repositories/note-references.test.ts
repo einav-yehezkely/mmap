@@ -22,7 +22,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SqliteConnections } from '../sqlite-connections';
 import { openWorkspaceDatabase } from '../workspace-database';
 import { SqliteKnowledgeNodeRepository } from './sqlite-knowledge-node-repository';
-import { SqliteNoteReferenceRepository } from './sqlite-note-reference-repository';
+import {
+  DELETE_REFERENCES_OF_SOURCE,
+  SqliteNoteReferenceRepository,
+} from './sqlite-note-reference-repository';
 import { SqliteRelationshipTypeRepository } from './sqlite-relationship-type-repository';
 import { SqliteTagRepository } from './sqlite-tag-repository';
 import { SqliteTimelineEventRepository } from './sqlite-timeline-event-repository';
@@ -209,5 +212,20 @@ describe('workspace isolation', () => {
 
     await expect(b.backlinks(foreign.id)).resolves.toEqual([]);
     await expect(a.resolveLinkTargets([foreign.id])).resolves.toEqual([]);
+  });
+});
+
+describe('query plans', () => {
+  // Regression: the reference rebuild on every save used the (workspace_id, target_node_id)
+  // index and scanned all references of the workspace, which made large imports quadratic.
+  it('removes a note’s references through the primary key, not a workspace scan', () => {
+    const plan = connections
+      .forRead()
+      .prepare(`EXPLAIN QUERY PLAN ${DELETE_REFERENCES_OF_SOURCE}`)
+      .all('source', 'workspace')
+      .map((row) => String(row.detail));
+    expect(plan).toEqual([
+      'SEARCH note_references USING INDEX sqlite_autoindex_note_references_1 (source_node_id=?)',
+    ]);
   });
 });

@@ -10,6 +10,15 @@ import type {
 
 import type { SqliteConnections } from '../sqlite-connections';
 
+/**
+ * Removes a note's references before they are rebuilt (every note save). The unary `+` keeps
+ * SQLite from choosing the `(workspace_id, target_node_id)` index, which would scan every
+ * reference in the workspace; the primary key `(source_node_id, ordinal)` finds exactly the
+ * note's rows. The workspace condition still applies.
+ */
+export const DELETE_REFERENCES_OF_SOURCE =
+  'DELETE FROM note_references WHERE source_node_id = ? AND +workspace_id = ?';
+
 export class SqliteNoteReferenceRepository implements NoteReferenceRepository {
   public constructor(private readonly connections: SqliteConnections) {}
 
@@ -19,9 +28,7 @@ export class SqliteNoteReferenceRepository implements NoteReferenceRepository {
     references: readonly NoteReferenceInput[],
   ): Promise<void> {
     const database = this.connections.forWrite();
-    database
-      .prepare('DELETE FROM note_references WHERE workspace_id = ? AND source_node_id = ?')
-      .run(workspaceId, sourceNodeId);
+    database.prepare(DELETE_REFERENCES_OF_SOURCE).run(sourceNodeId, workspaceId);
     // INSERT … SELECT … WHERE EXISTS stores a reference only when its target exists in this
     // workspace. Links to deleted or foreign nodes stay in the note JSON and render as unresolved.
     const insert = database.prepare(
