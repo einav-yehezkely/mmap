@@ -79,6 +79,25 @@ const api: MmapRendererApi = {
     update: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsUpdate, request),
     delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsDelete, request),
   },
+  maps: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),
+    create: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsCreate, request),
+    get: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsGet, request),
+    rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRename, request),
+    duplicate: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsDuplicate, request),
+    delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsDelete, request),
+    setViewport: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSetViewport, request),
+    addPlacement: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsAddPlacement, request),
+    removePlacement: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRemovePlacement, request),
+    movePlacements: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsMovePlacements, request),
+    reparent: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsReparent, request),
+    setCollapsed: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSetCollapsed, request),
+    setPlacementColor: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSetPlacementColor, request),
+    addConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsAddConnection, request),
+    removeConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRemoveConnection, request),
+    proposeHierarchy: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsProposeHierarchy, request),
+    switchMode: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSwitchMode, request),
+  },
 };
 
 contextBridge.exposeInMainWorld('mmap', api);

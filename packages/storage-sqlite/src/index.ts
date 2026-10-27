@@ -4,6 +4,7 @@ export * from './connection';
 export * from './migrations';
 export * from './repositories/sqlite-attachment-repository';
 export * from './repositories/sqlite-knowledge-node-repository';
+export * from './repositories/sqlite-map-repository';
 export * from './repositories/sqlite-note-reference-repository';
 export * from './repositories/sqlite-relationship-repository';
 export * from './repositories/sqlite-relationship-type-repository';

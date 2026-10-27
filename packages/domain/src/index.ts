@@ -8,6 +8,7 @@
 
 export * from './application/attachment-service';
 export * from './application/knowledge-node-service';
+export * from './application/map-service';
 export * from './application/relationship-service';
 export * from './application/tag-service';
 export * from './application/workspace-service';
@@ -18,11 +19,15 @@ export * from './ids';
 export * from './knowledge/builtin-relationship-types';
 export * from './knowledge/node-fields';
 export * from './knowledge/relationship-rules';
+export * from './maps/hierarchy';
+export * from './maps/hierarchy-proposal';
+export * from './maps/tree-layout';
 export * from './notes/link-policy';
 export * from './notes/note-document';
 export * from './notes/note-references';
 export * from './notes/plain-text';
 export * from './ports/attachment-store';
+export * from './ports/map-repository';
 export * from './ports/pagination';
 export * from './ports/repositories';
 export * from './ports/search';

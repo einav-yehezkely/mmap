@@ -11,6 +11,7 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { errorMessage, unwrap } from './lib/ipc';
 import { cn } from './lib/utils';
+import { MapsView } from './maps/maps-view';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
 import { LibraryView } from './nodes/library-view';
 import { NodeDetailPanel } from './nodes/node-detail-panel';
@@ -175,10 +176,13 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                 onCreateNode={() => void createNode()}
               />
             )}
+            {activeItem?.id === 'maps' && (
+              <MapsView timeZone={workspace.timezone} onOpenNode={setOpenNodeId} />
+            )}
             {activeView === 'search' && (
               <SearchView query={searchQuery} onOpenNode={setOpenNodeId} />
             )}
-            {activeItem && activeItem.id !== 'settings' && activeItem.id !== 'library' && (
+            {activeItem && (activeItem.id === 'graph' || activeItem.id === 'timeline') && (
               <ComingSoonView item={activeItem} />
             )}
           </main>

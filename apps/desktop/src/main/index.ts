@@ -40,6 +40,7 @@ import {
 } from './services/attachment-ipc-services';
 import { createExternalLinkService } from './services/external-link-service';
 import { createNodeIpcServices } from './services/node-ipc-services';
+import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
 import {
   createWorkspaceIpcServices,
@@ -215,6 +216,7 @@ async function startApplication(): Promise<void> {
       ...createWorkspaceIpcServices(workspaces, nativeInteractions),
       ...createNodeIpcServices(workspaces),
       ...createRelationshipIpcServices(workspaces),
+      ...createMapIpcServices(workspaces),
       ...createAttachmentIpcServices({
         currentWorkspace: () => workspaces.current,
         maxAttachmentBytes: async () =>

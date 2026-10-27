@@ -79,13 +79,14 @@ Relationship types (seeded defaults, custom, archive), relationship CRUD with di
 uniqueness rules, wikilink picker and reference reconciliation in the note-save transaction,
 backlinks with excerpts, unresolved-link repair, FTS5 search with title boosting, snippets,
 filters, pagination; search benchmark harness on the PRD dataset.
-Implemented on branch `phase-2-connections`; see [§7](#7-phase-2-status-2026-10-27).
+Merged into `main`; see [§7](#7-phase-2-status-2026-10-27).
 
 ### Phase 3 — Mind maps
 
 Map CRUD/duplicate, placements of canonical nodes, React Flow freeform mode, hierarchical
 mode with deterministic layout, cycle rejection, reviewed freeform→hierarchy conversion,
 viewport/coordinates persistence, map revisions, keyboard alternatives.
+Implemented on branch `phase-3-mind-maps`; see [§8](#8-phase-3-status-2026-10-27).
 
 ### Phase 4 — Graph and timeline
 
@@ -226,3 +227,70 @@ linking-note counts.
   structured accessibility check of them (Phase 5).
 - **Worker thread** (carried from Phases 0 and 1). Search and all other database work still run on
   the main process thread.
+
+## 8. Phase 3 status (2026-10-27)
+
+Implemented on branch `phase-3-mind-maps` (not yet committed at the time of writing; see
+`git status`). No migration was needed: the `mind_maps`, `map_placements` and `map_connections`
+tables, the cycle trigger and the parent foreign key already existed in migration 1. Test suite:
+882 passing tests in 45 files plus one benchmark file that is skipped by default
+([testing.md](testing.md)).
+
+| PRD §12 exit criterion / deliverable           | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exit: shared content stays consistent          | `map-service.test.ts`, "shows one node with the same content in two maps; moving one leaves the other (criterion 6)": a renamed node shows its new title on both maps, and moving its placement on one map leaves the other placement where it was. Placements store no node content; `SqliteMapRepository.listPlacements` joins the current title. The open map reloads on every node change event. Packaged smoke check "mind maps reuse nodes, persist layout and keep nodes on delete". |
+| Exit: map deletion preserves nodes             | `map-service.test.ts`, "creates, lists, renames and deletes maps; deletion keeps the nodes (criterion 8)" and "removes a placement without deleting its node; its children take its place". The delete confirmation says how many nodes stay in the library. Same packaged smoke check.                                                                                                                                                                                                     |
+| Exit: hierarchy cycles rejected                | Domain: `hierarchy.test.ts` (`wouldCreateCycle`, `planMove`, including corrupt cyclic input and a 10,000-deep chain) and `hierarchy-proposal.test.ts` (reviewed assignments with cycles or self-parents are refused). Service: `map-service.test.ts`, "reorders siblings and rejects cycles (exit criterion)" (`INVARIANT_VIOLATION`, map unchanged). Database: trigger `map_placements_reject_cycles`, tested in `initial-schema.test.ts`.                                                 |
+| Multiple maps (PRD §5.6)                       | `MapService` (`packages/domain/src/application/map-service.ts`): create (freeform or hierarchy), rename, duplicate (same canonical nodes, new placement IDs, hierarchy and connectors copied), delete; `maps-view.tsx` lists maps with mode, item count and last change                                                                                                                                                                                                                     |
+| Reusable nodes                                 | Add an existing node with `NodePicker` (nodes already on the map are not offered) or explicitly create a new one. The new node is created by the node service inside the map's transaction, so a rejected placement also discards it. A node appears at most once per map (`DUPLICATE`, and `UNIQUE (map_id, node_id)`)                                                                                                                                                                     |
+| Freeform mode                                  | `map-canvas.tsx` on React Flow (`@xyflow/react` 12.12.0): drag, pan, zoom, fit view, selection, arrow keys move selected items, Delete removes items or connectors from the map, connectors are drawn between item handles; connectors may form cycles                                                                                                                                                                                                                                      |
+| Hierarchical mode                              | Several roots, one parent per item, sibling order, subtree collapse; deterministic left-to-right layout `layoutTree` (`packages/domain/src/maps/tree-layout.ts`), computed for display and never stored; `tree-layout.test.ts`                                                                                                                                                                                                                                                              |
+| Reviewed freeform → hierarchy switch           | `proposeHierarchy` proposes the hierarchy kept from an earlier hierarchical period, or else suggests parents from connectors and marks ambiguous items (several sources, or a loop); `switch-to-hierarchy-dialog.tsx` requires a decision for each before switching; the main process validates the whole assignment again; freeform coordinates are never touched, so switching back restores them                                                                                         |
+| Persistence                                    | Coordinates, parent, sibling order, collapse state and color per placement; viewport per map, saved 600 ms after panning or zooming stops; `map-service.test.ts`                                                                                                                                                                                                                                                                                                                            |
+| Map revisions (PRD §14)                        | Every structural change carries the map revision and fails with `REVISION_CONFLICT` when stale; the renderer queues changes (`use-map-document.ts`), reloads on a conflict and says the last change was not applied; the viewport has no revision                                                                                                                                                                                                                                           |
+| Keyboard alternatives                          | `map-outline.tsx`: an ARIA tree next to the canvas with keys to add, open, remove, reorder, indent and outdent; `map-model.test.ts` covers the rows and keyboard move planning                                                                                                                                                                                                                                                                                                              |
+| Visual structure vs. meaning (PRD §14)         | Hierarchy lines are solid, connectors dashed arrows (shape, not only color), with a legend in the editor. Hierarchy never creates relationships ("never creates semantic relationships from hierarchy" test). A connector may reference only an existing relationship between the same two nodes                                                                                                                                                                                            |
+| Performance (PRD §9: 200-placement map in 2 s) | Packaged smoke check "200-placement map opens in the editor within 2 seconds": 37 ms from click to 200 rendered items, measured with the packaged build on a developer machine. Not yet confirmed on the reference machine.                                                                                                                                                                                                                                                                 |
+| IPC                                            | 17 new `maps:*` channels (61 in total) with strict request and response schemas and explicit DTO mapping (`map-ipc-services.ts`); [ipc-contracts.md](ipc-contracts.md#mind-maps)                                                                                                                                                                                                                                                                                                            |
+| Documentation                                  | [architecture](architecture.md#mind-maps), [data model](data-model.md), [IPC contracts](ipc-contracts.md#mind-maps), [testing](testing.md), [user guide](user-guide.md#mind-maps), [ADR-0009](adr/0009-mind-map-editing.md)                                                                                                                                                                                                                                                                 |
+
+Phase 1 and 2 gaps closed by Phase 3: nodes open from a map (double-click on the canvas, Enter in
+the outline), and the node delete preview's map placement count is no longer always 0.
+
+### Not yet done in Phase 3
+
+- **No drag-to-reparent on the canvas.** In hierarchical mode items cannot be dragged at all,
+  because the layout computes their position. The hierarchy changes only in the outline (buttons
+  or Alt+arrow keys), one step at a time: up, down, indent under the previous sibling, outdent.
+  Moving an item under a distant parent takes several steps; there is no "move to…" picker.
+- **Connectors cannot be drawn in hierarchical mode.** Existing connectors are shown and can be
+  deleted, but new ones can be drawn only in freeform mode.
+- **Connector labels and relationship links have no UI.** The service and `maps:add-connection`
+  accept a label and a `relationshipId` (checked to connect the same two nodes), but the canvas
+  always creates a plain connector without a label, and no channel changes a connector after it
+  was created. Linking a connector to a relationship (PRD §4.4) therefore exists only in the API.
+- **The switch-to-hierarchy review offers limited choices.** For each item the dialog offers only
+  the proposed parent (or the candidates of an ambiguous item) and "Top level". Any other parent
+  has to be set afterwards in the outline.
+- **Map list.** No search, filter or sort options; maps are listed by their last structural change
+  (viewport changes do not count). Maps are renamed from the list, not from the editor.
+- **One placement per node per map.** A node appears at most once on a map (the PRD version 1
+  rule, enforced by the service and a unique constraint).
+- **Six colors.** Placement styling is limited to six named colors (`gray`, `blue`, `green`,
+  `amber`, `red`, `violet`) or the default. Connectors have no styling, although
+  `map_connections.style_json` exists.
+- **Some changes made outside the map editor are not fully tracked.** Deleting a node raises the
+  revision of every map that showed it, but not its `updated_at`, so the map list does not move
+  that map to the top. Deleting a relationship clears the reference of connectors that pointed at
+  it without changing the map's revision or `updated_at`. The open editor reloads on node change
+  events, and every map change re-reads the placements inside its transaction, so no stale data
+  is written.
+- **No UI tests for the map components.** `map-model.ts` (canvas model, outline rows, keyboard
+  moves) is unit-tested; the canvas, outline, dialogs and change queue are exercised only by the
+  packaged smoke test's rendering check. No screen-reader or WCAG check has been run (Phase 5).
+- **Performance only partly measured.** The 2-second target was checked for 200 placements on a
+  developer machine. PRD §9 also names maps with up to 500 placements and the reference machine;
+  both belong to the Phase 5 performance pass.
+- **Worker thread** (carried from Phases 0 to 2). Map work runs on the main process thread; the
+  hierarchical layout runs in the renderer.
+- **Export of maps** (placements, hierarchy, connectors) arrives with ZIP export in Phase 5.

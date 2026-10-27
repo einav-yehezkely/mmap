@@ -220,6 +220,16 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
          )`,
       )
       .run(workspaceId, nodeId);
+    // Maps showing this node change structure; raising their revision makes open editors with
+    // the old structure reload instead of acting on placements that no longer exist.
+    database
+      .prepare(
+        `UPDATE mind_maps SET revision = revision + 1
+         WHERE workspace_id = ? AND id IN (
+           SELECT map_id FROM map_placements WHERE workspace_id = ? AND node_id = ?
+         )`,
+      )
+      .run(workspaceId, workspaceId, nodeId);
     // Relationships, placements, references from this node and attachment rows cascade.
     database
       .prepare('DELETE FROM knowledge_nodes WHERE workspace_id = ? AND id = ?')

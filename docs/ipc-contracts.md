@@ -15,6 +15,7 @@ add a channel, and lists every channel that exists. For the end-to-end path of a
 | `packages/contracts/src/nodes.ts`         | `nodes:*`, `search:*` and `tags:*` schemas.                                                     |
 | `packages/contracts/src/relationships.ts` | `relationship-types:*` and `relationships:*` schemas.                                           |
 | `packages/contracts/src/attachments.ts`   | `attachments:*` and `preferences:*` schemas, the preview URL scheme.                            |
+| `packages/contracts/src/maps.ts`          | `maps:*` schemas and the map view DTOs.                                                         |
 | `packages/contracts/src/catalogue.ts`     | `IPC_CATALOGUE`: pairs each channel with `{ request, response }` schemas.                       |
 | `packages/contracts/src/envelope.ts`      | `IpcResult<Data>`, `ipcErrorSchema`, the combined list of error codes.                          |
 | `packages/contracts/src/renderer-api.ts`  | `MmapRendererApi`: the type of `window.mmap`.                                                   |
@@ -101,26 +102,26 @@ Domain codes come from `packages/domain/src/errors.ts` and are produced when a s
 from `packages/contracts/src/envelope.ts` and are produced by the IPC handler itself
 (`apps/desktop/src/main/ipc/ipc-handler.ts`).
 
-| Code                             | Source    | Meaning                                                                                                        |
-| -------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
-| `VALIDATION_FAILED`              | Domain    | Input failed a domain rule: empty or too long title, invalid label, invalid note, archived type, bad cursor.   |
-| `NOT_FOUND`                      | Domain    | The record does not exist in the open workspace. IDs from another workspace also produce this.                 |
-| `REVISION_CONFLICT`              | Domain    | `expectedRevision` is not the stored revision; a newer version was saved first. Nothing was changed.           |
-| `DUPLICATE`                      | Domain    | A uniqueness rule was violated: a tag or relationship type name, or a relationship that already exists.        |
-| `INVARIANT_VIOLATION`            | Domain    | A business invariant was violated: a self-link, or changing the direction of a relationship type in use.       |
-| `WORKSPACE_MISMATCH`             | Domain    | A record from another workspace was referenced. No channel produces it yet (services answer `NOT_FOUND`).      |
-| `WORKSPACE_MISSING`              | Workspace | The folder or drive is gone, or no workspace is open when a workspace-data call arrives.                       |
-| `WORKSPACE_INVALID`              | Workspace | The folder is not an mmap workspace, its manifest is damaged, or the open workspace was asked to be forgotten. |
-| `WORKSPACE_TOO_NEW`              | Workspace | The manifest or database was written by a newer mmap version.                                                  |
-| `WORKSPACE_LOCKED`               | Workspace | Another live process on this computer, or another computer, holds the workspace lock.                          |
-| `WORKSPACE_FOLDER_NOT_EMPTY`     | Workspace | A new workspace was requested in a folder that already has files, or no free folder name was found.            |
-| `WORKSPACE_UNSUPPORTED_LOCATION` | Workspace | A network (UNC) path, or a location where SQLite cannot enable WAL mode.                                       |
-| `WORKSPACE_DAMAGED`              | Workspace | The database file is missing, cannot be opened or upgraded, or does not match the manifest.                    |
-| `WORKSPACE_MOVE_FAILED`          | Workspace | Moving failed; the copy was discarded and the original is open and unchanged.                                  |
-| `WORKSPACE_DELETE_FAILED`        | Workspace | The folder could not be moved to the Recycle Bin (or no longer belongs to the workspace); nothing was deleted. |
-| `INVALID_REQUEST`                | Transport | The payload did not match the channel's request schema. The service was not called.                            |
-| `FORBIDDEN_SENDER`               | Transport | The call did not come from the main frame of a trusted origin. The service was not called.                     |
-| `INTERNAL_ERROR`                 | Transport | Anything unexpected, including a response that failed its schema. Logged locally, redacted.                    |
+| Code                             | Source    | Meaning                                                                                                                                       |
+| -------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_FAILED`              | Domain    | Input failed a domain rule: empty or too long title, invalid label, invalid note, archived type, bad cursor.                                  |
+| `NOT_FOUND`                      | Domain    | The record does not exist in the open workspace. IDs from another workspace also produce this.                                                |
+| `REVISION_CONFLICT`              | Domain    | `expectedRevision` is not the stored revision of the node or map; a newer version was saved first. Nothing was changed.                       |
+| `DUPLICATE`                      | Domain    | A uniqueness rule was violated: a tag or relationship type name, a relationship that already exists, or a node already on the map.            |
+| `INVARIANT_VIOLATION`            | Domain    | A business invariant was violated: a self-link or self-connector, changing the direction of a relationship type in use, or a hierarchy cycle. |
+| `WORKSPACE_MISMATCH`             | Domain    | A record from another workspace was referenced. No channel produces it yet (services answer `NOT_FOUND`).                                     |
+| `WORKSPACE_MISSING`              | Workspace | The folder or drive is gone, or no workspace is open when a workspace-data call arrives.                                                      |
+| `WORKSPACE_INVALID`              | Workspace | The folder is not an mmap workspace, its manifest is damaged, or the open workspace was asked to be forgotten.                                |
+| `WORKSPACE_TOO_NEW`              | Workspace | The manifest or database was written by a newer mmap version.                                                                                 |
+| `WORKSPACE_LOCKED`               | Workspace | Another live process on this computer, or another computer, holds the workspace lock.                                                         |
+| `WORKSPACE_FOLDER_NOT_EMPTY`     | Workspace | A new workspace was requested in a folder that already has files, or no free folder name was found.                                           |
+| `WORKSPACE_UNSUPPORTED_LOCATION` | Workspace | A network (UNC) path, or a location where SQLite cannot enable WAL mode.                                                                      |
+| `WORKSPACE_DAMAGED`              | Workspace | The database file is missing, cannot be opened or upgraded, or does not match the manifest.                                                   |
+| `WORKSPACE_MOVE_FAILED`          | Workspace | Moving failed; the copy was discarded and the original is open and unchanged.                                                                 |
+| `WORKSPACE_DELETE_FAILED`        | Workspace | The folder could not be moved to the Recycle Bin (or no longer belongs to the workspace); nothing was deleted.                                |
+| `INVALID_REQUEST`                | Transport | The payload did not match the channel's request schema. The service was not called.                                                           |
+| `FORBIDDEN_SENDER`               | Transport | The call did not come from the main frame of a trusted origin. The service was not called.                                                    |
+| `INTERNAL_ERROR`                 | Transport | Anything unexpected, including a response that failed its schema. Logged locally, redacted.                                                   |
 
 How the handler chooses a result:
 
@@ -181,11 +182,11 @@ that needs it and document it here.
 
 ## Channel reference
 
-There are 44 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+There are 61 channels. The renderer method is `window.mmap.<group>.<method>`; for example
 `nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
 is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
-the other codes. Node, search, tag, relationship and attachment channels return
+the other codes. Node, search, tag, relationship, map and attachment channels return
 `WORKSPACE_MISSING` when no workspace is open.
 
 ### App
@@ -398,3 +399,78 @@ workspace. The services are inline in `apps/desktop/src/main/index.ts`, backed b
 | `preferences:update` | Change one or more preferences. | `{ maxAttachmentMegabytes? }` | `{ maxAttachmentMegabytes }` |
 
 `maxAttachmentMegabytes` is an integer from 1 to 1,024; the default is 20 (PRD §5.10).
+
+### Mind maps
+
+Service: `apps/desktop/src/main/services/map-ipc-services.ts`, which calls the domain `MapService`
+(`packages/domain/src/application/map-service.ts`) and maps its records field by field to the
+DTOs below. Schemas: `packages/contracts/src/maps.ts`. See
+[architecture.md](architecture.md#mind-maps) for the rules behind these channels.
+
+| Channel                    | Purpose                                                                     | Request                                                                                      | Response                         |
+| -------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------- |
+| `maps:list`                | All maps of the workspace, most recently changed first.                     | none                                                                                         | `{ items: MapSummary[] }`        |
+| `maps:create`              | Create an empty map (revision 1).                                           | `{ title, mode? }` (`freeform` by default)                                                   | `MapView`                        |
+| `maps:get`                 | Load a map for the editor.                                                  | `{ mapId }`                                                                                  | `MapView`                        |
+| `maps:rename`              | Rename a map.                                                               | `{ mapId, expectedRevision, title }`                                                         | `MapView`                        |
+| `maps:duplicate`           | Copy as `<title> (copy)`: same nodes, new placements, structure copied.     | `{ mapId }`                                                                                  | `MapView` of the copy            |
+| `maps:delete`              | Delete a map with its placements and connectors. Nodes stay.                | `{ mapId }`                                                                                  | `{ deleted: true }`              |
+| `maps:set-viewport`        | Remember pan and zoom. No revision.                                         | `{ mapId, viewport: { x, y, zoom } }`                                                        | `{ saved: true }`                |
+| `maps:add-placement`       | Place an existing node, or explicitly create a new node and place it.       | `{ mapId, expectedRevision, nodeId \| newNodeTitle, x, y, parentPlacementId? }`              | `MapView`                        |
+| `maps:remove-placement`    | Remove an item from the map; its children take its place. The node stays.   | `{ mapId, expectedRevision, placementId }`                                                   | `MapView`                        |
+| `maps:move-placements`     | Store freeform positions of one or more items.                              | `{ mapId, expectedRevision, changes: { placementId, x, y }[] (1–5,000) }`                    | `MapView`                        |
+| `maps:reparent`            | Move an item under a parent (`null` = top level) at a sibling index.        | `{ mapId, expectedRevision, placementId, parentPlacementId, index (0–5,000) }`               | `MapView`                        |
+| `maps:set-collapsed`       | Collapse or expand an item's subtree.                                       | `{ mapId, expectedRevision, placementId, collapsed }`                                        | `MapView`                        |
+| `maps:set-placement-color` | Set an item's color, or `null` for the default.                             | `{ mapId, expectedRevision, placementId, color }`                                            | `MapView`                        |
+| `maps:add-connection`      | Draw a connector between two items.                                         | `{ mapId, expectedRevision, sourcePlacementId, targetPlacementId, label?, relationshipId? }` | `MapView`                        |
+| `maps:remove-connection`   | Delete a connector.                                                         | `{ mapId, expectedRevision, connectionId }`                                                  | `MapView`                        |
+| `maps:propose-hierarchy`   | Parents to review before switching: the kept hierarchy, or from connectors. | `{ mapId }`                                                                                  | `{ source, parents, ambiguous }` |
+| `maps:switch-mode`         | Switch between freeform and hierarchical mode.                              | `{ mapId, expectedRevision, mode, parents? (≤ 5,000) }`                                      | `MapView`                        |
+
+`MapSummary` has `id`, `title`, `mode`, `revision`, `placementCount` and `updatedAt`. `MapView` has `map`
+(`id`, `title`, `mode`, `viewport`, `revision`, `updatedAt`), `placements` and `connections`. A
+placement has `id`, `nodeId`, `nodeTitle` (the node's current title, joined on every read; no
+other node content), `x`, `y` (the freeform position), `parentPlacementId`, `siblingOrder`,
+`isCollapsed` and `color` (`gray`, `blue`, `green`, `amber`, `red`, `violet` or `null`). A
+connection has `id`, `sourcePlacementId`, `targetPlacementId`, `label`, `relationshipId` and
+`relationshipTypeLabel` (the type of the referenced relationship, or `null`). `updatedAt` changes
+with every structural change, but not with the viewport.
+
+**Revisions.** Every channel that takes `expectedRevision` is a structural change. It runs in one
+transaction, increments the map revision and returns the whole new `MapView`. An outdated
+`expectedRevision` returns `REVISION_CONFLICT` and changes nothing. `create`, `duplicate`,
+`delete`, `set-viewport` and `propose-hierarchy` take no revision.
+
+**Adding.** `maps:add-placement` accepts exactly one of `nodeId` and `newNodeTitle` (two strict
+object shapes in a union). With `newNodeTitle`, the node is created through the node service in
+the same transaction, so a refused placement creates no node. The new item is appended after its
+siblings.
+
+**Proposals and switching.** `maps:propose-hierarchy` returns `source`, `parents` (one
+`{ placementId, parentPlacementId }` per item, `null` = top level) and `ambiguous`
+(`{ placementId, candidates }`). With `source: 'previous-hierarchy'` the map still has stored
+parents from an earlier hierarchical period; they are returned unchanged and nothing is
+ambiguous. With `source: 'connectors'` the parents are suggested from connectors, and `ambiguous`
+lists items with connectors from several items or whose connector would close a loop; they are
+proposed as top level. `maps:switch-mode` to `hierarchical` requires
+`parents` with exactly one entry per item; switching to `freeform` ignores it and keeps the stored
+hierarchy. Switching to the current mode succeeds and changes nothing but the revision.
+
+**Connectors.** `relationshipId` must reference an existing relationship between exactly the two
+nodes of the connector's items, in either direction. A connector never creates a relationship.
+
+Limits: the contract accepts titles and labels up to 1,000 characters, coordinates between
+−1,000,000 and 1,000,000 and a zoom up to 100. The domain applies the real limits with clear
+messages: map titles 1–200 characters, connector labels up to 200 characters (empty means none),
+new node titles as for `nodes:create`, a zoom from 0.05 to 8, and no control characters.
+
+Errors:
+
+- `NOT_FOUND`: unknown map, item, connector or node, including IDs from another workspace.
+- `REVISION_CONFLICT`: outdated `expectedRevision` on a structural change.
+- `DUPLICATE`: `add-placement` with a node that is already on the map.
+- `INVARIANT_VIOLATION`: `reparent` or `switch-mode` would create a hierarchy cycle;
+  `add-connection` from an item to itself.
+- `VALIDATION_FAILED`: invalid title, label, coordinates, zoom or color; a `relationshipId` that is
+  unknown or does not connect the two nodes; `switch-mode` to hierarchy without `parents`, with a
+  missing entry, or with an unknown item.

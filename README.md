@@ -14,9 +14,12 @@ generated content or inferred relationships). The product requirements are in
   with the complete initial schema and migration runner, packaging, packaged-app smoke test.
 - **Phase 1 — Private knowledge base: done, merged into `main`.** What was left out is listed in
   the [Phase 1 status](docs/implementation-plan.md#6-phase-1-status-2026-10-26).
-- **Phase 2 — Connections and discovery: implemented on branch `phase-2-connections`.**
-  Relationships, wikilinks, backlinks and search. What works and what is still missing is listed
-  in the [Phase 2 status](docs/implementation-plan.md#7-phase-2-status-2026-10-27).
+- **Phase 2 — Connections and discovery: done, merged into `main`.** Relationships, wikilinks,
+  backlinks and search. What works and what is still missing is listed in the
+  [Phase 2 status](docs/implementation-plan.md#7-phase-2-status-2026-10-27).
+- **Phase 3 — Mind maps: implemented on branch `phase-3-mind-maps`.** Multiple maps that reuse
+  nodes, freeform and hierarchical modes, persistence. What works and what is still missing is
+  listed in the [Phase 3 status](docs/implementation-plan.md#8-phase-3-status-2026-10-27).
 
 What works in the app today:
 
@@ -45,9 +48,14 @@ What works in the app today:
   Links never create relationships.
 - **Search.** Full-text search over titles, summaries and notes (Ctrl+K), with title matches
   ranked first, highlighted snippets, tag filters and paging.
+- **Mind maps.** Create, rename, duplicate and delete maps that place existing or new nodes; the
+  same node can sit on many maps and always shows its current content. Freeform maps with
+  dragging, connectors, pan and zoom; hierarchical maps with automatic tree layout, reordering,
+  indenting and collapsing; a reviewed switch from freeform to hierarchy that keeps freeform
+  positions; colors; and a keyboard-accessible outline. Deleting a map or removing an item never
+  deletes nodes, and map hierarchy never creates relationships.
 
-Not yet available: mind maps (Phase 3), the graph and timeline views (Phase 4), export, import and
-backups (Phase 5)
+Not yet available: the graph and timeline views (Phase 4), export, import and backups (Phase 5)
 ([implementation plan](docs/implementation-plan.md)). End-user instructions are in the
 [user guide](docs/user-guide.md).
 
@@ -97,10 +105,10 @@ Run from the repository root.
 - [Local setup](docs/setup.md): prerequisites, daily commands, environment variables,
   troubleshooting
 - [User guide](docs/user-guide.md): how to use workspaces, nodes, notes, links, relationships,
-  search, tags and attachments
+  mind maps, search, tags and attachments
 - [Architecture](docs/architecture.md): packages, process model, IPC request flow, workspace
-  lifecycle, write coordinator, autosave, notes, relationships, wikilinks, search, attachments,
-  security
+  lifecycle, write coordinator, autosave, notes, relationships, wikilinks, search, mind maps,
+  attachments, security
 - [Data model](docs/data-model.md): every table and how it is used, references and backlinks,
   timeline grouping, attachment lifecycle, migrations
 - [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all channels
@@ -118,3 +126,4 @@ Run from the repository root.
   - [ADR-0006 Backup policy](docs/adr/0006-backup-policy.md)
   - [ADR-0007 Database migrations strategy](docs/adr/0007-database-migrations-strategy.md)
   - [ADR-0008 Wikilinks and note schema version 2](docs/adr/0008-wikilinks-and-note-schema-v2.md)
+  - [ADR-0009 Mind map editing](docs/adr/0009-mind-map-editing.md)

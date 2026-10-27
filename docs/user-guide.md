@@ -2,8 +2,8 @@
 
 mmap is a private knowledge base for Windows. You write down ideas, concepts and sources as
 **nodes**, give each one a rich note, tag them, attach files, connect them with typed
-**relationships**, link to other nodes from inside a note, and search everything you wrote.
-Everything stays in a folder on your computer. mmap works without an internet connection, has no
+**relationships**, link to other nodes from inside a note, arrange nodes on **mind maps**, and
+search everything you wrote. Everything stays in a folder on your computer. mmap works without an internet connection, has no
 account, and sends nothing anywhere.
 
 This guide covers what the current version can do. Features that are planned but not available
@@ -342,6 +342,155 @@ Click **Types** in the Relationships section to manage types:
 
 Each type shows how many relationships use it.
 
+## Mind maps
+
+A **mind map** arranges nodes from your library on a canvas. A map never copies a node: it shows
+the node itself. The same node can appear on as many maps as you like, but only once on each map.
+If you rename a node or edit its note, every map shows the change. Where a node sits on a map, its
+color and its place in a hierarchy belong to that map only, so moving it on one map does not move
+it on another.
+
+### Creating and managing maps
+
+Open **Mind Maps** in the sidebar.
+
+- **New map** asks for a title (up to 200 characters) and a **Layout**:
+  - **Freeform**: place items anywhere and draw connectors between them.
+  - **Hierarchy**: arrange items as an outline with automatic layout.
+
+  You can switch between the two later. The new map opens straight away.
+
+- The list shows each map's layout, number of items and last change, most recently changed first.
+  Click a map to open it; **All maps** takes you back.
+- **Rename** (the pencil) changes the title.
+- **Duplicate** (the two squares) creates "Title (copy)" with the same nodes, positions,
+  hierarchy, colors and connectors. The nodes are not copied; both maps show the same nodes.
+- **Delete** (the bin) asks for confirmation. The map with its layout and connectors is deleted;
+  the nodes on it stay in your library with their notes, tags and relationships.
+
+### The map editor
+
+The editor shows the map's title, a **Freeform** / **Hierarchy** switch and a **Color** menu at
+the top, the canvas on the left, and the **outline** (a list of the map's items) on the right,
+with a short legend below it.
+
+- **Pan** by dragging the empty background; **zoom** with the mouse wheel or the + and − buttons in
+  the corner of the canvas. The third button there (fit view) shows the whole map.
+- mmap remembers where you panned and zoomed for each map. A map you open for the first time is
+  fitted into view.
+- **Open a node** by double-clicking it on the canvas, or by selecting it in the outline and
+  pressing Enter or **Open**. It opens in the node panel, the same one as in the Library.
+
+### Adding nodes to a map
+
+Click **Add** in the outline (or press **Insert** while the outline has focus). In the window that
+opens, type part of a node's title and pick it, or choose **Create a new node “…”** to create a
+node with that title and place it. A node is only created when you choose that option. Nodes that
+are already on the map are not offered.
+
+In a freeform map, new items appear to the right of the existing ones. In a hierarchy, **Add
+child** adds the new item under the selected one, and **Add top-level** adds it at the top level.
+
+### Freeform maps
+
+- **Move** an item by dragging it, or select it and use the arrow keys. Positions are saved
+  automatically.
+- **Draw a connector** by dragging from the small handle on the right edge of one item to another
+  item. Connectors are dashed arrows from the item where you started. They may form loops.
+- Connectors are pictures on this map only. They never create relationships between the nodes.
+  You cannot add a label to a connector yet.
+- **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
+- **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
+  has focus. This removes them from the map only; the nodes stay in your library.
+
+### Hierarchy maps
+
+In a hierarchy, mmap lays out the items as a tree that grows from left to right: top-level items
+on the left, their children to the right, connected by solid lines. A map can have several
+top-level items, and every other item has exactly one parent. The layout is automatic, so items
+cannot be dragged.
+
+- **Reorder and nest** items in the outline: select an item and press **Alt+Up** or **Alt+Down**
+  to move it among its siblings, **Alt+Right** to indent it under the item above it, or
+  **Alt+Left** to outdent it to just after its parent. The arrow buttons above the outline do the
+  same.
+- An item cannot be moved inside its own branch; mmap refuses with "This would put an item inside
+  its own branch."
+- **Collapse** a branch with the small arrow on an item (a collapsed item shows how many items it
+  hides), or with Left and Right in the outline. Collapsing is remembered.
+- The hierarchy only arranges this map. Putting B under A does **not** create a "part of"
+  relationship between them.
+- Connectors drawn in freeform mode are still shown as dashed arrows. New connectors can only be
+  drawn in freeform mode.
+
+### Colors
+
+Select an item and choose a **Color**: Gray, Blue, Green, Amber, Red, Violet, or Default. The
+color belongs to this map only. Colors are for your own orientation; mmap never uses them to mean
+anything.
+
+### Switching a freeform map to a hierarchy
+
+Click **Hierarchy**. Because every item in a hierarchy needs exactly one parent, mmap first shows
+a **Switch to hierarchy** window. For a map that has never been a hierarchy, the suggestions are
+based on your connectors:
+
+- A connector from A to B suggests that A is the parent of B.
+- Items that no connector points at start at the top level.
+- If connectors from several items point at an item, or if following its connector would create a
+  loop, mmap does not guess. The item is listed under **Choose a parent**, and you pick one of the
+  candidates or **Top level (no parent)**. **Switch to hierarchy** stays disabled until every such
+  item has a decision.
+- Under **Review the … suggested parents** you can change any suggestion to **Top level**.
+- If your choices would put items in a loop, mmap names those items and asks you to choose
+  **Top level** for one of them before you can switch.
+
+To give an item a parent that is not suggested, switch first and then move it in the outline.
+
+### Switching back to freeform
+
+Click **Freeform**. Every item returns to the position it had on the freeform canvas, because
+mmap keeps those positions while the map is a hierarchy. Items you added while in hierarchy mode
+appear to the right of the others.
+
+mmap also keeps the hierarchy. When you switch to hierarchy again, the **Switch to hierarchy**
+window suggests the hierarchy you had before (items added in the meantime start at the top
+level), not suggestions from connectors.
+
+### Keyboard use
+
+The outline lets you do everything without a mouse. Click an item in it (or Tab to it), then:
+
+| Key                 | What it does                                                   |
+| ------------------- | -------------------------------------------------------------- |
+| Up, Down, Home, End | Move to the previous, next, first or last item                 |
+| Right, Left         | Expand or collapse an item, or go to its first child or parent |
+| Enter               | Open the node                                                  |
+| Insert              | Add an item (in a hierarchy, as a child of the selected item)  |
+| Delete              | Remove the item from this map                                  |
+| Alt+Up, Alt+Down    | Move the item up or down among its siblings (hierarchy)        |
+| Alt+Right           | Indent the item under the item above it (hierarchy)            |
+| Alt+Left            | Outdent the item to just after its parent (hierarchy)          |
+
+In a freeform map the outline lists items by title; on the canvas, the arrow keys move the
+selected item.
+
+### Removing items keeps your nodes
+
+- **Removing an item from a map** (Delete, or **Remove** in the outline) takes it off this map
+  only. The node stays in your library and on other maps. In a hierarchy, its children move up to
+  take its place, so no branch disappears.
+- **Deleting a map** never deletes nodes.
+- **Deleting a node** (from the node panel) removes it from every map. The delete preview says on
+  how many maps it is placed. Its children on those maps move up to take its place.
+
+### If a change is not applied
+
+If a map was changed somewhere else after you opened it, for example because a node on it was
+deleted, mmap does not apply your change on top. It shows the latest version of the map with the
+message "This map was changed elsewhere, so your last change was not applied." Make the change
+again.
+
 ## Search
 
 Use the **search box** at the top of the window, or press **Ctrl+K** to jump to it from anywhere.
@@ -470,15 +619,19 @@ created by a newer version and changes nothing.
 
 These features are planned for later versions:
 
-- **Mind maps** and the **knowledge graph**.
+- The **knowledge graph**.
 - **Editing a relationship's explanation** after it was added, and creating relationships from
   the graph.
-- **Choosing a different text for a node link** than the node's title.
+- **Changing the text of an existing node link.** Delete the link and insert it again with new
+  **Link text**.
+- On mind maps: **labels on connectors**, **linking a connector to a relationship**, **dragging
+  an item onto another to change its parent**, a **search or sort** for the list of maps, and
+  more colors.
 - **Timeline**: mmap already records when you create nodes and edit notes, but there is no view
   for it yet, and you cannot yet mark a node as reviewed.
 - **Export, import and backups** inside the app. Until then, quit mmap and copy the workspace
   folder to back it up.
 - **More than one window.**
 
-The Mind Maps, Knowledge Graph and Timeline areas in the sidebar show a short note saying when
-they become available.
+The Knowledge Graph and Timeline areas in the sidebar show a short note saying when they become
+available.
