@@ -74,3 +74,69 @@ A migration that cannot take its backup must not run.
 - **Rely on OS tools (File History, System Restore).** Not under app control, no consistency
   guarantee for a live WAL database, no visible status. Rejected as the primary mechanism.
 - **Cloud backup.** Outside version 1 scope (PRD §3). Rejected.
+
+## Implementation (Phase 5)
+
+Added 2026-10-27, branch `phase-5-portability`. Code:
+`apps/desktop/src/main/backups/snapshot-store.ts`, `apps/desktop/src/main/backups/backup-service.ts`,
+`packages/domain/src/backups/retention.ts`, `packages/storage-sqlite/src/backup.ts`, the restore
+steps in `apps/desktop/src/main/workspaces/workspace-manager.ts`. Details:
+[architecture.md](../architecture.md#backups-and-restore); procedures:
+[backup and restore runbook](../runbooks/backup-and-restore.md).
+
+**Layout and deduplication.** Snapshots of a workspace live under
+`<destination>/<workspace ID>/snapshots/<UTC time>/` (`backup.json` manifest and `mmap.sqlite`).
+Attachment bytes are stored once per content in `<destination>/<workspace ID>/files/<ab>/<sha256>`
+and shared by every snapshot that needs them, so a snapshot costs roughly one database copy plus
+new or changed attachments. This replaces the "full copy per snapshot" assumption under
+Consequences; it is recorded here rather than in a new ADR because it changes only the storage
+layout, not the policy. Pruning deletes attachment files that no remaining snapshot uses.
+
+**Snapshot method.** As decided: the online backup API (through the workspace's writer
+connection, so concurrent saves are part of the image and the copy never restarts), then
+`PRAGMA integrity_check` on the copy. The attachment list is read from the copied database, so a
+snapshot's files always match its database. A snapshot is written under a temporary name and
+renamed only when complete; a second snapshot in the same millisecond gets the next free
+millisecond as its name.
+
+**Deviation: missing attachments do not fail a snapshot.** An attachment whose file is missing,
+or no longer matches its recorded checksum, is not stored and is counted in the manifest's
+`missingAttachments`; the snapshot still succeeds and Settings shows the count. Failing the whole
+backup would leave the user with no recent backup at all because of one file that mmap cannot
+recover anyway. Every file that is stored has been verified against its checksum.
+
+**Schedule.** The snapshot is taken on the first opening of a workspace each local day (calendar
+day in the workspace timezone), with an hourly check while the app runs, so a session left open
+overnight still gets its daily backup; Settings also has **Back up now**. Only the open workspace
+is backed up: a workspace that is not opened on a given day gets no snapshot that day, which is
+correct because it did not change. Pre-migration backups to `<workspace>/recovery` are unchanged
+(ADR-0007).
+
+**Retention.** Default 7 daily and 4 weekly, configurable up to 60 and 104. Days and ISO weeks
+are counted in the workspace timezone; the newest snapshot of each kept period is kept, and the
+newest snapshot overall is never deleted, even with a retention of zero. Partial folders older
+than a day are removed when pruning.
+
+**Destination and status.** Default `<userData>/backups` (`%APPDATA%\mmap\backups`), or any folder
+chosen in a native dialog. Settings shows the last success (the newest snapshot on disk), the last
+failure (kept in memory until the next success or restart), and a warning when the destination is
+on the same volume as the workspace. Network folders are not refused as destinations (workspaces
+on network shares are).
+
+**Restore.** Every byte is verified before a restored folder is used (manifest schema, database
+checksum and integrity, workspace identity, every attachment checksum, generated-form stored
+paths). Restoring the open workspace takes a safety backup of the current state first, swaps the
+folders, opens the restored copy (running migrations if it is older) and moves the old folder to
+the Recycle Bin; any failure puts the original back (`RESTORE_FAILED`). A backup folder can also be
+restored as a new workspace "`<name> (restored)`", for a new computer or a lost drive; restoring
+the open workspace's own backup that way is refused.
+
+**Measured.** On the validation dataset (10,000 nodes, 30,000 relationships, 100 maps plus one of
+500 placements, 10,000 timeline events, 50 attachments of 200 KB): backup 1.6 s, restore 2.7 s
+including the safety backup, against the 15-minute target (`portability.benchmark.test.ts`,
+developer machine and system Node; the reference-machine measurement is still open).
+
+**Release-blocking items from Consequences.** Done: backup on first daily opening, pre-migration
+backup, retention, visible last-success status, separate-drive support, offline restore of all
+entities with attachment checksums, a recorded restore measurement. Still open: the measurement on
+the reference machine with the installed build.

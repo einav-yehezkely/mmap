@@ -244,7 +244,7 @@ describe('parseNoteDocument: accepted documents', () => {
   it('drops unknown attributes and omits attrs when none remain', () => {
     const result = parseNoteDocument(
       doc(
-        { type: 'paragraph', attrs: { textAlign: 'right', dir: 'rtl' }, content: [] },
+        { type: 'paragraph', attrs: { textAlign: 'right', indent: 2 }, content: [] },
         paragraph(
           text('x', [
             { type: 'bold', attrs: { foo: 1 } },
@@ -711,5 +711,47 @@ describe('parseNoteDocument: wikilinks (schema version 2)', () => {
         content: [{ type: 'wikilink', attrs: { targetNodeId: TARGET, label: 'x' } }],
       }),
     ).toThrow(DomainError);
+  });
+});
+
+describe('text direction (Hebrew / right-to-left writing)', () => {
+  it('keeps an explicit direction on blocks and drops "auto" and unknown values', () => {
+    const document = parseNoteDocument({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { dir: 'rtl' },
+          content: [{ type: 'text', text: 'שלום עולם' }],
+        },
+        {
+          type: 'heading',
+          attrs: { level: 2, dir: 'ltr' },
+          content: [{ type: 'text', text: 'Title' }],
+        },
+        { type: 'paragraph', attrs: { dir: 'auto' }, content: [{ type: 'text', text: 'auto' }] },
+        { type: 'paragraph', attrs: { dir: 'sideways' }, content: [{ type: 'text', text: 'bad' }] },
+        {
+          type: 'bulletList',
+          attrs: { dir: 'rtl' },
+          content: [
+            {
+              type: 'listItem',
+              attrs: { dir: 'rtl' },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'פריט' }] }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(document.content.map((block) => ('attrs' in block ? block.attrs : undefined))).toEqual([
+      { dir: 'rtl' },
+      { level: 2, dir: 'ltr' },
+      undefined,
+      undefined,
+      { dir: 'rtl' },
+    ]);
+    const list = document.content[4] as unknown as { content: [{ attrs?: unknown }] };
+    expect(list.content[0].attrs).toEqual({ dir: 'rtl' });
   });
 });

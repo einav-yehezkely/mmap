@@ -200,7 +200,8 @@ async function isFileAvailable(
 /** A file refused by the attachment policy; its message is shown to the user. */
 class RejectedFileError extends Error {}
 
-function describeRejection(reason: AttachmentRejectionReason, maxBytes: number): string {
+/** Why a file cannot be attached, for the user. Also used when importing archives. */
+export function describeRejection(reason: AttachmentRejectionReason, maxBytes: number): string {
   switch (reason) {
     case 'EXECUTABLE':
       return 'Programs and scripts cannot be attached, for your safety.';
@@ -214,7 +215,8 @@ function describeRejection(reason: AttachmentRejectionReason, maxBytes: number):
 }
 
 /** Lowercase extension without the dot, or null. */
-function extensionOf(fileName: string): string | null {
+/** Lowercase extension without the dot, or null; used for the stored file name. */
+export function extensionOf(fileName: string): string | null {
   const extension = extname(fileName).slice(1).toLowerCase();
   return extension === '' ? null : extension;
 }

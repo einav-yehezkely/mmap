@@ -61,7 +61,7 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
          FROM knowledge_nodes WHERE workspace_id = ? AND id = ?`,
       )
       .get(workspaceId, nodeId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toKnowledgeNodeRecord(row);
   }
 
   public async list(workspaceId: WorkspaceId, query: NodeListQuery): Promise<NodeListPage> {
@@ -264,7 +264,7 @@ function tagFilter(
   };
 }
 
-function toRecord(row: Row): KnowledgeNodeRecord {
+export function toKnowledgeNodeRecord(row: Row): KnowledgeNodeRecord {
   return {
     id: String(row.id) as NodeId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

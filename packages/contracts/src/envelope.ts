@@ -9,6 +9,7 @@
 import { DOMAIN_ERROR_CODES } from '@mmap/domain';
 import { z } from 'zod';
 
+import { TRANSFER_ERROR_CODES } from './transfer';
 import { WORKSPACE_ERROR_CODES } from './workspace';
 
 /** Error codes produced by the transport layer itself, in addition to domain error codes. */
@@ -24,6 +25,7 @@ export const TRANSPORT_ERROR_CODES = [
 export const IPC_ERROR_CODES = [
   ...DOMAIN_ERROR_CODES,
   ...WORKSPACE_ERROR_CODES,
+  ...TRANSFER_ERROR_CODES,
   ...TRANSPORT_ERROR_CODES,
 ] as const;
 export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];

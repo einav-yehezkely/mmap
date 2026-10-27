@@ -3,9 +3,14 @@
  * show, and that compute keyboard moves within a hierarchy (PRD §5.6). Kept free of React and
  * React Flow so they can be unit-tested directly.
  *
- * Two kinds of lines are kept visually distinct (PRD §14 "confusion between visual structure and
- * meaning"): hierarchy lines (parent → child, hierarchical mode only) and map connectors. A
- * connector that references a semantic relationship shows that relationship's type.
+ * Three kinds of lines are kept visually distinct (PRD §14 "confusion between visual structure
+ * and meaning"):
+ * - hierarchy lines (parent → child, hierarchical mode only): map structure;
+ * - map connectors: visual links drawn on this map only;
+ * - semantic relationships between two nodes that are both on the map. They belong to the nodes,
+ *   so every map showing both nodes shows them, with the relationship's type and direction. They
+ *   are derived from the relationships, never stored on the map, and never move items or change
+ *   the hierarchy. A relationship already shown by a connector linked to it is not drawn again.
  */
 
 import type { MapConnectionViewDto, MapViewDto, PlacementViewDto } from '@mmap/contracts';
@@ -19,11 +24,13 @@ export interface CanvasItem {
 
 export interface CanvasLine {
   readonly id: string;
-  readonly kind: 'hierarchy' | 'connector';
+  readonly kind: 'hierarchy' | 'connector' | 'relationship';
   readonly source: string;
   readonly target: string;
   /** Text shown on the line: the connector label and/or the referenced relationship type. */
   readonly label: string | null;
+  /** Relationship lines: false for undirected relationships, which have no arrow. */
+  readonly directed?: boolean;
 }
 
 export interface CanvasModel {
@@ -73,7 +80,10 @@ export function buildCanvasModel(view: MapViewDto): CanvasModel {
         position: { x: placement.x, y: placement.y },
         childCount: childCounts.get(placement.id) ?? 0,
       })),
-      lines: connectorLines(view.connections, () => true),
+      lines: [
+        ...connectorLines(view.connections, () => true),
+        ...relationshipLines(view, () => true),
+      ],
       hiddenCount: 0,
     };
   }
@@ -116,9 +126,44 @@ export function buildCanvasModel(view: MapViewDto): CanvasModel {
         view.connections,
         (c) => visible(c.sourcePlacementId) && visible(c.targetPlacementId),
       ),
+      ...relationshipLines(view, visible),
     ],
     hiddenCount: layout.hidden.size,
   };
+}
+
+/**
+ * Lines for the semantic relationships between nodes on the map. Relationships shown by a linked
+ * connector are skipped (no duplicates); the placement of each node gives the line's ends.
+ */
+function relationshipLines(
+  view: MapViewDto,
+  visible: (placementId: string) => boolean,
+): CanvasLine[] {
+  const placementOfNode = new Map(
+    view.placements.map((placement) => [placement.nodeId, placement.id]),
+  );
+  const shownByConnector = new Set(
+    view.connections.map((connection) => connection.relationshipId).filter((id) => id !== null),
+  );
+  const lines: CanvasLine[] = [];
+  for (const relationship of view.relationships) {
+    if (shownByConnector.has(relationship.id)) continue;
+    const source = placementOfNode.get(relationship.sourceNodeId);
+    const target = placementOfNode.get(relationship.targetNodeId);
+    if (source === undefined || target === undefined || !visible(source) || !visible(target)) {
+      continue;
+    }
+    lines.push({
+      id: `relationship:${relationship.id}`,
+      kind: 'relationship',
+      source,
+      target,
+      label: relationship.typeLabel,
+      directed: relationship.directionality === 'directed',
+    });
+  }
+  return lines;
 }
 
 function connectorLines(
@@ -289,4 +334,31 @@ export function findParentLoops(parents: ReadonlyMap<string, string | null>): st
     for (const id of path) settled.add(id);
   }
   return [...inLoop].sort();
+}
+
+export interface ParentChoice {
+  readonly placementId: string;
+  readonly title: string;
+  /** 0 for top-level items. */
+  readonly depth: number;
+}
+
+/**
+ * Every item of a hierarchical map in tree order (collapsed branches included), for choosing the
+ * parent of a node being added.
+ */
+export function parentChoices(view: MapViewDto): ParentChoice[] {
+  const items = hierarchyItemsOf(view);
+  const byId = new Map(view.placements.map((placement) => [placement.id, placement]));
+  const choices: ParentChoice[] = [];
+  const visit = (parentId: string | null, depth: number) => {
+    for (const item of orderedChildren(items, parentId)) {
+      const placement = byId.get(item.id);
+      if (placement === undefined) continue;
+      choices.push({ placementId: placement.id, title: placement.nodeTitle, depth });
+      visit(item.id, depth + 1);
+    }
+  };
+  visit(null, 0);
+  return choices;
 }

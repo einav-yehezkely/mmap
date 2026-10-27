@@ -23,10 +23,21 @@ export interface MapsViewProps {
   readonly initialMapId?: string | null;
   readonly timeZone: string;
   readonly onOpenNode: (nodeId: string) => void;
+  /** Reports the map being edited (null when the list is shown), e.g. to preselect it. */
+  readonly onOpenMapChange?: (mapId: string | null) => void;
 }
 
-export function MapsView({ initialMapId = null, timeZone, onOpenNode }: MapsViewProps) {
+export function MapsView({
+  initialMapId = null,
+  timeZone,
+  onOpenNode,
+  onOpenMapChange,
+}: MapsViewProps) {
   const [openMapId, setOpenMapId] = useState<string | null>(initialMapId);
+  useEffect(() => {
+    onOpenMapChange?.(openMapId);
+    return () => onOpenMapChange?.(null);
+  }, [openMapId, onOpenMapChange]);
   if (openMapId !== null) {
     return (
       <MapEditor

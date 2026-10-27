@@ -406,7 +406,8 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
                 setFindText('');
               }
             }}
-            aria-controls={`${findId}-results`}
+            // Only while the list exists: a reference to a missing element is invalid ARIA.
+            aria-controls={matches.length > 0 ? `${findId}-results` : undefined}
           />
           {matches.length > 0 && (
             <ul
@@ -643,7 +644,7 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
           role="status"
           className={cn(
             'flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-muted-foreground',
-            isPartial(state) && 'text-amber-600 dark:text-amber-400',
+            isPartial(state) && 'text-amber-700 dark:text-amber-400',
           )}
         >
           <Info aria-hidden="true" className="size-3.5" />

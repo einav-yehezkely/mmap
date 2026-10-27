@@ -8,6 +8,11 @@
  *
  * Keyboard: items are focusable; arrow keys move selected items in freeform mode (saved like a
  * drag); Delete removes the selection from the map while focus is in the canvas. The outline next to the canvas offers the full keyboard workflow.
+ *
+ * Connectors (freeform mode): drag from either dot of an item to another item to draw one; a
+ * dashed line follows the cursor. A connector is easy to hit (wide invisible stroke); a selected one shows a remove button.
+ * Dragging either end of a connector onto another item moves it there; dropping the end on empty
+ * canvas removes it. The editor offers Undo for all of these.
  */
 
 import '@xyflow/react/dist/style.css';
@@ -17,6 +22,11 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   Background,
+  BaseEdge,
+  ConnectionLineType,
+  ConnectionMode,
+  EdgeLabelRenderer,
+  getBezierPath,
   Controls,
   Handle,
   MarkerType,
@@ -25,13 +35,14 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeProps,
   type Node,
   type NodeChange,
   type NodeProps,
   type OnSelectionChangeParams,
   useReactFlow,
 } from '@xyflow/react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { cn } from '../lib/utils';
@@ -50,6 +61,58 @@ interface PlacementNodeData extends Record<string, unknown> {
 
 type PlacementFlowNode = Node<PlacementNodeData, 'placement'>;
 
+interface ConnectorEdgeData extends Record<string, unknown> {
+  readonly connectionId: string;
+  readonly label: string | null;
+  readonly onRemove: (connectionId: string) => void;
+}
+
+type ConnectorFlowEdge = Edge<ConnectorEdgeData, 'connector'>;
+
+/**
+ * A map connector: dashed line with its label and, while selected, a button that removes it.
+ * The invisible interaction stroke is wide so the thin line is easy to click.
+ */
+const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlowEdge>) {
+  const [path, labelX, labelY] = getBezierPath(props);
+  const { data, selected } = props;
+  return (
+    <>
+      <BaseEdge id={props.id} path={path} markerEnd={props.markerEnd} interactionWidth={24} />
+      {(data?.label !== null || selected === true) && data !== undefined && (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan absolute flex items-center gap-1"
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: 'all',
+            }}
+          >
+            {data.label !== null && (
+              <span className="rounded bg-background px-1 text-xs text-muted-foreground" dir="auto">
+                {data.label}
+              </span>
+            )}
+            {selected === true && (
+              <button
+                type="button"
+                aria-label="Remove connector"
+                title="Remove connector (Delete)"
+                onClick={() => data.onRemove(data.connectionId)}
+                className="flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-destructive hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X aria-hidden="true" className="size-3.5" />
+              </button>
+            )}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+});
+
+const EDGE_TYPES = { connector: ConnectorEdge };
+
 const PlacementNode = memo(function PlacementNode({
   data,
   selected,
@@ -64,7 +127,7 @@ const PlacementNode = memo(function PlacementNode({
         selected && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
       )}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle id="in" type="target" position={Position.Left} />
       <span dir="auto" className="min-w-0 break-words">
         {placement.nodeTitle}
       </span>
@@ -91,7 +154,7 @@ const PlacementNode = memo(function PlacementNode({
           )}
         </button>
       )}
-      <Handle type="source" position={Position.Right} />
+      <Handle id="out" type="source" position={Position.Right} />
     </div>
   );
 });
@@ -129,6 +192,12 @@ export interface MapCanvasProps {
   readonly onConnect: (sourcePlacementId: string, targetPlacementId: string) => void;
   readonly onToggleCollapse: (placementId: string, collapsed: boolean) => void;
   readonly onRemove: (placementIds: readonly string[], connectionIds: readonly string[]) => void;
+  /** A connector's end was dragged to another item. */
+  readonly onReconnect: (
+    connectionId: string,
+    sourcePlacementId: string,
+    targetPlacementId: string,
+  ) => void;
   readonly onViewportChange: (viewport: { x: number; y: number; zoom: number }) => void;
 }
 
@@ -141,8 +210,23 @@ export function MapCanvas({
   onConnect,
   onToggleCollapse,
   onRemove,
+  onReconnect,
   onViewportChange,
 }: MapCanvasProps) {
+  // Stable for the edge data (rebuilding every edge on each render would loop), while still
+  // calling the latest handler.
+  const latestOnRemove = useRef(onRemove);
+  useEffect(() => {
+    latestOnRemove.current = onRemove;
+  }, [onRemove]);
+  const removeConnector = useCallback(
+    (connectionId: string) => latestOnRemove.current([], [connectionId]),
+    [],
+  );
+  /** Item a new connector is being drawn from (see onConnect). */
+  const connectFrom = useRef<string | null>(null);
+  /** Whether the connector end being dragged landed on an item (see onReconnectEnd). */
+  const reconnected = useRef(true);
   const model = useMemo(() => buildCanvasModel(view), [view]);
   const isFreeform = view.map.mode === 'freeform';
 
@@ -163,8 +247,26 @@ export function MapCanvas({
   );
   const derivedEdges = useMemo<Edge[]>(
     () =>
-      model.lines.map((line) =>
-        line.kind === 'hierarchy'
+      model.lines.map((line): Edge => {
+        if (line.kind === 'relationship') {
+          // Semantic relationships: shown, never edited or removed here (edit them on the node).
+          // A curved line keeps them apart from straight-cornered hierarchy lines.
+          return {
+            id: line.id,
+            source: line.source,
+            target: line.target,
+            type: 'default',
+            label: line.label ?? undefined,
+            ariaLabel: `Relationship: ${line.label ?? ''}${line.directed === true ? '' : ' (no direction)'}`,
+            selectable: false,
+            deletable: false,
+            className: 'mmap-relationship-line',
+            ...(line.directed === true
+              ? { markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--relationship-line)' } }
+              : {}),
+          };
+        }
+        return line.kind === 'hierarchy'
           ? {
               id: line.id,
               source: line.source,
@@ -178,13 +280,19 @@ export function MapCanvas({
               id: line.id,
               source: line.source,
               target: line.target,
-              label: line.label ?? undefined,
+              type: 'connector',
               ariaLabel: line.label === null ? 'Connector' : `Connector: ${line.label}`,
               markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
               className: 'mmap-connector-line',
-            },
-      ),
-    [model],
+              reconnectable: isFreeform,
+              data: {
+                connectionId: line.id.slice('connector:'.length),
+                label: line.label,
+                onRemove: removeConnector,
+              },
+            };
+      }),
+    [model, isFreeform, removeConnector],
   );
 
   // React Flow works on local copies (selection, measured sizes, positions while dragging). When
@@ -315,13 +423,49 @@ export function MapCanvas({
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
+        // The line that follows the cursor while drawing or moving a connector: dashed like a
+        // connector, in the accent color so it stands out; dropping near an item's dot snaps to it.
+        connectionLineType={ConnectionLineType.Bezier}
+        connectionLineStyle={{ stroke: 'var(--primary)', strokeWidth: 2.5, strokeDasharray: '6 4' }}
+        connectionRadius={40}
+        // Either dot of an item starts or ends a connector (the left one used to do nothing when
+        // dragged), and a connector's end can be grabbed from a little way off.
+        connectionMode={ConnectionMode.Loose}
+        reconnectRadius={18}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
+        onConnectStart={(_event, { nodeId }) => {
+          connectFrom.current = nodeId;
+        }}
         onConnect={(connection: Connection) => {
-          if (connection.source !== connection.target) {
+          if (connection.source === connection.target) return;
+          // A connector always points away from the item the drag started on, whichever of its
+          // dots was used (with either dot allowed, a drag from the left dot reports that item as
+          // the target).
+          if (connectFrom.current === connection.target) {
+            onConnect(connection.target, connection.source);
+          } else {
             onConnect(connection.source, connection.target);
           }
+        }}
+        onReconnectStart={() => {
+          reconnected.current = false;
+        }}
+        onReconnect={(oldEdge, connection) => {
+          reconnected.current = true;
+          if (!oldEdge.id.startsWith('connector:') || connection.source === connection.target)
+            return;
+          if (connection.source === oldEdge.source && connection.target === oldEdge.target) return;
+          onReconnect(oldEdge.id.slice('connector:'.length), connection.source, connection.target);
+        }}
+        onReconnectEnd={(_event, edge) => {
+          // Dropped on empty canvas: the user dragged the line away, so it is removed (undoable).
+          if (!reconnected.current && edge.id.startsWith('connector:')) {
+            removeConnector(edge.id.slice('connector:'.length));
+          }
+          reconnected.current = true;
         }}
         onNodeDoubleClick={(_event, node) => onOpenNode(node.data.placement.nodeId)}
         deleteKeyCode={null}

@@ -533,7 +533,7 @@ export function TimelineView({
                   </>
                 )}
                 {windowData !== null && windowData.total > items.length && (
-                  <span className="text-amber-600 dark:text-amber-400">
+                  <span className="text-amber-700 dark:text-amber-400">
                     Showing {items.length.toLocaleString()} of {windowData.total.toLocaleString()}{' '}
                     events in this period, spread across it; zoom in to see them all.
                   </span>

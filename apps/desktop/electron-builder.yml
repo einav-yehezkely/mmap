@@ -1,6 +1,6 @@
 # Packaging configuration (see docs/adr/0004-installer-signing-and-updates.md).
-# Phase 0 produces an UNSIGNED NSIS installer for Windows x64. Code signing and signed update
-# feeds are Phase 5 release gates and must be configured before any public release.
+# Builds an NSIS installer for Windows x64. It is signed only when a certificate is supplied
+# (see win.signtoolOptions); unsigned builds are for internal testing and must not be released.
 appId: app.mmap.desktop
 productName: mmap
 copyright: Copyright © 2026 mmap contributors
@@ -19,7 +19,20 @@ npmRebuild: false
 # No auto-update feed yet. Update checks must stay visible, configurable and content-free (PRD §8).
 publish: null
 
+# App icon (generated from docs/mmap_icon.png; see docs/runbooks/packaging.md). Windows takes the
+# window and taskbar icon from the executable.
+icon: resources/icon.png
+
 win:
+  icon: resources/icon.ico
+  # Authenticode signing (release gate, ADR-0004). electron-builder signs the executables and the
+  # installer automatically when a certificate is supplied through the environment (CSC_LINK and
+  # CSC_KEY_PASSWORD, never committed). Without one, builds stay unsigned for internal testing.
+  # Check a release with scripts/verify-signature.ps1.
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
   target:
     - target: nsis
       arch:
@@ -28,6 +41,9 @@ win:
 
 nsis:
   oneClick: false
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
   perMachine: false
   allowToChangeInstallationDirectory: true
   # Workspaces and settings live under %APPDATA%\mmap and must survive uninstall (PRD §5.1, §13.17).

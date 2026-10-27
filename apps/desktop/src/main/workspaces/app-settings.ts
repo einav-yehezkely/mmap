@@ -10,6 +10,7 @@
 import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { DEFAULT_BACKUP_RETENTION, MAX_DAILY_SNAPSHOTS, MAX_WEEKLY_SNAPSHOTS } from '@mmap/domain';
 import { z } from 'zod';
 
 import { writeFileAtomically } from './workspace-folder';
@@ -27,6 +28,23 @@ const recentWorkspaceSchema = z.object({
 /** PRD §5.10: 20 MB per attachment by default, configurable on this computer. */
 export const DEFAULT_MAX_ATTACHMENT_MEGABYTES = 20;
 
+/**
+ * Where and how many backups are kept (PRD §9: "configurable destination/retention"). A null
+ * destination means the default folder in the app's data folder.
+ */
+const backupSettingsSchema = z.object({
+  destination: z.string().max(4_096).nullable(),
+  daily: z.number().int().min(0).max(MAX_DAILY_SNAPSHOTS),
+  weekly: z.number().int().min(0).max(MAX_WEEKLY_SNAPSHOTS),
+});
+
+export type BackupSettings = z.infer<typeof backupSettingsSchema>;
+
+export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
+  destination: null,
+  ...DEFAULT_BACKUP_RETENTION,
+};
+
 const settingsSchema = z.object({
   version: z.literal(1),
   lastWorkspacePath: z.string().nullable(),
@@ -38,6 +56,7 @@ const settingsSchema = z.object({
     .min(1)
     .max(1_024)
     .default(DEFAULT_MAX_ATTACHMENT_MEGABYTES),
+  backups: backupSettingsSchema.default(DEFAULT_BACKUP_SETTINGS),
 });
 
 export type AppSettings = z.infer<typeof settingsSchema>;
@@ -48,6 +67,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastWorkspacePath: null,
   recentWorkspaces: [],
   maxAttachmentMegabytes: DEFAULT_MAX_ATTACHMENT_MEGABYTES,
+  backups: DEFAULT_BACKUP_SETTINGS,
 };
 
 export interface SettingsStore {

@@ -6,6 +6,8 @@
  */
 :root {
   --background: oklch(1 0 0);
+  /* Slightly raised surface for cards on the home page. */
+  --card: oklch(0.985 0.003 265);
   --foreground: oklch(0.21 0.02 265);
   --muted: oklch(0.967 0.003 265);
   --muted-foreground: oklch(0.45 0.02 265);
@@ -16,6 +18,8 @@
   --accent-foreground: oklch(0.21 0.02 265);
   --destructive: oklch(0.5 0.2 27);
   --ring: oklch(0.55 0.18 265);
+  /* Semantic relationship lines on maps (contrast ≥ 3:1 on the background). */
+  --relationship-line: oklch(0.5 0.16 300);
   --radius: 0.5rem;
   color-scheme: light;
 }
@@ -23,6 +27,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: oklch(0.17 0.01 265);
+    --card: oklch(0.2 0.012 265);
     --foreground: oklch(0.96 0.005 265);
     --muted: oklch(0.24 0.01 265);
     --muted-foreground: oklch(0.75 0.01 265);
@@ -33,12 +38,14 @@
     --accent-foreground: oklch(0.96 0.005 265);
     --destructive: oklch(0.7 0.18 27);
     --ring: oklch(0.75 0.12 265);
+    --relationship-line: oklch(0.74 0.13 300);
     color-scheme: dark;
   }
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
@@ -255,4 +262,49 @@
 
 .react-flow__edge.mmap-connector-line .react-flow__edge-path {
   stroke-dasharray: 6 4;
+}
+
+/* Connection dots on map items: large enough to grab, highlighted on hover. */
+.react-flow__node .react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--background);
+  background: var(--muted-foreground);
+}
+
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  background: var(--primary);
+}
+
+/* The line following the cursor while a connector is drawn or moved. */
+.react-flow__connection-path {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
+/* The ends of a selected connector show round grips: drag one to move that end. */
+.react-flow__edge.mmap-connector-line.selected .react-flow__edgeupdater {
+  r: 7px;
+  fill: var(--primary);
+  stroke: var(--background);
+  stroke-width: 2px;
+  cursor: grab;
+}
+
+/* A selected connector is drawn thicker. */
+.react-flow__edge.mmap-connector-line.selected .react-flow__edge-path {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
+/* Semantic relationships between nodes on a map: solid, colored, not editable on the map. */
+.react-flow__edge.mmap-relationship-line .react-flow__edge-path {
+  stroke: var(--relationship-line);
+  stroke-width: 1.75;
+}
+
+.react-flow__edge.mmap-relationship-line .react-flow__edge-text {
+  fill: var(--relationship-line);
 }

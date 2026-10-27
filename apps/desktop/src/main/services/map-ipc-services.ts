@@ -54,19 +54,51 @@ export function toMapViewDto(view: MapView): MapViewDto {
       relationshipId: connection.relationshipId,
       relationshipTypeLabel: connection.relationshipTypeLabel,
     })),
+    relationships: view.relationships.map((relationship) => ({
+      id: relationship.id,
+      sourceNodeId: relationship.sourceNodeId,
+      targetNodeId: relationship.targetNodeId,
+      typeLabel: relationship.typeLabel,
+      directionality: relationship.directionality,
+    })),
   };
 }
 
 export function createMapIpcServices(manager: WorkspaceManager): Pick<IpcServices, MapChannel> {
-  const maps = (): MapService => {
-    const workspace = manager.current;
-    if (workspace === null) {
+  const workspace = () => {
+    const current = manager.current;
+    if (current === null) {
       throw new WorkspaceError('WORKSPACE_MISSING', 'No workspace is open.');
     }
-    return workspace.services.maps;
+    return current;
   };
+  const maps = (): MapService => workspace().services.maps;
+  const mapsOfNode = async (nodeId: string) => ({
+    items: (await maps().mapsForNode(nodeId as NodeId)).map(({ id, title, mode }) => ({
+      id,
+      title,
+      mode,
+    })),
+  });
 
   return {
+    'maps:list-for-node': ({ nodeId }) => mapsOfNode(nodeId),
+    'maps:add-node': async ({ nodeId, targets }) => {
+      const open = workspace();
+      const unique = [...new Map(targets.map((target) => [target.mapId, target])).values()];
+      // All or nothing: a rejected placement (for example a parent that was removed meanwhile)
+      // leaves every map unchanged.
+      await open.connections.runInTransaction(async () => {
+        for (const target of unique) {
+          await open.services.maps.placeNode(
+            target.mapId as MapId,
+            nodeId as NodeId,
+            target.parentPlacementId as PlacementId | null,
+          );
+        }
+      });
+      return mapsOfNode(nodeId);
+    },
     'maps:list': async () => ({
       items: (await maps().listMaps()).map(
         ({ id, title, mode, revision, placementCount, updatedAt }) => ({

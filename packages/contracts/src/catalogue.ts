@@ -11,11 +11,13 @@ import type { z } from 'zod';
 
 import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
 import { attachmentContracts, preferenceContracts } from './attachments';
+import { backupContracts } from './backups';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
 import { nodeContracts, searchContracts, tagContracts } from './nodes';
 import { graphContracts, timelineContracts } from './graph-timeline';
 import { mapContracts } from './maps';
 import { relationshipContracts, relationshipTypeContracts } from './relationships';
+import { transferContracts } from './transfer';
 import { workspaceContracts } from './workspace';
 
 export interface IpcContract<
@@ -73,6 +75,8 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.relationshipsUpdate]: relationshipContracts.update,
   [IPC_CHANNELS.relationshipsDelete]: relationshipContracts.delete,
   [IPC_CHANNELS.mapsList]: mapContracts.list,
+  [IPC_CHANNELS.mapsListForNode]: mapContracts.listForNode,
+  [IPC_CHANNELS.mapsAddNode]: mapContracts.addNode,
   [IPC_CHANNELS.mapsCreate]: mapContracts.create,
   [IPC_CHANNELS.mapsGet]: mapContracts.get,
   [IPC_CHANNELS.mapsRename]: mapContracts.rename,
@@ -99,6 +103,18 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.timelineAddMilestone]: timelineContracts.addMilestone,
   [IPC_CHANNELS.timelineUpdateEntry]: timelineContracts.updateEntry,
   [IPC_CHANNELS.timelineDeleteEntry]: timelineContracts.deleteEntry,
+  [IPC_CHANNELS.transferExportZip]: transferContracts.exportZip,
+  [IPC_CHANNELS.transferExportMarkdown]: transferContracts.exportMarkdown,
+  [IPC_CHANNELS.transferPreviewImport]: transferContracts.previewImport,
+  [IPC_CHANNELS.transferApplyImport]: transferContracts.applyImport,
+  [IPC_CHANNELS.transferDiscardImport]: transferContracts.discardImport,
+  [IPC_CHANNELS.backupsGetStatus]: backupContracts.getStatus,
+  [IPC_CHANNELS.backupsCreateNow]: backupContracts.createNow,
+  [IPC_CHANNELS.backupsChooseDestination]: backupContracts.chooseDestination,
+  [IPC_CHANNELS.backupsUseDefaultDestination]: backupContracts.useDefaultDestination,
+  [IPC_CHANNELS.backupsSetRetention]: backupContracts.setRetention,
+  [IPC_CHANNELS.backupsRestore]: backupContracts.restore,
+  [IPC_CHANNELS.backupsRestoreFromFolder]: backupContracts.restoreFromFolder,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

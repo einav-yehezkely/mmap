@@ -5,6 +5,9 @@ import {
   type MapConnectionId,
   type MapConnectionRecord,
   type MapConnectionWithRelationship,
+  type MapOfNode,
+  type MapRelationship,
+  type RelationshipDirectionality,
   type MapId,
   type MapMode,
   type MapRepository,
@@ -62,7 +65,7 @@ export class SqliteMapRepository implements MapRepository {
          FROM mind_maps WHERE workspace_id = ? AND id = ?`,
       )
       .get(workspaceId, mapId);
-    return row === undefined ? null : toMap(row);
+    return row === undefined ? null : toMindMapRecord(row);
   }
 
   public async insertMap(record: MindMapRecord): Promise<void> {
@@ -139,7 +142,7 @@ export class SqliteMapRepository implements MapRepository {
          ORDER BY p.sibling_order, p.id`,
       )
       .all(workspaceId, mapId)
-      .map((row) => ({ ...toPlacement(row), nodeTitle: String(row.node_title) }));
+      .map((row) => ({ ...toPlacementRecord(row), nodeTitle: String(row.node_title) }));
   }
 
   public async insertPlacement(record: PlacementRecord): Promise<void> {
@@ -212,9 +215,57 @@ export class SqliteMapRepository implements MapRepository {
       )
       .all(workspaceId, mapId)
       .map((row) => ({
-        ...toConnection(row),
+        ...toMapConnectionRecord(row),
         relationshipTypeLabel:
           row.relationship_type_label === null ? null : String(row.relationship_type_label),
+      }));
+  }
+
+  public async listMapsForNode(
+    workspaceId: WorkspaceId,
+    nodeId: NodeId,
+  ): Promise<readonly MapOfNode[]> {
+    return this.connections
+      .forRead()
+      .prepare(
+        `SELECT m.id, m.title, m.mode
+         FROM map_placements AS p
+         JOIN mind_maps AS m ON m.id = p.map_id
+         WHERE p.workspace_id = ? AND p.node_id = ?
+         ORDER BY m.title COLLATE NOCASE, m.id`,
+      )
+      .all(workspaceId, nodeId)
+      .map((row) => ({
+        id: String(row.id) as MapId,
+        title: String(row.title),
+        mode: String(row.mode) as MapMode,
+      }));
+  }
+
+  public async listRelationships(
+    workspaceId: WorkspaceId,
+    mapId: MapId,
+  ): Promise<readonly MapRelationship[]> {
+    // Both endpoints must be placed on this map; a node appears at most once per map, so each
+    // relationship is returned once.
+    return this.connections
+      .forRead()
+      .prepare(
+        `SELECT r.id, r.source_node_id, r.target_node_id, r.directionality, t.label AS type_label
+         FROM relationships AS r
+         JOIN relationship_types AS t ON t.id = r.type_id
+         JOIN map_placements AS source ON source.map_id = ? AND source.node_id = r.source_node_id
+         JOIN map_placements AS target ON target.map_id = ? AND target.node_id = r.target_node_id
+         WHERE r.workspace_id = ?
+         ORDER BY r.created_at, r.id`,
+      )
+      .all(mapId, mapId, workspaceId)
+      .map((row) => ({
+        id: String(row.id) as RelationshipId,
+        sourceNodeId: String(row.source_node_id) as NodeId,
+        targetNodeId: String(row.target_node_id) as NodeId,
+        typeLabel: String(row.type_label),
+        directionality: String(row.directionality) as RelationshipDirectionality,
       }));
   }
 
@@ -251,7 +302,7 @@ export class SqliteMapRepository implements MapRepository {
   }
 }
 
-function toMap(row: Row): MindMapRecord {
+export function toMindMapRecord(row: Row): MindMapRecord {
   return {
     id: String(row.id) as MapId,
     workspaceId: String(row.workspace_id) as WorkspaceId,
@@ -264,7 +315,7 @@ function toMap(row: Row): MindMapRecord {
   };
 }
 
-function toPlacement(row: Row): PlacementRecord {
+export function toPlacementRecord(row: Row): PlacementRecord {
   return {
     id: String(row.id) as PlacementId,
     workspaceId: String(row.workspace_id) as WorkspaceId,
@@ -282,7 +333,7 @@ function toPlacement(row: Row): PlacementRecord {
   };
 }
 
-function toConnection(row: Row): MapConnectionRecord {
+export function toMapConnectionRecord(row: Row): MapConnectionRecord {
   return {
     id: String(row.id) as MapConnectionId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

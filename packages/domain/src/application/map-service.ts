@@ -32,9 +32,12 @@ import {
   validateHierarchyAssignment,
   type ParentProposal,
 } from '../maps/hierarchy-proposal';
+import { findFreePosition } from '../maps/free-position';
 import type {
   MapConnectionRecord,
   MapConnectionWithRelationship,
+  MapOfNode,
+  MapRelationship,
   MapMode,
   MapRepository,
   MapViewport,
@@ -75,6 +78,8 @@ export interface MapView {
   readonly map: MindMapRecord;
   readonly placements: readonly PlacementWithNode[];
   readonly connections: readonly MapConnectionWithRelationship[];
+  /** Semantic relationships between nodes on the map (derived, see `MapRelationship`). */
+  readonly relationships: readonly MapRelationship[];
 }
 
 /**
@@ -105,6 +110,14 @@ export interface MapService {
   deleteMap(mapId: MapId): Promise<void>;
   setViewport(mapId: MapId, viewport: MapViewport): Promise<void>;
   addPlacement(mapId: MapId, expectedRevision: Revision, input: NewPlacement): Promise<MapView>;
+  /**
+   * Adds an existing node to a map at a free spot near the other items (no chosen position),
+   * optionally under a parent placement. A node already on the map is left where it is. Used
+   * when a node is created with "Add to Mind Maps"; it joins the caller's transaction.
+   */
+  placeNode(mapId: MapId, nodeId: NodeId, parentPlacementId: PlacementId | null): Promise<MapView>;
+  /** Maps the node is placed on. */
+  mapsForNode(nodeId: NodeId): Promise<readonly MapOfNode[]>;
   removePlacement(
     mapId: MapId,
     expectedRevision: Revision,
@@ -261,11 +274,12 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
   }
 
   async function viewOf(map: MindMapRecord): Promise<MapView> {
-    const [placements, connections] = await Promise.all([
+    const [placements, connections, relationships] = await Promise.all([
       maps.listPlacements(workspaceId, map.id),
       maps.listConnections(workspaceId, map.id),
+      maps.listRelationships(workspaceId, map.id),
     ]);
-    return { map, placements, connections };
+    return { map, placements, connections, relationships };
   }
 
   /**
@@ -338,7 +352,7 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
     );
   }
 
-  return {
+  const service: MapService = {
     listMaps: () => maps.listMaps(workspaceId),
 
     createMap: (rawTitle, mode = 'freeform') =>
@@ -464,6 +478,22 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
           style: { color: null },
           createdAt: now,
           updatedAt: now,
+        });
+      }),
+
+    mapsForNode: (nodeId) => maps.listMapsForNode(workspaceId, nodeId),
+
+    placeNode: (mapId, nodeId, parentPlacementId) =>
+      transactions.runInTransaction(async () => {
+        const map = await requireMap(mapId);
+        const placements = await maps.listPlacements(workspaceId, mapId);
+        if (placements.some((placement) => placement.nodeId === nodeId)) return viewOf(map);
+        const position = findFreePosition(placements);
+        return service.addPlacement(mapId, map.revision, {
+          nodeId,
+          x: position.x,
+          y: position.y,
+          parentPlacementId,
         });
       }),
 
@@ -646,4 +676,5 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
         return { mode };
       }),
   };
+  return service;
 }

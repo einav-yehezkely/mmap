@@ -17,6 +17,10 @@ import type { BrowserWindow } from 'electron';
 
 import { checkAttachmentPreview } from './smoke-attachments';
 import { checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
+import { checkExportImport } from './smoke-transfer';
+import { checkBackupAndRestore } from './smoke-backups';
+import { checkAccessibility } from './smoke-accessibility';
+import type { BackupService } from './backups/backup-service';
 import type { WorkspaceManager } from './workspaces/workspace-manager';
 
 export interface SmokeTestCheck {
@@ -38,6 +42,11 @@ export function isSmokeTestRun(argv: readonly string[]): boolean {
   return argv.includes(SMOKE_TEST_FLAG);
 }
 
+/** Path of axe-core's script, passed by the smoke runner; the check is skipped without it. */
+export function smokeAxePath(argv: readonly string[]): string | undefined {
+  return argv.find((argument) => argument.startsWith('--smoke-axe='))?.slice('--smoke-axe='.length);
+}
+
 export function smokeReportPath(argv: readonly string[]): string | undefined {
   return argv
     .find((argument) => argument.startsWith(REPORT_FLAG_PREFIX))
@@ -47,6 +56,8 @@ export function smokeReportPath(argv: readonly string[]): string | undefined {
 export async function runSmokeTest(
   window: BrowserWindow,
   workspaces: WorkspaceManager,
+  backups: BackupService,
+  axePath?: string,
 ): Promise<SmokeTestReport> {
   const checks: SmokeTestCheck[] = [];
 
@@ -275,6 +286,35 @@ export async function runSmokeTest(
   checks.push(
     await check('review recorded and shown in the timeline', () => checkTimeline(window)),
   );
+  checks.push(
+    await check('workspace exported to ZIP and imported back', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-transfer-'));
+      try {
+        await checkExportImport(workspaces, directory);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  checks.push(
+    await check('backup taken and restorable', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-backup-'));
+      try {
+        await checkBackupAndRestore(workspaces, backups, directory);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  if (axePath !== undefined) {
+    checks.push(
+      await check('primary views pass automated WCAG 2.2 AA checks', () =>
+        checkAccessibility(window, axePath),
+      ),
+    );
+  }
 
   return { passed: checks.every((item) => item.passed), checks };
 }

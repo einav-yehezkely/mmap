@@ -81,7 +81,7 @@ export class SqliteTimelineEventRepository implements TimelineEventRepository {
          ORDER BY last_activity_at DESC, id DESC LIMIT 1`,
       )
       .get(workspaceId, nodeId, eventType);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toTimelineEventRecord(row);
   }
 
   public async extendSession(
@@ -199,7 +199,7 @@ export class SqliteTimelineEventRepository implements TimelineEventRepository {
       .forRead()
       .prepare(`SELECT ${COLUMNS} FROM timeline_events WHERE workspace_id = ? AND id = ?`)
       .get(workspaceId, eventId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toTimelineEventRecord(row);
   }
 
   public async update(
@@ -294,12 +294,12 @@ function decodeCursor(encoded: string): Cursor {
 
 function toEntry(row: Row): TimelineEntryRecord {
   return {
-    ...toRecord(row),
+    ...toTimelineEventRecord(row),
     currentNodeTitle: row.current_node_title === null ? null : String(row.current_node_title),
   };
 }
 
-function toRecord(row: Row): TimelineEventRecord {
+export function toTimelineEventRecord(row: Row): TimelineEventRecord {
   return {
     id: String(row.id) as TimelineEventId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

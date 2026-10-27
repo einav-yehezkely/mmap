@@ -84,6 +84,9 @@ calls, so there is nothing to configure. `.gitignore` excludes `.env` files as a
 | `ELECTRON_RENDERER_URL` | No       | mmap main process   | Set automatically by `electron-vite dev`; do not set it yourself. Used only when the app is unpackaged and the value is an `http://localhost` or `http://127.0.0.1` URL. Otherwise ignored, and the renderer loads from `app://mmap`. |
 | `electron_config_cache` | No       | Electron downloader | Optional directory for the cached Electron binary download. Tooling only; the app never reads it.                                                                                                                                     |
 | `ELECTRON_MIRROR`       | No       | Electron downloader | Optional alternative download mirror, documented in the `@electron/get` README. Tooling only.                                                                                                                                         |
+| `MMAP_BENCHMARK`        | No       | Vitest              | Set to `1` to run the skipped benchmark files (search, portability); see [testing.md](testing.md#search-benchmark). Tests only.                                                                                                       |
+| `CSC_LINK`              | No       | electron-builder    | Release signing only: the code-signing certificate (file path or base64). Never commit it. See the [packaging runbook](runbooks/packaging.md#code-signing).                                                                           |
+| `CSC_KEY_PASSWORD`      | No       | electron-builder    | Release signing only: the certificate's password. Never commit it.                                                                                                                                                                    |
 
 Packaged builds also ignore `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE`, because the corresponding
 Electron fuses are switched off ([packaging runbook](runbooks/packaging.md#electron-fuses)).
@@ -91,10 +94,10 @@ Electron fuses are switched off ([packaging runbook](runbooks/packaging.md#elect
 CI (`.github/workflows/ci.yml`) uses two GitHub secrets, only in the secret-scan job and never in
 the app: `GITHUB_TOKEN` (provided automatically by GitHub Actions) and `GITLEAKS_LICENSE` (needed
 only if the repository is owned by an organization). Packaging needs no secrets while builds are
-unsigned.
+unsigned; signing a release needs `CSC_LINK` and `CSC_KEY_PASSWORD` (no certificate exists yet).
 
-The app accepts two command-line flags, used only by the packaged smoke test: `--smoke-test` and
-`--smoke-report=<file>` (`apps/desktop/src/main/smoke-test.ts`).
+The app accepts three command-line flags, used only by the packaged smoke test: `--smoke-test`,
+`--smoke-report=<file>` and `--smoke-axe=<path to axe.min.js>` (`apps/desktop/src/main/smoke-test.ts`).
 
 ## Where things are written
 
@@ -118,7 +121,8 @@ installed builds use `%APPDATA%\mmap` (named after `productName` in
 | Path under the profile folder | Contents                                                                                        |
 | ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | `workspaces\My Knowledge`     | The default workspace created on first launch; other workspaces in the default location as well |
-| `settings.json`               | Last and recent workspaces, attachment size limit                                               |
+| `backups\`                    | Daily backups of each workspace, unless another backup folder is chosen in Settings             |
+| `settings.json`               | Last and recent workspaces, attachment size limit, backup folder and retention                  |
 | `Local Storage\`              | Chromium storage, including unsaved-draft recovery copies                                       |
 | other folders                 | Chromium cache and Electron's single-instance lock                                              |
 
@@ -184,7 +188,9 @@ a lock written by another computer is never removed, so close the workspace ther
   stack traces, so reproduce with `npm run preview -w @mmap/desktop` to see the full error.
 - A single check fails: the check name says which layer is broken (SQLite and migrations,
   `app://` loading, React rendering under the CSP, the preload bridge, first-run workspace
-  creation, node operations through the bridge, renderer isolation, or CSP enforcement). See [testing.md](testing.md#packaged-smoke-test) for what each check proves.
+  creation, node operations through the bridge, renderer isolation, CSP enforcement, export and
+  import, backups, or accessibility). The accessibility check lists each violation with its rule
+  and elements. See [testing.md](testing.md#packaged-smoke-test) for what each check proves.
 - `Smoke test timed out after 120 s.`: often Defender scanning a freshly built binary. Run it
   again; if it keeps timing out, investigate the renderer load.
 

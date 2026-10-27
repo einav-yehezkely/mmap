@@ -55,6 +55,8 @@ export const IPC_CHANNELS = {
   relationshipsUpdate: 'relationships:update',
   relationshipsDelete: 'relationships:delete',
   mapsList: 'maps:list',
+  mapsListForNode: 'maps:list-for-node',
+  mapsAddNode: 'maps:add-node',
   mapsCreate: 'maps:create',
   mapsGet: 'maps:get',
   mapsRename: 'maps:rename',
@@ -81,6 +83,18 @@ export const IPC_CHANNELS = {
   timelineAddMilestone: 'timeline:add-milestone',
   timelineUpdateEntry: 'timeline:update-entry',
   timelineDeleteEntry: 'timeline:delete-entry',
+  transferExportZip: 'transfer:export-zip',
+  transferExportMarkdown: 'transfer:export-markdown',
+  transferPreviewImport: 'transfer:preview-import',
+  transferApplyImport: 'transfer:apply-import',
+  transferDiscardImport: 'transfer:discard-import',
+  backupsGetStatus: 'backups:get-status',
+  backupsCreateNow: 'backups:create-now',
+  backupsChooseDestination: 'backups:choose-destination',
+  backupsUseDefaultDestination: 'backups:use-default-destination',
+  backupsSetRetention: 'backups:set-retention',
+  backupsRestore: 'backups:restore',
+  backupsRestoreFromFolder: 'backups:restore-from-folder',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

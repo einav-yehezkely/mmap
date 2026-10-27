@@ -45,7 +45,7 @@ export class SqliteAttachmentRepository implements AttachmentRepository {
       .forRead()
       .prepare(`SELECT ${COLUMNS} FROM attachments WHERE workspace_id = ? AND id = ?`)
       .get(workspaceId, attachmentId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toAttachmentRecord(row);
   }
 
   public async listForNode(
@@ -60,7 +60,7 @@ export class SqliteAttachmentRepository implements AttachmentRepository {
          ORDER BY created_at, id`,
       )
       .all(workspaceId, nodeId)
-      .map(toRecord);
+      .map(toAttachmentRecord);
   }
 
   public async delete(workspaceId: WorkspaceId, attachmentId: AttachmentId): Promise<void> {
@@ -79,7 +79,7 @@ export class SqliteAttachmentRepository implements AttachmentRepository {
   }
 }
 
-function toRecord(row: Record<string, SQLOutputValue>): AttachmentRecord {
+export function toAttachmentRecord(row: Record<string, SQLOutputValue>): AttachmentRecord {
   return {
     id: String(row.id) as AttachmentId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

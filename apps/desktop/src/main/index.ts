@@ -43,11 +43,26 @@ import { createNodeIpcServices } from './services/node-ipc-services';
 import { createGraphTimelineIpcServices } from './services/graph-timeline-ipc-services';
 import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
+import { BackupService } from './backups/backup-service';
+import {
+  createBackupIpcServices,
+  type BackupNativeInteractions,
+} from './services/backup-ipc-services';
+import {
+  createTransferIpcServices,
+  type TransferNativeInteractions,
+} from './services/transfer-ipc-services';
 import {
   createWorkspaceIpcServices,
   type NativeWorkspaceInteractions,
 } from './services/workspace-ipc-services';
-import { isSmokeTestRun, runSmokeTest, smokeReportPath, writeSmokeReport } from './smoke-test';
+import {
+  isSmokeTestRun,
+  runSmokeTest,
+  smokeAxePath,
+  smokeReportPath,
+  writeSmokeReport,
+} from './smoke-test';
 import { createFileSettingsStore } from './workspaces/app-settings';
 import { WorkspaceManager } from './workspaces/workspace-manager';
 import { isProcessAlive } from './workspaces/workspace-lock';
@@ -71,8 +86,9 @@ const logger = createRedactedLogger({ includeStacks: !app.isPackaged });
 registerAppSchemeAsPrivileged();
 guardAllWebContents(rendererLocation);
 
+const settings = createFileSettingsStore(app.getPath('userData'));
 const workspaces = new WorkspaceManager({
-  settings: createFileSettingsStore(app.getPath('userData')),
+  settings,
   defaultWorkspacesRoot: join(app.getPath('userData'), 'workspaces'),
   appVersion: app.getVersion(),
   timezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -87,6 +103,16 @@ const workspaces = new WorkspaceManager({
   },
   logFailure: (operation, error) => logger.error(operation, error),
   trashFolder: (folderPath) => shell.trashItem(folderPath),
+  // The daily backup (PRD §9) runs in the background shortly after a workspace opens.
+  onWorkspaceOpened: (workspace) => backups.scheduleAfterOpen(workspace),
+});
+
+const backups = new BackupService({
+  workspaces,
+  settings,
+  defaultDestination: join(app.getPath('userData'), 'backups'),
+  appVersion: app.getVersion(),
+  logFailure: (operation, error) => logger.error(operation, error),
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -116,8 +142,11 @@ if (!app.requestSingleInstanceLock()) {
     }
     // Delay quitting until queued writes are committed and the lock is released.
     event.preventDefault();
-    workspaces
-      .close()
+    backups.stop();
+    // A backup in progress finishes first: it reads the database that is about to close.
+    backups
+      .idle()
+      .then(() => workspaces.close())
       .catch((error: unknown) => logger.error('workspace close', error))
       .finally(() => {
         workspaceClosed = true;
@@ -169,6 +198,57 @@ const attachmentInteractions: AttachmentNativeInteractions = {
   },
 };
 
+/** Archives are chosen in native dialogs only; the renderer never names a path (PRD §8). */
+const transferInteractions: TransferNativeInteractions = {
+  async chooseExportDestination(suggestedName) {
+    const options: Electron.SaveDialogOptions = {
+      title: 'Export workspace',
+      defaultPath: join(app.getPath('documents'), suggestedName),
+      filters: [{ name: 'mmap workspace export', extensions: ['zip'] }],
+      properties: ['showOverwriteConfirmation', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options);
+    return result.canceled || result.filePath === '' ? null : result.filePath;
+  },
+  async chooseArchiveToImport() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Import a workspace export',
+      filters: [{ name: 'mmap workspace export', extensions: ['zip'] }],
+      properties: ['openFile', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+};
+
+/** Backup folders are chosen in native dialogs only (PRD §8). */
+const backupInteractions: BackupNativeInteractions = {
+  async chooseBackupFolder() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a folder for backups',
+      properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+  async chooseSnapshotFolder() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a backup to restore (a folder inside "snapshots")',
+      properties: ['openDirectory', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+};
+
 async function startApplication(): Promise<void> {
   if (app.isPackaged) {
     // Removes the default menu, which exposes developer tools and reload shortcuts.
@@ -193,6 +273,7 @@ async function startApplication(): Promise<void> {
     }),
   );
 
+  backups.start();
   try {
     await workspaces.startup();
   } catch (error) {
@@ -226,6 +307,15 @@ async function startApplication(): Promise<void> {
         native: attachmentInteractions,
         logFailure: (operation, error) => logger.error(operation, error),
       }),
+      ...createTransferIpcServices({
+        currentWorkspace: () => workspaces.current,
+        maxAttachmentBytes: async () =>
+          (await workspaces.getPreferences()).maxAttachmentMegabytes * 1024 * 1024,
+        native: transferInteractions,
+        appVersion: app.getVersion(),
+        ids: { newId: () => randomUUID() },
+      }),
+      ...createBackupIpcServices(backups, backupInteractions),
       'preferences:get': () => workspaces.getPreferences(),
       'preferences:update': (changes) => workspaces.updatePreferences(changes),
     },
@@ -240,13 +330,16 @@ async function startApplication(): Promise<void> {
     preloadPath: resolvePreloadPath(mainDirectory),
     allowDevTools: !app.isPackaged,
     showWhenReady: !smokeTest,
+    ...(app.isPackaged ? {} : { iconPath: join(app.getAppPath(), 'resources', 'icon.png') }),
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 
   if (smokeTest) {
-    const report = await runSmokeTest(mainWindow, workspaces);
+    const report = await runSmokeTest(mainWindow, workspaces, backups, smokeAxePath(process.argv));
+    backups.stop();
+    await backups.idle();
     await workspaces.close();
     writeSmokeReport(report, smokeReportPath(process.argv));
     app.exit(report.passed ? 0 : 1);

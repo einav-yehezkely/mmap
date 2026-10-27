@@ -93,8 +93,26 @@ export interface MmapRendererApi {
     readonly updateEntry: BridgeCall<'timeline:update-entry'>;
     readonly deleteEntry: BridgeCall<'timeline:delete-entry'>;
   };
+  readonly transfer: {
+    readonly exportZip: BridgeCall<'transfer:export-zip'>;
+    readonly exportMarkdown: BridgeCall<'transfer:export-markdown'>;
+    readonly previewImport: BridgeCall<'transfer:preview-import'>;
+    readonly applyImport: BridgeCall<'transfer:apply-import'>;
+    readonly discardImport: BridgeCall<'transfer:discard-import'>;
+  };
+  readonly backups: {
+    readonly getStatus: BridgeCall<'backups:get-status'>;
+    readonly createNow: BridgeCall<'backups:create-now'>;
+    readonly chooseDestination: BridgeCall<'backups:choose-destination'>;
+    readonly useDefaultDestination: BridgeCall<'backups:use-default-destination'>;
+    readonly setRetention: BridgeCall<'backups:set-retention'>;
+    readonly restore: BridgeCall<'backups:restore'>;
+    readonly restoreFromFolder: BridgeCall<'backups:restore-from-folder'>;
+  };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;
+    readonly listForNode: BridgeCall<'maps:list-for-node'>;
+    readonly addNode: BridgeCall<'maps:add-node'>;
     readonly create: BridgeCall<'maps:create'>;
     readonly get: BridgeCall<'maps:get'>;
     readonly rename: BridgeCall<'maps:rename'>;

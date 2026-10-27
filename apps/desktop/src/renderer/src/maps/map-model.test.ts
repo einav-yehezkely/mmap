@@ -11,6 +11,7 @@ import {
   connectorLabel,
   findParentLoops,
   nextFreeformPosition,
+  parentChoices,
   planKeyboardMove,
 } from './map-model';
 
@@ -41,6 +42,7 @@ function mapView(
   mode: 'freeform' | 'hierarchical',
   placements: PlacementViewDto[],
   connections: MapViewDto['connections'] = [],
+  relationships: MapViewDto['relationships'] = [],
 ): MapViewDto {
   return {
     map: {
@@ -53,6 +55,7 @@ function mapView(
     },
     placements,
     connections,
+    relationships,
   };
 }
 
@@ -248,5 +251,108 @@ describe('findParentLoops', () => {
         ]),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('semantic relationships on the map', () => {
+  const relationship = (
+    key: string,
+    source: string,
+    target: string,
+    directionality: 'directed' | 'undirected' = 'directed',
+  ) => ({
+    id: id(key),
+    sourceNodeId: placement(source, null, 0).nodeId,
+    targetNodeId: placement(target, null, 0).nodeId,
+    typeLabel: directionality === 'directed' ? 'explains' : 'related to',
+    directionality,
+  });
+
+  it('draws relationships between items with their type and direction', () => {
+    const view = mapView(
+      'freeform',
+      [placement('a', null, 0), placement('b', null, 1)],
+      [],
+      [relationship('r', 'a', 'b'), relationship('s', 'b', 'a', 'undirected')],
+    );
+    const lines = buildCanvasModel(view).lines.filter((line) => line.kind === 'relationship');
+    expect(lines).toEqual([
+      {
+        id: `relationship:${id('r')}`,
+        kind: 'relationship',
+        source: id('a'),
+        target: id('b'),
+        label: 'explains',
+        directed: true,
+      },
+      {
+        id: `relationship:${id('s')}`,
+        kind: 'relationship',
+        source: id('b'),
+        target: id('a'),
+        label: 'related to',
+        directed: false,
+      },
+    ]);
+  });
+
+  it('does not draw a relationship twice when a connector already shows it', () => {
+    const view = mapView(
+      'freeform',
+      [placement('a', null, 0), placement('b', null, 1)],
+      [
+        {
+          id: id('c'),
+          sourcePlacementId: id('a'),
+          targetPlacementId: id('b'),
+          label: null,
+          relationshipId: id('r'),
+          relationshipTypeLabel: 'explains',
+        },
+      ],
+      [relationship('r', 'a', 'b')],
+    );
+    const kinds = buildCanvasModel(view).lines.map((line) => line.kind);
+    expect(kinds).toEqual(['connector']);
+  });
+
+  it('leaves the hierarchy and positions unchanged, and hides lines to collapsed items', () => {
+    const placements = [
+      placement('a', null, 0, { isCollapsed: true }),
+      placement('b', 'a', 0),
+      placement('c', null, 1),
+    ];
+    const without = buildCanvasModel(mapView('hierarchical', placements));
+    const withRelationships = buildCanvasModel(
+      mapView(
+        'hierarchical',
+        placements,
+        [],
+        [relationship('r', 'a', 'c'), relationship('s', 'b', 'c')],
+      ),
+    );
+    expect(withRelationships.items).toEqual(without.items);
+    expect(withRelationships.lines.filter((line) => line.kind === 'hierarchy')).toEqual(
+      without.lines.filter((line) => line.kind === 'hierarchy'),
+    );
+    // b is hidden under the collapsed a, so only a–c is drawn.
+    expect(
+      withRelationships.lines.filter((line) => line.kind === 'relationship').map((line) => line.id),
+    ).toEqual([`relationship:${id('r')}`]);
+  });
+});
+
+describe('parentChoices', () => {
+  it('lists every item in tree order with its depth, including collapsed branches', () => {
+    const view = mapView('hierarchical', [
+      placement('a', null, 0, { isCollapsed: true }),
+      placement('b', 'a', 0),
+      placement('c', null, 1),
+    ]);
+    expect(parentChoices(view).map((choice) => [choice.title, choice.depth])).toEqual([
+      ['Item a', 0],
+      ['Item b', 1],
+      ['Item c', 0],
+    ]);
   });
 });

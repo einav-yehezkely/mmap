@@ -7,7 +7,7 @@
  * sizes are bounded here as a first line of defense; the domain validates them again.
  */
 
-import { MAP_MODES, PLACEMENT_COLORS } from '@mmap/domain';
+import { MAP_MODES, PLACEMENT_COLORS, RELATIONSHIP_DIRECTIONALITIES } from '@mmap/domain';
 import { z } from 'zod';
 
 /** Largest number of placements a single request may touch (PRD §9: up to 500 per map). */
@@ -66,11 +66,30 @@ export const mapViewSchema = z.strictObject({
   }),
   placements: z.array(placementViewSchema).readonly(),
   connections: z.array(mapConnectionViewSchema).readonly(),
+  /** Semantic relationships between nodes on the map; shown, never stored as map data. */
+  relationships: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        sourceNodeId: z.uuid(),
+        targetNodeId: z.uuid(),
+        typeLabel: z.string(),
+        directionality: z.enum(RELATIONSHIP_DIRECTIONALITIES),
+      }),
+    )
+    .readonly(),
 });
 
 const parentAssignmentSchema = z.strictObject({
   placementId: z.uuid(),
   parentPlacementId: z.uuid().nullable(),
+});
+
+/** Maps a node is placed on (node panel). */
+export const mapsOfNodeSchema = z.strictObject({
+  items: z
+    .array(z.strictObject({ id: z.uuid(), title: z.string(), mode: mapModeSchema }))
+    .readonly(),
 });
 
 export type MapSummaryDto = z.infer<typeof mapSummarySchema>;
@@ -82,6 +101,25 @@ export type MapViewDto = z.infer<typeof mapViewSchema>;
 const structural = { mapId: z.uuid(), expectedRevision: revision };
 
 export const mapContracts = {
+  /** Maps the node is placed on. */
+  listForNode: {
+    request: z.strictObject({ nodeId: z.uuid() }),
+    response: mapsOfNodeSchema,
+  },
+  /**
+   * Adds an existing node to maps, each optionally under a parent placement, in one transaction
+   * (all or nothing). A map that already shows the node is left as it is. Returns the node's maps.
+   */
+  addNode: {
+    request: z.strictObject({
+      nodeId: z.uuid(),
+      targets: z
+        .array(z.strictObject({ mapId: z.uuid(), parentPlacementId: z.uuid().nullable() }))
+        .min(1)
+        .max(50),
+    }),
+    response: mapsOfNodeSchema,
+  },
   list: {
     request: z.undefined(),
     response: z.strictObject({ items: z.array(mapSummarySchema).readonly() }),

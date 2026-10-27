@@ -102,6 +102,7 @@ export default tseslint.config(
     files: [
       'packages/storage-sqlite/src/repositories/**/*.ts',
       'packages/storage-sqlite/src/graph/**/*.ts',
+      'packages/storage-sqlite/src/portability/**/*.ts',
     ],
     rules: { '@typescript-eslint/require-await': 'off' },
   },

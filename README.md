@@ -20,14 +20,24 @@ generated content or inferred relationships). The product requirements are in
 - **Phase 3 — Mind maps: done, merged into `main`.** Multiple maps that reuse nodes, freeform
   and hierarchical modes, persistence. What works and what is still missing is listed in the
   [Phase 3 status](docs/implementation-plan.md#8-phase-3-status-2026-10-27).
-- **Phase 4 — Graph and timeline: implemented on branch `phase-4-graph-timeline`.** Knowledge
+- **Phase 4 — Graph and timeline: done, merged into `main`.** Knowledge
   graph with bounded, clearly labelled partial views, mind map membership, saved positions and a
   list alternative; a visual learning timeline with reviews, reflections, milestones, learning
   dates and a workspace timezone. What works and what is still missing is
   listed in the [Phase 4 status](docs/implementation-plan.md#9-phase-4-status-2026-10-27).
+- **Phase 5 — Portability and release: partly done, on branch `phase-5-portability`.** Lossless
+  ZIP export and validated import, Markdown export, daily verified backups with restore, a Home
+  page, the app icon, an automated WCAG 2.2 AA check of the primary views, and the code-signing
+  configuration. **Not releasable yet:** there is no signing certificate (builds are unsigned), no
+  automatic updates, and no clean-machine or reference-machine verification. The full list is in
+  the [Phase 5 status](docs/implementation-plan.md#10-phase-5-status-2026-10-27).
 
 What works in the app today:
 
+- **Home.** The app opens on a Home page: a greeting and today's date in the workspace's
+  timezone, quick actions (new node, search, mind maps, graph), the notes you edited most
+  recently, recent mind maps and activity, and the backup status. A new workspace shows three
+  "Get started" steps.
 - **Workspaces.** A `My Knowledge` workspace is created on first launch under
   `%APPDATA%\mmap\workspaces`. Create more (default location or a folder you choose), open an
   existing workspace folder, switch, rename, and see the folder in Settings. Missing or damaged
@@ -68,8 +78,8 @@ What works in the app today:
   highlight a map or open it. Selecting a node highlights its neighborhood and opens a side panel;
   Focus mode shows a node with its neighbors; expand neighbors on demand. Large workspaces load at
   most 1,000 nodes at a time, and the view always says whether it is partial ("showing X of Y").
-  A List tab presents the same information for keyboard and screen-reader users. Map regions and
-  collapsing maps are in progress.
+  A List tab presents the same information for keyboard and screen-reader users. Map regions
+  outline each map's nodes, and a map can be collapsed into one summary node.
 - **Timeline.** Created nodes, note editing sessions, new relationships, reviews and learning
   milestones on a horizontal time axis (older left, newer right) with dates in the workspace's
   timezone (set in Settings): pan by dragging, scrolling or the arrow buttons, zoom by day, week,
@@ -81,10 +91,24 @@ What works in the app today:
   Any entry can be given a learning date (when the learning actually happened), which places it
   on the timeline while its recorded time is kept. Reviews and milestones can be edited or
   deleted; recorded activity cannot be changed. The timeline is a record, not a score.
+- **Backups.** The open workspace is backed up once a day (and on request) with SQLite's online
+  backup API, with every attached file checked against its checksum. Seven daily and four weekly
+  backups are kept by default; the folder (for example on another drive) and the numbers can be
+  changed. Settings shows the last backup, any failure, and a warning when backups are on the
+  workspace's own drive. Restore replaces the open workspace after a safety backup, or recreates
+  a lost workspace from a backup folder; every byte is verified first.
+- **Export and import.** Export a workspace as one ZIP file (manifest, all data, attachment files
+  with checksums) and import it into any workspace: the whole archive is validated first (size
+  and entry limits, safe file names, schemas, checksums), a preview shows what will be added, and
+  everything is added as new items with new IDs in one transaction. Tags and relationship types
+  with the same name are reused, imported timeline entries are marked as imported, and importing
+  the same archive twice needs confirmation. A Markdown export writes one readable file per node
+  with wikilinks, math and relationships (it cannot be imported).
 
-Not yet available: export, import and backups (Phase 5)
-([implementation plan](docs/implementation-plan.md)). End-user instructions are in the
-[user guide](docs/user-guide.md).
+Not yet available: automatic updates, a signed installer, merging imports into existing nodes,
+Markdown import, and progress or cancel for long operations
+([implementation plan](docs/implementation-plan.md#not-yet-done-in-phase-5)). End-user
+instructions are in the [user guide](docs/user-guide.md).
 
 ## Quick start
 
@@ -99,50 +123,57 @@ npm run dev       # start the app with hot reload
 
 ## Repository layout
 
-| Path                      | Contents                                                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `apps/desktop`            | Electron app: `src/main` (main process: workspaces, attachment store, IPC services), `src/preload`, `src/renderer` (React) |
-| `packages/domain`         | Pure TypeScript domain rules, application services and ports; no Electron, React, SQLite or Node APIs                      |
-| `packages/contracts`      | IPC channel catalogue, zod request/response schemas, result envelope                                                       |
-| `packages/storage-sqlite` | `node:sqlite` adapter: connection settings, migrations, schema, write coordinator, repositories, FTS5 search, graph query  |
-| `tests`                   | Repository-level architecture (module boundary) test                                                                       |
-| `tooling`                 | `architecture-rules.mjs`, shared by ESLint and the architecture test                                                       |
-| `docs`                    | PRD, implementation plan, ADRs, developer documentation, runbooks                                                          |
+| Path                      | Contents                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/desktop`            | Electron app: `src/main` (main process: workspaces, attachment store, export and import, backups, IPC services), `src/preload`, `src/renderer` (React)             |
+| `packages/domain`         | Pure TypeScript domain rules, application services and ports; no Electron, React, SQLite or Node APIs                                                              |
+| `packages/contracts`      | IPC channel catalogue, zod request/response schemas, result envelope                                                                                               |
+| `packages/storage-sqlite` | `node:sqlite` adapter: connection settings, migrations, schema, write coordinator, repositories, FTS5 search, graph query, verified backup, export snapshot reader |
+| `tests`                   | Repository-level architecture (module boundary) test                                                                                                               |
+| `tooling`                 | `architecture-rules.mjs`, shared by ESLint and the architecture test                                                                                               |
+| `docs`                    | PRD, implementation plan, ADRs, developer documentation, runbooks                                                                                                  |
 
 ## Scripts
 
 Run from the repository root.
 
-| Command                                | What it does                                                          |
-| -------------------------------------- | --------------------------------------------------------------------- |
-| `npm run dev`                          | Starts the app in watch mode with a loopback Vite dev server          |
-| `npm run verify`                       | `format:check`, `lint`, `typecheck`, `test`, `build`; run before a PR |
-| `npm test`                             | Runs all Vitest projects once                                         |
-| `npm run test:watch`                   | Runs Vitest in watch mode                                             |
-| `npm run lint`                         | ESLint with zero warnings allowed, including module boundary rules    |
-| `npm run typecheck`                    | Strict TypeScript checks for every package                            |
-| `npm run format` / `format:check`      | Prettier write / check                                                |
-| `npm run build`                        | Builds main, preload and renderer bundles into `apps/desktop/out`     |
-| `npm run package:dir -w @mmap/desktop` | Builds an unpacked app in `apps/desktop/release/win-unpacked`         |
-| `npm run package`                      | Builds the unsigned NSIS installer in `apps/desktop/release`          |
-| `npm run smoke:packaged`               | Runs the packaged app offline in `--smoke-test` mode                  |
+| Command                                                      | What it does                                                                                                    |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                                                | Starts the app in watch mode with a loopback Vite dev server                                                    |
+| `npm run verify`                                             | `format:check`, `lint`, `typecheck`, `test`, `build`; run before a PR                                           |
+| `npm test`                                                   | Runs all Vitest projects once                                                                                   |
+| `npm run test:watch`                                         | Runs Vitest in watch mode                                                                                       |
+| `npm run lint`                                               | ESLint with zero warnings allowed, including module boundary rules                                              |
+| `npm run typecheck`                                          | Strict TypeScript checks for every package                                                                      |
+| `npm run format` / `format:check`                            | Prettier write / check                                                                                          |
+| `npm run build`                                              | Builds main, preload and renderer bundles into `apps/desktop/out`                                               |
+| `npm run package:dir -w @mmap/desktop`                       | Builds an unpacked app in `apps/desktop/release/win-unpacked`                                                   |
+| `npm run package`                                            | Builds the NSIS installer in `apps/desktop/release` (unsigned unless `CSC_LINK` and `CSC_KEY_PASSWORD` are set) |
+| `npm run smoke:packaged`                                     | Runs the packaged app offline in `--smoke-test` mode (17 checks, including WCAG 2.2 AA)                         |
+| `powershell -File apps/desktop/scripts/verify-signature.ps1` | Release check: fails unless the installer and `mmap.exe` are signed and timestamped                             |
 
 ## Documentation
 
 - [Local setup](docs/setup.md): prerequisites, daily commands, environment variables,
   troubleshooting
-- [User guide](docs/user-guide.md): how to use workspaces, nodes, notes, links, relationships,
-  mind maps, the knowledge graph, the timeline, search, tags and attachments
+- [User guide](docs/user-guide.md): how to use Home, workspaces, nodes, notes, links,
+  relationships, mind maps, the knowledge graph, the timeline, search, tags, attachments,
+  backups, and export and import
 - [Architecture](docs/architecture.md): packages, process model, IPC request flow, workspace
   lifecycle, write coordinator, autosave, notes, relationships, wikilinks, search, mind maps,
-  knowledge graph, learning timeline, attachments, security
+  knowledge graph, learning timeline, attachments, export and import, backups and restore,
+  security
 - [Data model](docs/data-model.md): every table and how it is used, references and backlinks,
   timeline grouping, reviews, milestones, learning dates and timezone, attachment lifecycle,
-  migrations
-- [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all channels
-- [Testing](docs/testing.md): test layers, rules, smoke test, search benchmark, what is not
-  automated yet
-- [Packaging runbook](docs/runbooks/packaging.md): build, package, smoke test, fuses, signing gap
+  import history, the export archive and backup layouts, migrations
+- [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all 84 channels
+- [Testing](docs/testing.md): test layers, rules, smoke test, accessibility check, search and
+  portability benchmarks, security tests for archives and backups, what is not automated yet
+- [Packaging runbook](docs/runbooks/packaging.md): build, package, smoke test, fuses, app icon,
+  code signing, updating an installation, release checklist
+- [Backup and restore runbook](docs/runbooks/backup-and-restore.md): where backups are, changing
+  the folder, restoring the open workspace, restoring after losing a drive, what is verified,
+  measured restore time
 - [Product requirements (PRD)](docs/PRD-desktop) and
   [implementation plan](docs/implementation-plan.md)
 - Architecture Decision Records ([index](docs/adr/README.md)):
@@ -156,3 +187,4 @@ Run from the repository root.
   - [ADR-0008 Wikilinks and note schema version 2](docs/adr/0008-wikilinks-and-note-schema-v2.md)
   - [ADR-0009 Mind map editing](docs/adr/0009-mind-map-editing.md)
   - [ADR-0010 Knowledge graph and learning timeline](docs/adr/0010-graph-and-timeline.md)
+  - [ADR-0011 Workspace export and import](docs/adr/0011-export-import.md)

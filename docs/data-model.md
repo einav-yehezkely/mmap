@@ -8,38 +8,45 @@ Migration 3 adds the knowledge graph's visual state (`graph_node_positions` and
 `graph_view_state`), migration 4 drops `graph_view_state` again, and migration 5 rebuilds
 `timeline_events` for learning milestones and learning dates (see [Migrations](#migrations)).
 
-Migration 1 creates the complete schema for the whole logical model. The Phase 1 to 4 services
-use most of it; the rest waits for the phases that need it (see
-[Table usage](#table-usage-after-phase-4)). Phase 3 (mind maps) added no migration, and the first
-Phase 4 timeline needed none: the map tables, the timeline columns for reviews and imports, and
-the workspace timezone were already in migration 1. The redesigned Phase 4 graph needed a new
+Migration 1 creates the complete schema for the whole logical model, and since Phase 5 every
+table is in use (see [Table usage](#table-usage-after-phase-5)). Phase 3 (mind maps) added no
+migration, and the first Phase 4 timeline needed none: the map tables, the timeline columns for
+reviews and imports, and the workspace timezone were already in migration 1. Phase 5 (export,
+import, backups) added none either: it uses `transfer_jobs` and the timeline's import columns from
+migration 1, and keeps backups and archives outside the database. The redesigned Phase 4 graph needed a new
 table, for node positions that are kept apart from map placements, and the redesigned visual
 timeline needed a new event type and two new columns on `timeline_events`. The schema is verified
 by the tests in `packages/storage-sqlite/src/migrations/initial-schema.test.ts`, the graph tables
 by `packages/storage-sqlite/src/graph/graph-maps-layout.test.ts` and the timeline rebuild by
 `packages/storage-sqlite/src/migrations/timeline-rebuild.test.ts`.
 
-## Table usage after Phase 4
+## Table usage after Phase 5
 
 Repositories are in `packages/storage-sqlite/src/repositories/`; the services that call them are
 in `packages/domain/src/application/`. Every repository method takes the workspace ID and filters
-by it, so a record from another workspace behaves as not found.
+by it, so a record from another workspace behaves as not found. Since Phase 5, export reads every
+table except `knowledge_nodes_fts`, `note_references`, `transfer_jobs` and `schema_migrations`
+through `SqliteWorkspaceSnapshotReader`
+(`packages/storage-sqlite/src/portability/sqlite-workspace-snapshot-reader.ts`), and import
+writes the same tables through the repositories in one transaction (`ImportService`,
+`packages/domain/src/application/import-service.ts`); see
+[Export archive](#export-archive-and-backup-layouts).
 
-| Table                                            | Status       | Written by                                                                                                                                                                                                                                                                |
-| ------------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workspaces`                                     | Used         | `WorkspaceService.initialize` (create), `rename`, `setTimezone`; read on every open to check the manifest ID; `timezone` read by timeline date filters                                                                                                                    |
-| `knowledge_nodes`                                | Used         | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders                                                                                                                                                                  |
-| `knowledge_nodes_fts`                            | Used         | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`) and by the graph text filter                                                                                                                                                |
-| `relationship_types`                             | Used         | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction                                                                                                                                                              |
-| `tags`, `node_tags`                              | Used         | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search                                                                                                                                                                        |
-| `timeline_events`                                | Used         | `node_created`, `note_updated` (grouped by session), `relationship_created`; `TimelineService` writes `reviewed` and `milestone` events, edits their title and reflection, deletes them, sets or clears `learned_at` on any event, and lists all events (Timeline screen) |
-| `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                                                                                                                                                                                         |
-| `relationships`                                  | Used         | `RelationshipService`: create, update (type, description, reverse), delete, list for a node; read by `SqliteGraphQuery` for the graph                                                                                                                                     |
-| `note_references`                                | Used         | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks, delete preview and the graph's note-link layer                                                                                                                                      |
-| `mind_maps`, `map_placements`, `map_connections` | Used         | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below); read by `SqliteGraphQuery` for map membership and the graph's map filter                                                                                       |
-| `graph_node_positions` (migration 3)             | Used         | `GraphService.savePositions` through `SqliteGraphLayoutRepository` (`graph:save-positions`); read by `graph:get-positions`; rows cascade when a node is deleted                                                                                                           |
-| `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                                                                                                                                                                                   |
-| `schema_migrations`                              | Used         | Migration runner                                                                                                                                                                                                                                                          |
+| Table                                            | Status | Written by                                                                                                                                                                                                                                                                |
+| ------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspaces`                                     | Used   | `WorkspaceService.initialize` (create), `rename`, `setTimezone`; read on every open to check the manifest ID; `timezone` read by timeline date filters                                                                                                                    |
+| `knowledge_nodes`                                | Used   | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders                                                                                                                                                                  |
+| `knowledge_nodes_fts`                            | Used   | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`) and by the graph text filter                                                                                                                                                |
+| `relationship_types`                             | Used   | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction                                                                                                                                                              |
+| `tags`, `node_tags`                              | Used   | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search                                                                                                                                                                        |
+| `timeline_events`                                | Used   | `node_created`, `note_updated` (grouped by session), `relationship_created`; `TimelineService` writes `reviewed` and `milestone` events, edits their title and reflection, deletes them, sets or clears `learned_at` on any event, and lists all events (Timeline screen) |
+| `attachments`                                    | Used   | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                                                                                                                                                                                         |
+| `relationships`                                  | Used   | `RelationshipService`: create, update (type, description, reverse), delete, list for a node; read by `SqliteGraphQuery` for the graph                                                                                                                                     |
+| `note_references`                                | Used   | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks, delete preview and the graph's note-link layer                                                                                                                                      |
+| `mind_maps`, `map_placements`, `map_connections` | Used   | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below); read by `SqliteGraphQuery` for map membership and the graph's map filter                                                                                       |
+| `graph_node_positions` (migration 3)             | Used   | `GraphService.savePositions` through `SqliteGraphLayoutRepository` (`graph:save-positions`); read by `graph:get-positions`; rows cascade when a node is deleted                                                                                                           |
+| `transfer_jobs`                                  | Used   | `SqliteImportHistoryRepository`: one `import_zip` row per completed import, written in the import's transaction; read to detect re-imports of the same archive                                                                                                            |
+| `schema_migrations`                              | Used   | Migration runner                                                                                                                                                                                                                                                          |
 
 ## Three kinds of connection
 
@@ -228,7 +235,11 @@ These rows are derived data; the note JSON is the source of truth. How they are 
 - **Rebuilt per save.** Whenever a note is written (create, duplicate, or an update that includes
   the note), `KnowledgeNodeService` deletes all rows of that source node and inserts the current
   ones, in the same transaction as the node row (PRD §14). Removing a link and saving removes its
-  row.
+  row. The delete is `DELETE FROM note_references WHERE source_node_id = ? AND +workspace_id = ?`:
+  the unary `+` stops SQLite from choosing the `(workspace_id, target_node_id)` index, which
+  scanned every reference of the workspace on every save, so the primary key finds the note's
+  rows directly (fixed in Phase 5; a query-plan test in `note-references.test.ts` guards it).
+  Import rebuilds the references of every imported note the same way.
 - **Only existing targets.** Each insert is `INSERT … SELECT … WHERE EXISTS` on
   `knowledge_nodes` in the same workspace. A link to a deleted node, or an ID from another
   workspace, is not stored; it stays in the note JSON and is shown as unresolved.
@@ -379,9 +390,11 @@ without `milestone`, `learned_at` and `title`.
   a review, or a milestone's details, at most 2,000 characters after trimming, with line breaks
   kept (`normalizeReflection` in `timeline-service.ts`). Recorded activity always has
   `reflection = NULL`.
-- `is_imported` and `import_origin`: every event written today has `is_imported = 0` and no
-  origin. Import (Phase 5) will set them, and the Timeline view shows an "Imported" badge for such
-  events. `import_origin` is never sent to the renderer.
+- `is_imported` and `import_origin`: events recorded in the workspace have `is_imported = 0` and
+  no origin. Every event added by a ZIP import (Phase 5) has `is_imported = 1` and the origin
+  `<source workspace name> (exported YYYY-MM-DD)`, also when it was already marked as imported in
+  the archive. The Timeline view shows an "Imported" badge for such events. `import_origin` is
+  never sent to the renderer.
 
 #### What is recorded
 
@@ -509,14 +522,73 @@ See [architecture.md](architecture.md#attachments) for the file-type policy and 
 
 ### `transfer_jobs` (TransferJob)
 
-Long-running export, import, backup and restore jobs: `kind`, `state`, `progress` (0 to 1),
-`idempotency_key` (unique per workspace, so a retried request does not start a second job),
-`result_relative_path`, `expires_at`, `error_code`. Used from Phase 5.
+Designed for long-running export, import, backup and restore jobs: `kind` (`export_zip`,
+`export_markdown`, `import_zip`, `backup`, `restore`), `state` (`pending`, `running`,
+`succeeded`, `failed`, `cancelled`), `progress` (0 to 1), `idempotency_key` (unique per
+workspace, so a retried request does not start a second job), `result_relative_path`,
+`expires_at`, `error_code`.
+
+**Phase 5 uses it only as the import history**
+(`packages/storage-sqlite/src/portability/sqlite-import-history-repository.ts`). Each completed
+ZIP import writes one row, in the same transaction as the imported records: `kind = 'import_zip'`,
+`state = 'succeeded'`, `progress = 1`, and the idempotency key `import:<exportId>:<jobId>`, where
+`exportId` is the random ID in the archive's manifest and `jobId` the row's own ID. The job ID
+keeps the key unique, so the same archive can be imported again after the user confirmed the
+duplicate warning. Earlier imports of an archive are found by the key prefix `import:<exportId>:`
+(compared with `substr`, not `LIKE`, so characters in the export ID can never act as wildcards).
+Exports, backups, restores and failed imports are not recorded, and no row is ever in another
+state: there is no progress reporting or cancellation yet.
+
+The table is not exported: an imported workspace's history of its own imports does not travel
+with it.
 
 ### `schema_migrations` (bookkeeping)
 
 Created by the migration runner, not by migration 1. One row per applied migration: `version`,
 `name`, `sha256` of its SQL, `applied_at`.
+
+## Export archive and backup layouts
+
+Workspace data also exists outside `mmap.sqlite` in two formats (Phase 5). Neither is a table, but
+both mirror this schema.
+
+**ZIP export** (`packages/domain/src/portability/archive-format.ts`,
+[ADR-0011](adr/0011-export-import.md)):
+
+```
+manifest.json            format "mmap-workspace-export", formatVersion 1, exportId, exportedAt,
+                         appVersion, schemaVersion, workspace { id, name, timezone }, counts,
+                         files [{ path, byteSize, sha256 }]
+data/workspace.json      nodes, tags, nodeTags, relationshipTypes, relationships, maps,
+                         placements, connections, timelineEvents, attachments, graphPositions
+attachments/<id>         the bytes of each attachment, named by its attachment ID
+```
+
+`data/workspace.json` is a field-by-field mapping of the rows (`toArchiveData` in
+`export-archive.ts`), with the source workspace's IDs and UTC timestamps. A node's note is
+embedded as a JSON object, not a string. Not exported: `workspace_id` columns, revisions,
+`note_plain_text`, stored attachment paths, staged attachments, `knowledge_nodes_fts`,
+`note_references` (rebuilt from the notes on import), `transfer_jobs`, `schema_migrations`, and
+everything outside the database except attachment files (lock, `recovery/`, logs, machine
+settings). On import, every record gets a new ID; see
+[architecture.md](architecture.md#import).
+
+**Backup snapshots** (`apps/desktop/src/main/backups/snapshot-store.ts`,
+[ADR-0006](adr/0006-backup-policy.md)):
+
+```
+<destination>/<workspace ID>/
+  snapshots/<UTC time>/        one folder per snapshot, e.g. 2026-10-27T09-15-00-123Z
+    backup.json                format "mmap-backup", formatVersion 1, snapshotId, workspaceId,
+                               workspaceName, createdAt, appVersion, schemaVersion,
+                               database { byteSize, sha256 }, attachments [{ relativePath,
+                               sha256, byteSize }], missingAttachments
+    mmap.sqlite                consistent, integrity-checked copy of the database
+  files/<ab>/<sha256>          attachment bytes, stored once per content and shared by snapshots
+```
+
+A snapshot keeps the source workspace's IDs and its stored attachment paths, because restoring it
+recreates the same workspace. `<destination>` is `<userData>/backups` by default.
 
 ## Migrations
 
