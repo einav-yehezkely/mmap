@@ -94,9 +94,11 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.graphGetPositions]: graphContracts.getPositions,
   [IPC_CHANNELS.graphSavePositions]: graphContracts.savePositions,
   [IPC_CHANNELS.timelineList]: timelineContracts.list,
+  [IPC_CHANNELS.timelineWindow]: timelineContracts.window,
   [IPC_CHANNELS.timelineMarkReviewed]: timelineContracts.markReviewed,
-  [IPC_CHANNELS.timelineUpdateReflection]: timelineContracts.updateReflection,
-  [IPC_CHANNELS.timelineDeleteReviewed]: timelineContracts.deleteReviewed,
+  [IPC_CHANNELS.timelineAddMilestone]: timelineContracts.addMilestone,
+  [IPC_CHANNELS.timelineUpdateEntry]: timelineContracts.updateEntry,
+  [IPC_CHANNELS.timelineDeleteEntry]: timelineContracts.deleteEntry,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

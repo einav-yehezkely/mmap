@@ -264,10 +264,10 @@ describe('reviewed entries', () => {
       currentNodeTitle: 'Entropy',
       isImported: false,
     });
-    const edited = await timeline.updateReflection(review.id, '   ');
+    const edited = await timeline.updateEntry(review.id, { reflection: '   ' });
     expect(edited.reflection).toBeNull();
 
-    await timeline.deleteReviewed(review.id);
+    await timeline.deleteEntry(review.id);
     expect((await list(timeline)).map((event) => event.eventType)).toEqual(['node_created']);
   });
 
@@ -276,10 +276,10 @@ describe('reviewed entries', () => {
     await nodes.create({ title: 'Recorded' });
     const [created] = await list(timeline);
 
-    await expect(timeline.updateReflection(created!.id, 'no')).rejects.toMatchObject({
+    await expect(timeline.updateEntry(created!.id, { reflection: 'no' })).rejects.toMatchObject({
       code: 'INVARIANT_VIOLATION',
     });
-    await expect(timeline.deleteReviewed(created!.id)).rejects.toMatchObject({
+    await expect(timeline.deleteEntry(created!.id)).rejects.toMatchObject({
       code: 'INVARIANT_VIOLATION',
     });
   });
@@ -298,5 +298,137 @@ describe('reviewed entries', () => {
     await expect(timeline.markReviewed(foreign.id, null)).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+  });
+});
+
+describe('milestones and learning dates', () => {
+  it('adds a milestone with a title, details, an optional node and a learning date', async () => {
+    const { nodes, timeline } = services(WORKSPACE_A);
+    const node = await nodes.create({ title: 'Thermodynamics' });
+    const milestone = await timeline.addMilestone({
+      title: '  Finished the   course ',
+      details: 'All four laws.',
+      nodeId: node.id,
+      learnedAt: '2026-09-01T09:00:00.000Z',
+    });
+
+    expect(milestone).toMatchObject({
+      eventType: 'milestone',
+      title: 'Finished the course',
+      reflection: 'All four laws.',
+      nodeId: node.id,
+      currentNodeTitle: 'Thermodynamics',
+      learnedAt: '2026-09-01T09:00:00.000Z',
+      occurredAt: now,
+    });
+    const renamed = await timeline.updateEntry(milestone.id, { title: 'Course done' });
+    expect(renamed.title).toBe('Course done');
+    await expect(
+      timeline.addMilestone({ title: ' ', details: null, nodeId: null, learnedAt: null }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('places events at their learning date, newest first, and filters by it', async () => {
+    const { nodes, timeline } = services(WORKSPACE_A);
+    now = '2026-10-20T10:00:00.000Z';
+    const recent = await nodes.create({ title: 'Recorded recently' });
+    now = '2026-10-27T12:00:00.000Z';
+    await timeline.markReviewed(recent.id, null, '2026-10-01T08:00:00.000Z');
+
+    const events = await list(timeline);
+    expect(events.map((event) => event.eventType)).toEqual(['node_created', 'reviewed']);
+    const october1 = await list(timeline, { fromDate: '2026-10-01', toDate: '2026-10-01' });
+    expect(october1.map((event) => event.eventType)).toEqual(['reviewed']);
+  });
+
+  it('lets the user annotate recorded activity with a learning date, but nothing else', async () => {
+    const { nodes, timeline } = services(WORKSPACE_A);
+    await nodes.create({ title: 'Recorded' });
+    const [created] = await list(timeline);
+
+    const annotated = await timeline.updateEntry(created!.id, {
+      learnedAt: '2026-10-25T08:00:00.000Z',
+    });
+    expect(annotated).toMatchObject({
+      learnedAt: '2026-10-25T08:00:00.000Z',
+      occurredAt: created!.occurredAt,
+    });
+    const cleared = await timeline.updateEntry(created!.id, { learnedAt: null });
+    expect(cleared.learnedAt).toBeNull();
+    await expect(timeline.updateEntry(created!.id, { title: 'No' })).rejects.toMatchObject({
+      code: 'INVARIANT_VIOLATION',
+    });
+  });
+
+  it('rejects learning dates in the future, far in the past or malformed', async () => {
+    const { nodes, timeline } = services(WORKSPACE_A);
+    const node = await nodes.create({ title: 'Node' });
+    for (const learnedAt of ['2026-12-01T00:00:00.000Z', '1850-01-01T00:00:00.000Z', 'soon']) {
+      await expect(timeline.markReviewed(node.id, null, learnedAt)).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+      });
+    }
+    const review = await timeline.markReviewed(node.id, null);
+    await expect(
+      timeline.updateEntry(review.id, { title: 'Reviews have no title' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('returns a time window oldest first, bounded, with its total', async () => {
+    const { nodes, timeline } = services(WORKSPACE_A);
+    for (const [index, time] of ['09:00', '10:00', '11:00'].entries()) {
+      now = `2026-10-27T${time}:00.000Z`;
+      await nodes.create({ title: `Node ${index}` });
+    }
+    const window = await timeline.window({
+      fromUtc: '2026-10-27T09:30:00.000Z',
+      toUtcExclusive: '2026-10-27T12:00:00.000Z',
+      eventTypes: [],
+      tagIds: [],
+      nodeId: null,
+    });
+    expect(window.total).toBe(2);
+    expect(window.items.map((item) => item.nodeTitleSnapshot)).toEqual(['Node 1', 'Node 2']);
+
+    // A window holding more than the limit takes events across the range, still oldest first.
+    const full = await new SqliteTimelineEventRepository(connections).window(WORKSPACE_A, {
+      fromUtc: '2026-10-27T00:00:00.000Z' as UtcTimestamp,
+      toUtcExclusive: '2026-10-28T00:00:00.000Z' as UtcTimestamp,
+      eventTypes: [],
+      tagIds: [],
+      nodeId: null,
+      limit: 2,
+    });
+    expect(full.total).toBe(3);
+    expect(full.items.map((item) => item.nodeTitleSnapshot)).toEqual(['Node 1', 'Node 2']);
+    await expect(
+      timeline.window({
+        fromUtc: '2026-10-27T12:00:00.000Z',
+        toUtcExclusive: '2026-10-27T09:00:00.000Z',
+        eventTypes: [],
+        tagIds: [],
+        nodeId: null,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('never lets a burst of activity hide a quieter moment in a full window', async () => {
+    const { nodes } = services(WORKSPACE_A);
+    now = '2026-10-27T01:00:00.000Z';
+    await nodes.create({ title: 'Quiet morning' });
+    now = '2026-10-27T15:00:00.000Z';
+    for (let index = 0; index < 5; index += 1) await nodes.create({ title: `Burst ${index}` });
+
+    const full = await new SqliteTimelineEventRepository(connections).window(WORKSPACE_A, {
+      fromUtc: '2026-10-27T00:00:00.000Z' as UtcTimestamp,
+      toUtcExclusive: '2026-10-28T00:00:00.000Z' as UtcTimestamp,
+      eventTypes: [],
+      tagIds: [],
+      nodeId: null,
+      limit: 3,
+    });
+    expect(full.total).toBe(6);
+    expect(full.items).toHaveLength(3);
+    expect(full.items[0]?.nodeTitleSnapshot).toBe('Quiet morning');
   });
 });

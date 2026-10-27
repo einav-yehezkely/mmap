@@ -76,9 +76,11 @@ export const IPC_CHANNELS = {
   graphGetPositions: 'graph:get-positions',
   graphSavePositions: 'graph:save-positions',
   timelineList: 'timeline:list',
+  timelineWindow: 'timeline:window',
   timelineMarkReviewed: 'timeline:mark-reviewed',
-  timelineUpdateReflection: 'timeline:update-reflection',
-  timelineDeleteReviewed: 'timeline:delete-reviewed',
+  timelineAddMilestone: 'timeline:add-milestone',
+  timelineUpdateEntry: 'timeline:update-entry',
+  timelineDeleteEntry: 'timeline:delete-entry',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

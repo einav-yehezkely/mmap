@@ -97,12 +97,12 @@ describe('timeline channels', () => {
     expect(IPC_CATALOGUE['timeline:list'].response.safeParse(listed).success).toBe(true);
     expect(listed.items.map((item) => item.eventType)).toEqual(['reviewed', 'node_created']);
 
-    await ipc['timeline:update-reflection']({ eventId: review.id, reflection: null });
+    await ipc['timeline:update-entry']({ eventId: review.id, reflection: null });
     const created = listed.items[1]!;
-    await expect(ipc['timeline:delete-reviewed']({ eventId: created.id })).rejects.toMatchObject({
+    await expect(ipc['timeline:delete-entry']({ eventId: created.id })).rejects.toMatchObject({
       code: 'INVARIANT_VIOLATION',
     });
-    await ipc['timeline:delete-reviewed']({ eventId: review.id });
+    await ipc['timeline:delete-entry']({ eventId: review.id });
     expect((await ipc['timeline:list']({ limit: 10 })).items).toHaveLength(1);
   });
 

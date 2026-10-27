@@ -74,6 +74,8 @@ export function toTimelineEntryDto(entry: TimelineEntryRecord): TimelineEntryDto
     eventType: entry.eventType,
     occurredAt: entry.occurredAt,
     lastActivityAt: entry.lastActivityAt,
+    learnedAt: entry.learnedAt,
+    title: entry.title,
     nodeId: entry.nodeId,
     nodeTitle: entry.currentNodeTitle ?? entry.nodeTitleSnapshot,
     reflection: entry.reflection,
@@ -119,16 +121,43 @@ export function createGraphTimelineIpcServices(
       });
       return { items: page.items.map(toTimelineEntryDto), nextCursor: page.nextCursor };
     },
-    'timeline:mark-reviewed': async ({ nodeId, reflection }) =>
+    'timeline:window': async (request) => {
+      const window = await services().timeline.window({
+        fromUtc: request.fromUtc,
+        toUtcExclusive: request.toUtcExclusive,
+        eventTypes: request.eventTypes ?? [],
+        tagIds: (request.tagIds ?? []) as TagId[],
+        nodeId: (request.nodeId ?? null) as NodeId | null,
+      });
+      return { items: window.items.map(toTimelineEntryDto), total: window.total };
+    },
+    'timeline:mark-reviewed': async ({ nodeId, reflection, learnedAt }) =>
       toTimelineEntryDto(
-        await services().timeline.markReviewed(nodeId as NodeId, reflection ?? null),
+        await services().timeline.markReviewed(
+          nodeId as NodeId,
+          reflection ?? null,
+          learnedAt ?? null,
+        ),
       ),
-    'timeline:update-reflection': async ({ eventId, reflection }) =>
+    'timeline:add-milestone': async ({ title, details, nodeId, learnedAt }) =>
       toTimelineEntryDto(
-        await services().timeline.updateReflection(eventId as TimelineEventId, reflection),
+        await services().timeline.addMilestone({
+          title,
+          details: details ?? null,
+          nodeId: (nodeId ?? null) as NodeId | null,
+          learnedAt: learnedAt ?? null,
+        }),
       ),
-    'timeline:delete-reviewed': async ({ eventId }) => {
-      await services().timeline.deleteReviewed(eventId as TimelineEventId);
+    'timeline:update-entry': async ({ eventId, title, reflection, learnedAt }) =>
+      toTimelineEntryDto(
+        await services().timeline.updateEntry(eventId as TimelineEventId, {
+          ...(title === undefined ? {} : { title }),
+          ...(reflection === undefined ? {} : { reflection }),
+          ...(learnedAt === undefined ? {} : { learnedAt }),
+        }),
+      ),
+    'timeline:delete-entry': async ({ eventId }) => {
+      await services().timeline.deleteEntry(eventId as TimelineEventId);
       return { deleted: true as const };
     },
   };

@@ -88,10 +88,11 @@ const api: MmapRendererApi = {
   },
   timeline: {
     list: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineList, request),
+    window: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineWindow, request),
     markReviewed: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineMarkReviewed, request),
-    updateReflection: (request) =>
-      ipcRenderer.invoke(IPC_CHANNELS.timelineUpdateReflection, request),
-    deleteReviewed: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineDeleteReviewed, request),
+    addMilestone: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineAddMilestone, request),
+    updateEntry: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineUpdateEntry, request),
+    deleteEntry: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineDeleteEntry, request),
   },
   maps: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),

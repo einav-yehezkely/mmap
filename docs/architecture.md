@@ -60,8 +60,9 @@ The renderer imports a few pure functions from `@mmap/domain` (`parseNoteDocumen
 are checks for a fast, accurate UI; the main process repeats them and remains the authority. The
 map editor also imports the pure hierarchy helpers and `layoutTree` (see [Mind maps](#mind-maps)),
 so the tree layout is computed by domain code in the renderer instead of being stored. The
-timeline groups entries by day with the domain's `localDateOf`, the same timezone code the main
-process uses for date filters (see [Learning timeline](#learning-timeline)).
+timeline groups entries by day and places the axis ticks with the domain's `localDateOf` and
+`startOfLocalDayUtc`, the same timezone code the main process uses for date filters (see
+[Learning timeline](#learning-timeline)).
 
 The rules are written once in `tooling/architecture-rules.mjs` and enforced twice:
 
@@ -136,9 +137,12 @@ switching workspaces discards all view state of the previous one.
   (including mind maps), the Cytoscape canvas with saved positions, a completeness statement, the
   side panel for the selected node, Focus mode and the List tab (see
   [Knowledge graph](#knowledge-graph)). "Open mind map" switches to Mind Maps with that map open.
-- **Timeline** (`timeline/timeline-view.tsx`): recorded activity and reviews grouped by day in the
-  workspace timezone (see [Learning timeline](#learning-timeline)). The node panel's "Mark as
-  reviewed…" button opens `timeline/review-dialog.tsx`.
+- **Timeline** (`timeline/timeline-view.tsx`): a **Timeline** tab with the visual time axis
+  (`timeline/timeline-axis-view.tsx`, math in `timeline/timeline-axis.ts`) and a **List** tab
+  grouped by day in the workspace timezone; the event panel (`timeline/timeline-event-panel.tsx`)
+  and "Add milestone" (`timeline/milestone-dialog.tsx`) (see
+  [Learning timeline](#learning-timeline)). The node panel's "Mark as reviewed…" button opens
+  `timeline/review-dialog.tsx`.
 - **Settings** (`views/settings-view.tsx`): workspace name, location and switching, timezone
   (`views/timezone-setting.tsx`), attachment size limit, diagnostics.
 
@@ -151,7 +155,7 @@ The renderer's top level is wrapped in an error boundary (`components/error-boun
 
 ## Request flow: one IPC call end to end
 
-This is the full path of `app:get-info`, the pattern every channel follows. The other 60 channels
+This is the full path of `app:get-info`, the pattern every channel follows. The other 71 channels
 are listed in [ipc-contracts.md](ipc-contracts.md#channel-reference).
 
 1. **Renderer.** `SettingsView` (`src/renderer/src/views/settings-view.tsx`) calls
@@ -1005,26 +1009,43 @@ PRD §5.9. Code: `packages/domain/src/application/timeline-service.ts`,
 
 ### What the timeline is
 
-A record of what happened, newest first: node creation, editing sessions of notes (30 minutes of
-inactivity end a session; see [data-model.md](data-model.md#what-is-recorded)), relationship
-creation, and reviews the user adds. It does not infer, score or rate understanding; there is no
-progress measure anywhere in the code.
+A record of what happened: node creation, editing sessions of notes (30 minutes of inactivity end
+a session; see [data-model.md](data-model.md#what-is-recorded)), relationship creation, and the
+reviews and learning milestones the user adds. It does not infer, score or rate understanding;
+there is no progress measure anywhere in the code.
 
-### Recorded activity is immutable; reviews belong to the user
+### Recorded time and learning date
+
+Every event has two times. `occurredAt` is when the action was recorded; it never changes.
+`learnedAt` is an optional moment, chosen by the user, when the learning actually happened (for
+example, a review recorded today of something learned last week). The timeline places, orders,
+filters and pages events by their **effective time**, `learnedAt ?? occurredAt`, so without a
+learning date an event stays at its recorded time. The SQL uses
+`coalesce(learned_at, occurred_at)`, served by the index `timeline_events_by_effective_time`
+(migration 5). A learning date must be a valid instant, not in the future (5 minutes of tolerance
+for clock differences) and not before 1900. An editing session with a learning date is shown as a
+point at that date; its span belongs to the recorded time.
+
+### Recorded activity is immutable; reviews and milestones belong to the user
 
 `node_created`, `note_updated` and `relationship_created` are written by the node and
 relationship services in the same transaction as the change they describe. They are facts about
-the past, so no user action can edit or delete them (the only change ever made is the node
-service extending a still-open editing session): `TimelineService` checks the event type and refuses
-any change to a non-`reviewed` event with `INVARIANT_VIOLATION`. This keeps the timeline
-trustworthy and keeps a future import honest: imported history must arrive marked as imported
-and never be rewritten into new learning events (PRD §5.9).
+the past, so no user action can change their content or delete them (the only change the app
+makes is the node service extending a still-open editing session): `TimelineService` refuses a
+title or reflection change, and any deletion, of these types with `INVARIANT_VIOLATION`. The one
+exception is the learning date: it can be set or cleared on any event, because it annotates the
+record without changing what was recorded. This keeps the timeline trustworthy and keeps a future
+import honest: imported history must arrive marked as imported and never be rewritten into new
+learning events (PRD §5.9).
 
-A `reviewed` event is the user's own statement ("I went over this node"), so it is theirs to
-manage: `markReviewed` records it with an optional reflection, `updateReflection` changes the
-reflection, and `deleteReviewed` removes it. A reflection is trimmed, normalized to NFC, may hold
-line breaks and tabs, and is refused if longer than 2,000 characters or containing other control
-characters. Each of these runs in one write transaction.
+`reviewed` and `milestone` events (`USER_OWNED_EVENT_TYPES`) are the user's own statements, so
+they are theirs to manage. `markReviewed` records a review with an optional reflection and
+learning date. `addMilestone` records a milestone with a title (whitespace collapsed, 1–200
+characters), optional details (stored in the reflection), an optional node and an optional
+learning date. `updateEntry` changes the title (milestones only; `VALIDATION_FAILED` otherwise),
+the reflection and the learning date; `deleteEntry` removes a review or a milestone. A reflection
+is trimmed, normalized to NFC, may hold line breaks and tabs, and is refused if longer than 2,000
+characters or containing other control characters. Each of these runs in one write transaction.
 
 ### Timezones
 
@@ -1040,19 +1061,72 @@ timezone (`workspaces.timezone`, an IANA name), chosen in Settings and validated
   `startOfLocalDayUtc` starts the day at the transition instant; where midnight occurs twice, at
   the earlier one. The conversion uses `Intl` only, so the domain needs no timezone library and
   follows the runtime's timezone database.
-- **Grouping by day.** The renderer groups entries with `localDateOf` (same domain code) and
-  formats the heading at noon UTC, so no timezone can move it to another date. An editing session
-  belongs to the day it started.
+- **Grouping by day.** The renderer groups List entries by the effective time with `localDateOf`
+  (same domain code) and formats the heading at noon UTC, so no timezone can move it to another
+  date. An editing session belongs to the day it started.
+- **Axis ticks.** `ticksFor` (`timeline-axis.ts`) puts ticks at local hours, midnights and month
+  starts found with `startOfLocalDayUtc`, never by adding 24 hours, so a 23- or 25-hour day has
+  23 or 25 hour ticks. An unknown timezone falls back to UTC.
+- **Learning-date inputs** (`datetime-local` fields in the dialogs and the event panel) are read
+  as wall-clock time in the workspace timezone and converted to UTC in `timeline-model.ts`,
+  including across daylight-saving changes.
 - **Changing the timezone** changes only how dates are shown and how filters are read.
 
 ### Listing and paging
 
-`SqliteTimelineEventRepository.list` orders by `occurred_at DESC, id DESC` and pages with a keyset
-cursor (the last row's time and ID, base64url JSON), so new events recorded meanwhile never
-repeat or skip rows. A malformed cursor is `VALIDATION_FAILED`. Filters (event types, node, tags
-that the node carries now, the UTC range) are bound parameters. Each entry carries the node's
-current title through a `LEFT JOIN`, or the recorded title snapshot when the node was deleted; the
-main process sends one `nodeTitle` to the renderer.
+`SqliteTimelineEventRepository.list` (the List tab) orders by effective time `DESC`, then
+`id DESC`, and pages with a keyset cursor (the last row's effective time and ID, base64url JSON),
+so new events recorded meanwhile never repeat or skip rows. A malformed cursor is
+`VALIDATION_FAILED`. Filters (event types, node, tags that the node carries now, the UTC range of
+effective times) are bound parameters. Each entry carries the node's current title through a
+`LEFT JOIN`, or the recorded title snapshot when the node was deleted; the main process sends one
+`nodeTitle` to the renderer.
+
+### Time windows
+
+The Timeline tab loads one window at a time with `timeline:window` (`TimelineService.window`,
+`SqliteTimelineEventRepository.window`): a half-open UTC range of effective times plus the same
+filters, intersected in the renderer with the date-range filter. The response holds the total
+and at most 2,000 events (`MAX_TIMELINE_WINDOW_EVENTS`), oldest first. If the range holds more,
+taking the newest 2,000 would let one busy afternoon hide the rest of the year, so the range is
+split into 200 equal time buckets and events are taken round-robin with `row_number()` per bucket:
+the latest event of every bucket, then the second latest, and so on, up to the limit. Every
+period with activity therefore keeps at least one event, and the status line says "Showing N of M
+events in this period, spread across it; zoom in to see them all". The test "never lets a burst
+of activity hide a quieter moment in a full window" covers this.
+
+### The visual axis
+
+`timeline-axis.ts` is pure (no React, no DOM) and unit-tested; `timeline-axis-view.tsx` draws it
+as SVG.
+
+- **Window and zoom.** Four zoom levels: Day, Week, Month and Year (spans of 1, 7, 31 and 366
+  days). The first window puts now at 85% of the width; if the latest event is older than that
+  window's start, the window is centred on it instead, so the axis never opens empty while events
+  exist. Panning (‹ › buttons, dragging, mouse wheel or touchpad) keeps the span. Zooming (the
+  level buttons, or Ctrl+wheel around the pointer) keeps an anchor at the same relative position:
+  the selected event, or now when it is visible. **Today** returns to the now-at-85% window. A
+  date-range filter moves the axis to that range.
+- **Markers.** Each type has its own shape and icon as well as its color, so the type never
+  depends on color alone (PRD §6): Created is a circle with a plus, Note edits a bar from session
+  start to last activity, Relationships a diamond with a link, Reviews a square with a check-book
+  icon, Milestones a pennant with a flag. A small dot marks an event placed at a user-set learning
+  date. A legend names the shapes in words.
+- **Layout.** `layoutMarkers` assigns markers to at most 8 rows so that items in a row keep a
+  minimum gap. Markers whose positions are within a radius (8, 12 or 18 px, wider at wider zoom)
+  form a cluster drawn as a numbered badge; activating a cluster zooms in on its time range. An
+  item that fits no row joins the nearest cluster, so nothing is dropped, and the result does not
+  depend on input order.
+- **Accessibility.** Every marker and cluster is an SVG element with `role="button"`,
+  `tabIndex=0` and a spoken label (the event description and time, or "N events between … and ….
+  Activate to zoom in."), activated with Enter or Space. The axis group's label points to the List
+  tab, which presents the same events as an ordinary list.
+- **Event panel.** Selecting an event in either tab opens `timeline-event-panel.tsx`: type, title,
+  learning date and recorded date (with the session range), a button to open the node (or the
+  node's title with "(deleted)"), the learning-date editor, and for reviews and milestones the
+  title, details or reflection editor and Delete with confirmation.
+
+Lanes per tag or topic are a planned later enhancement and are not built.
 
 ## Attachments
 

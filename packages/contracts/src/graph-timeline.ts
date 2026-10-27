@@ -11,6 +11,13 @@ import { z } from 'zod';
 
 const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 const reflectionInput = z.string().max(10_000).nullable();
+/** A UTC instant (ISO 8601); the main process validates range and future dates. */
+const instant = z.string().min(10).max(40);
+const timelineFilterFields = {
+  eventTypes: z.array(z.enum(TIMELINE_EVENT_TYPES)).max(10).optional(),
+  tagIds: z.array(z.uuid()).max(20).optional(),
+  nodeId: z.uuid().nullable().optional(),
+};
 
 const graphFilterFields = {
   tagIds: z.array(z.uuid()).max(20).optional(),
@@ -70,8 +77,13 @@ export const graphSliceSchema = z.strictObject({
 export const timelineEntrySchema = z.strictObject({
   id: z.uuid(),
   eventType: z.enum(TIMELINE_EVENT_TYPES),
+  /** When the action was recorded. */
   occurredAt: z.string(),
   lastActivityAt: z.string(),
+  /** When the learning happened, if the user set it; the event is shown at this time. */
+  learnedAt: z.string().nullable(),
+  /** Title of a learning milestone; null for other events. */
+  title: z.string().nullable(),
   /** Null when the node has been deleted. */
   nodeId: z.uuid().nullable(),
   /** The node's current title, or the title recorded with the event if the node is gone. */
@@ -114,9 +126,7 @@ export const timelineContracts = {
     request: z.strictObject({
       fromDate: localDate.nullable().optional(),
       toDate: localDate.nullable().optional(),
-      eventTypes: z.array(z.enum(TIMELINE_EVENT_TYPES)).max(10).optional(),
-      tagIds: z.array(z.uuid()).max(20).optional(),
-      nodeId: z.uuid().nullable().optional(),
+      ...timelineFilterFields,
       limit: z.number().int().min(1).max(200),
       cursor: z.string().max(1_000).optional(),
     }),
@@ -125,15 +135,47 @@ export const timelineContracts = {
       nextCursor: z.string().nullable(),
     }),
   },
+  /** Events in one window of the visual timeline (spread across it, if many), oldest first, and the total. */
+  window: {
+    request: z.strictObject({
+      fromUtc: instant,
+      toUtcExclusive: instant,
+      ...timelineFilterFields,
+    }),
+    response: z.strictObject({
+      items: z.array(timelineEntrySchema).readonly(),
+      total: z.number().int().nonnegative(),
+    }),
+  },
   markReviewed: {
-    request: z.strictObject({ nodeId: z.uuid(), reflection: reflectionInput.optional() }),
+    request: z.strictObject({
+      nodeId: z.uuid(),
+      reflection: reflectionInput.optional(),
+      learnedAt: instant.nullable().optional(),
+    }),
     response: timelineEntrySchema,
   },
-  updateReflection: {
-    request: z.strictObject({ eventId: z.uuid(), reflection: reflectionInput }),
+  addMilestone: {
+    request: z.strictObject({
+      title: z.string().max(1_000),
+      details: reflectionInput.optional(),
+      nodeId: z.uuid().nullable().optional(),
+      learnedAt: instant.nullable().optional(),
+    }),
     response: timelineEntrySchema,
   },
-  deleteReviewed: {
+  /** Title and reflection on the user's own entries; the learning date on any entry. */
+  updateEntry: {
+    request: z.strictObject({
+      eventId: z.uuid(),
+      title: z.string().max(1_000).optional(),
+      reflection: reflectionInput.optional(),
+      learnedAt: instant.nullable().optional(),
+    }),
+    response: timelineEntrySchema,
+  },
+  /** Deletes one of the user's own entries (a review or a milestone). */
+  deleteEntry: {
     request: z.strictObject({ eventId: z.uuid() }),
     response: z.strictObject({ deleted: z.literal(true) }),
   },

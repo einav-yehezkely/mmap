@@ -315,6 +315,8 @@ export function createRelationshipService(
           reflection: null,
           isImported: false,
           importOrigin: null,
+          learnedAt: null,
+          title: null,
         });
         return viewOf(record.id, source.id);
       }),

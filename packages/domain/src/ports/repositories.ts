@@ -144,8 +144,15 @@ export const TIMELINE_EVENT_TYPES = [
   'note_updated',
   'relationship_created',
   'reviewed',
+  'milestone',
 ] as const;
 export type TimelineEventType = (typeof TIMELINE_EVENT_TYPES)[number];
+
+/**
+ * Events the user adds by hand. Only these can be edited (title, reflection) or deleted; recorded
+ * activity (creation, note edits, relationships) stays as it happened.
+ */
+export const USER_OWNED_EVENT_TYPES: readonly TimelineEventType[] = ['reviewed', 'milestone'];
 
 export interface TimelineEventRecord {
   readonly id: TimelineEventId;
@@ -154,11 +161,25 @@ export interface TimelineEventRecord {
   /** Title at the time of the event, so history stays readable after deletion. */
   readonly nodeTitleSnapshot: string | null;
   readonly eventType: TimelineEventType;
+  /** When the action was recorded (never changes). */
   readonly occurredAt: UtcTimestamp;
   readonly lastActivityAt: UtcTimestamp;
+  /**
+   * When the learning actually happened, if the user said so. The timeline places an event at
+   * `learnedAt ?? occurredAt` (its effective time).
+   */
+  readonly learnedAt: UtcTimestamp | null;
+  /** Title of a learning milestone; null for every other event type. */
+  readonly title: string | null;
   readonly reflection: string | null;
   readonly isImported: boolean;
   readonly importOrigin: string | null;
+}
+
+export interface TimelineEventChanges {
+  readonly reflection?: string | null;
+  readonly title?: string;
+  readonly learnedAt?: UtcTimestamp | null;
 }
 
 export interface TimelineEventRepository {
@@ -176,28 +197,46 @@ export interface TimelineEventRepository {
     lastActivityAt: UtcTimestamp,
     nodeTitleSnapshot: string,
   ): Promise<void>;
-  /** Events newest first (by `occurredAt`, then ID), filtered, with keyset paging. */
+  /** Events newest first (by effective time, then ID), filtered, with keyset paging. */
   list(workspaceId: WorkspaceId, query: TimelineListQuery): Promise<Page<TimelineEntryRecord>>;
+  /**
+   * Events whose effective time lies in [fromUtc, toUtcExclusive), oldest first, at most `limit`
+   * (taken evenly across the range when there are more), with the total in the window so a
+   * truncated window can be reported.
+   */
+  window(
+    workspaceId: WorkspaceId,
+    query: TimelineWindowQuery,
+  ): Promise<{ readonly items: readonly TimelineEntryRecord[]; readonly total: number }>;
   findById(workspaceId: WorkspaceId, eventId: TimelineEventId): Promise<TimelineEventRecord | null>;
-  updateReflection(
+  update(
     workspaceId: WorkspaceId,
     eventId: TimelineEventId,
-    reflection: string | null,
+    changes: TimelineEventChanges,
   ): Promise<void>;
   delete(workspaceId: WorkspaceId, eventId: TimelineEventId): Promise<void>;
 }
 
-export interface TimelineListQuery {
-  /** Inclusive lower bound on `occurredAt`, or null. */
-  readonly fromUtc: UtcTimestamp | null;
-  /** Exclusive upper bound on `occurredAt`, or null. */
-  readonly toUtcExclusive: UtcTimestamp | null;
+export interface TimelineFilters {
   /** Only these event types; empty means all. */
   readonly eventTypes: readonly TimelineEventType[];
   /** Only events of nodes that currently carry all of these tags. */
   readonly tagIds: readonly TagId[];
   /** Only events of this node. */
   readonly nodeId: NodeId | null;
+}
+
+export interface TimelineWindowQuery extends TimelineFilters {
+  readonly fromUtc: UtcTimestamp;
+  readonly toUtcExclusive: UtcTimestamp;
+  readonly limit: number;
+}
+
+export interface TimelineListQuery extends TimelineFilters {
+  /** Inclusive lower bound on the effective time, or null. */
+  readonly fromUtc: UtcTimestamp | null;
+  /** Exclusive upper bound on the effective time, or null. */
+  readonly toUtcExclusive: UtcTimestamp | null;
   readonly page: PageRequest;
 }
 

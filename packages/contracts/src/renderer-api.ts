@@ -87,9 +87,11 @@ export interface MmapRendererApi {
   };
   readonly timeline: {
     readonly list: BridgeCall<'timeline:list'>;
+    readonly window: BridgeCall<'timeline:window'>;
     readonly markReviewed: BridgeCall<'timeline:mark-reviewed'>;
-    readonly updateReflection: BridgeCall<'timeline:update-reflection'>;
-    readonly deleteReviewed: BridgeCall<'timeline:delete-reviewed'>;
+    readonly addMilestone: BridgeCall<'timeline:add-milestone'>;
+    readonly updateEntry: BridgeCall<'timeline:update-entry'>;
+    readonly deleteEntry: BridgeCall<'timeline:delete-entry'>;
   };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;

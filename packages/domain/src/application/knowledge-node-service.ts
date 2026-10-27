@@ -181,6 +181,8 @@ export function createKnowledgeNodeService(
       reflection: null,
       isImported: false,
       importOrigin: null,
+      learnedAt: null,
+      title: null,
     });
     return record;
   }
@@ -206,6 +208,8 @@ export function createKnowledgeNodeService(
       reflection: null,
       isImported: false,
       importOrigin: null,
+      learnedAt: null,
+      title: null,
     });
   }
 

@@ -112,10 +112,10 @@ export function NodeDetailPanel({
       onOpenNode(copy.id);
     });
 
-  const markReviewed = async (reflection: string | null) => {
+  const markReviewed = async (reflection: string | null, learnedAt: string | null) => {
     setReviewError(null);
     try {
-      await unwrap(window.mmap.timeline.markReviewed({ nodeId, reflection }));
+      await unwrap(window.mmap.timeline.markReviewed({ nodeId, reflection, learnedAt }));
       setReviewing(false);
       setReviewedNotice(true);
       // Refreshes views that show activity, such as the timeline.
@@ -297,11 +297,10 @@ export function NodeDetailPanel({
       )}
       {reviewing && (
         <ReviewDialog
-          mode="create"
           nodeTitle={node.title}
-          initialReflection={null}
+          timeZone={timeZone}
           error={reviewError}
-          onSubmit={(reflection) => void markReviewed(reflection)}
+          onSubmit={(reflection, learnedAt) => void markReviewed(reflection, learnedAt)}
           onClose={() => setReviewing(false)}
         />
       )}

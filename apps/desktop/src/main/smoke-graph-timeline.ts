@@ -104,7 +104,10 @@ export async function checkGraphRendering(
   }
 }
 
-/** Marks a node as reviewed through the bridge and finds the entry in the Timeline view. */
+/**
+ * Marks a node as reviewed and adds a milestone through the bridge, checks the window query, and
+ * finds both markers on the visual timeline.
+ */
 export async function checkTimeline(window: BrowserWindow): Promise<void> {
   const outcome = (await window.webContents.executeJavaScript(`
     (async () => {
@@ -112,19 +115,57 @@ export async function checkTimeline(window: BrowserWindow): Promise<void> {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const button = (text) =>
         [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === text);
+      const marker = (text) =>
+        [...document.querySelectorAll('svg [role="button"]')].find((item) =>
+          (item.getAttribute('aria-label') ?? '').includes(text),
+        );
       const node = (await nodes.create({ title: 'Timeline smoke node' })).data;
       const review = await timeline.markReviewed({ nodeId: node.id, reflection: 'Smoke reflection' });
       if (!review.ok) return 'mark reviewed failed: ' + review.error.code;
       const recorded = await timeline.list({ limit: 5, eventTypes: ['reviewed'] });
       if (!recorded.ok || recorded.data.items[0]?.id !== review.data.id) return 'review not listed';
+      const learnedAt = new Date(Date.now() - 3 * 3600000).toISOString();
+      const milestone = await timeline.addMilestone({
+        title: 'Smoke milestone',
+        details: null,
+        nodeId: node.id,
+        learnedAt,
+      });
+      if (!milestone.ok || milestone.data.learnedAt !== learnedAt) return 'add milestone failed';
+      const range = await timeline.window({
+        fromUtc: new Date(Date.now() - 7 * 86400000).toISOString(),
+        toUtcExclusive: new Date(Date.now() + 86400000).toISOString(),
+        eventTypes: ['milestone'],
+      });
+      if (!range.ok || !range.data.items.some((item) => item.id === milestone.data.id)) {
+        return 'window query missed the milestone';
+      }
+      // Only reviews and milestones, at day zoom, so other activity never clusters with them.
       button('Timeline').click();
+      await wait(100);
+      button('Filters').click();
+      await wait(50);
+      button('Reviews').click();
+      button('Milestones').click();
+      button('Day').click();
       const start = performance.now();
       while (performance.now() - start < 5000) {
-        if (document.body.textContent.includes('Smoke reflection')) break;
+        if (marker('Smoke milestone') && marker('Reviewed Timeline smoke node')) break;
         await wait(20);
       }
-      if (!document.body.textContent.includes('Smoke reflection')) return 'timeline view did not show the review';
-      await timeline.deleteReviewed({ eventId: review.data.id });
+      if (!marker('Smoke milestone')) return 'timeline did not show the milestone marker';
+      if (!marker('Reviewed Timeline smoke node')) return 'timeline did not show the review marker';
+      marker('Reviewed Timeline smoke node').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      while (performance.now() - start < 5000) {
+        if (document.querySelector('aside[aria-label="Timeline event"]')) break;
+        await wait(20);
+      }
+      const panel = document.querySelector('aside[aria-label="Timeline event"]');
+      if (!panel || !panel.textContent.includes('Open Timeline smoke node')) {
+        return 'event panel did not open';
+      }
+      await timeline.deleteEntry({ eventId: milestone.data.id });
+      await timeline.deleteEntry({ eventId: review.data.id });
       await nodes.delete({ nodeId: node.id, expectedRevision: node.revision });
       button('Library').click();
       return 'ok';

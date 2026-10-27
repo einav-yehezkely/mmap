@@ -183,7 +183,7 @@ that needs it and document it here.
 
 ## Channel reference
 
-There are 70 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+There are 72 channels. The renderer method is `window.mmap.<group>.<method>`; for example
 `nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
 is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
@@ -537,35 +537,71 @@ Same service file; it calls the domain `TimelineService`
 (`packages/domain/src/application/timeline-service.ts`). See
 [architecture.md](architecture.md#learning-timeline).
 
-| Channel                      | Purpose                                                            | Request                                                                                       | Response                                 |
-| ---------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `timeline:list`              | Recorded activity and reviews, newest first, one page.             | `{ limit (1–200), cursor?, fromDate?, toDate?, eventTypes? (≤ 10), tagIds? (≤ 20), nodeId? }` | `{ items: TimelineEntry[], nextCursor }` |
-| `timeline:mark-reviewed`     | Record that the user reviewed a node, with an optional reflection. | `{ nodeId, reflection? }`                                                                     | `TimelineEntry`                          |
-| `timeline:update-reflection` | Change or clear the reflection of a review (`null` clears it).     | `{ eventId, reflection }`                                                                     | `TimelineEntry`                          |
-| `timeline:delete-reviewed`   | Delete a review entry. The node is not changed.                    | `{ eventId }`                                                                                 | `{ deleted: true }`                      |
+| Channel                  | Purpose                                                                                    | Request                                                                                       | Response                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `timeline:list`          | Recorded activity, reviews and milestones, newest first by effective time, one page.       | `{ limit (1–200), cursor?, fromDate?, toDate?, eventTypes? (≤ 10), tagIds? (≤ 20), nodeId? }` | `{ items: TimelineEntry[], nextCursor }` |
+| `timeline:window`        | The events of one time range of the visual timeline, oldest first, with their total.       | `{ fromUtc, toUtcExclusive, eventTypes?, tagIds?, nodeId? }`                                  | `{ items: TimelineEntry[], total }`      |
+| `timeline:mark-reviewed` | Record that the user reviewed a node, with an optional reflection and learning date.       | `{ nodeId, reflection?, learnedAt? }`                                                         | `TimelineEntry`                          |
+| `timeline:add-milestone` | Add a learning milestone, optionally about one node.                                       | `{ title, details?, nodeId?, learnedAt? }`                                                    | `TimelineEntry`                          |
+| `timeline:update-entry`  | Change the title or reflection of the user's own entry, or the learning date of any entry. | `{ eventId, title?, reflection?, learnedAt? }`                                                | `TimelineEntry`                          |
+| `timeline:delete-entry`  | Delete one of the user's own entries (a review or a milestone). Nodes are not changed.     | `{ eventId }`                                                                                 | `{ deleted: true }`                      |
 
-`fromDate` and `toDate` are calendar dates `YYYY-MM-DD` in the workspace timezone (either may be
-`null` or left out); the main process converts them to a UTC range that covers the whole local
-days, including 23- and 25-hour days. `eventTypes` takes `node_created`, `note_updated`,
-`relationship_created` and `reviewed`; empty means all. `tagIds` keeps events of nodes that carry
-all those tags now. The cursor is opaque (keyset: time and ID of the last row); pass
-`nextCursor` back unchanged.
+`timeline:update-entry` and `timeline:delete-entry` replace the earlier
+`timeline:update-reflection` and `timeline:delete-reviewed`.
 
-`TimelineEntry` has `id`, `eventType`, `occurredAt` (UTC; the start of an editing session),
-`lastActivityAt` (UTC; the latest save of a session, otherwise equal to `occurredAt`), `nodeId`
-(`null` when the node was deleted), `nodeTitle` (the node's current title, or the title recorded
-with the event when the node is gone), `reflection` and `isImported`. The workspace ID and
-`import_origin` are never sent.
+**Two times per event.** `occurredAt` is when the action was recorded; it never changes.
+`learnedAt` is an optional moment, chosen by the user, when the learning actually happened (for
+example, a review recorded today of something learned last week). The effective time is
+`learnedAt ?? occurredAt`: the list and the window place, order, filter and page events by it. A
+learning date can be set or cleared on any event, recorded activity included, because it annotates
+the record rather than changing it.
 
-Limits: the contract accepts reflections up to 10,000 characters; the domain trims them, treats
-an empty one as none, keeps line breaks and tabs, and refuses more than 2,000 characters or other
-control characters with `VALIDATION_FAILED`.
+**Ownership.** Reviews (`reviewed`) and milestones (`milestone`) belong to the user: their
+reflection, and a milestone's title, can be edited, and they can be deleted. Recorded activity
+(`node_created`, `note_updated`, `relationship_created`) cannot be edited or deleted; only its
+learning date can be set or cleared.
+
+**List.** `fromDate` and `toDate` are calendar dates `YYYY-MM-DD` in the workspace timezone
+(either may be `null` or left out); the main process converts them to a UTC range that covers the
+whole local days, including 23- and 25-hour days, and compares it with the effective time.
+`eventTypes` takes `node_created`, `note_updated`, `relationship_created`, `reviewed` and
+`milestone`; empty means all. `tagIds` keeps events of nodes that carry all those tags now. The
+cursor is opaque (keyset: effective time and ID of the last row); pass `nextCursor` back
+unchanged.
+
+**Window.** `fromUtc` and `toUtcExclusive` are UTC instants (ISO 8601) bounding a half-open range
+of effective times; the filters work as in the list. The response holds at most 2,000 events,
+oldest first, and `total`, the number of matching events in the range. When the range holds more
+than 2,000, the events are taken evenly across it: the range is split into 200 time buckets and
+events are taken round-robin (the latest event of every bucket, then the second latest, and so
+on), so a burst of activity never hides a quieter period. A client must compare `items.length`
+with `total` before presenting a window as complete.
+
+**Milestones.** `title` is required: whitespace is collapsed and trimmed, and the result must be
+1–200 characters without control characters. `details` follows the reflection rules and is stored
+as the milestone's reflection. `nodeId` is optional. Without `learnedAt`, the milestone is placed
+at the time it was added.
+
+`TimelineEntry` has `id`, `eventType`, `occurredAt` (UTC; when the action was recorded, the start
+of an editing session), `lastActivityAt` (UTC; the latest save of a session, otherwise equal to
+`occurredAt`), `learnedAt` (UTC, or `null` when not set), `title` (a milestone's title, `null` for
+other events), `nodeId` (`null` when the node was deleted or the event has no node), `nodeTitle`
+(the node's current title, or the title recorded with the event when the node is gone),
+`reflection` and `isImported`. The workspace ID and `import_origin` are never sent.
+
+Limits: the contract accepts reflections and details up to 10,000 characters and titles up to
+1,000; the domain trims reflections, treats an empty one as none, keeps line breaks and tabs, and
+refuses more than 2,000 characters or other control characters with `VALIDATION_FAILED`. A
+`learnedAt` must be a valid instant, not in the future (5 minutes of clock difference are
+tolerated) and not before 1900; in `update-entry`, `null` clears it and the event returns to its
+recorded time.
 
 Errors:
 
-- `NOT_FOUND`: unknown node (`mark-reviewed`) or event (`update-reflection`, `delete-reviewed`),
-  including IDs from another workspace.
-- `INVARIANT_VIOLATION`: `update-reflection` or `delete-reviewed` on an event that is not a
-  review. Recorded activity cannot be changed or removed.
-- `VALIDATION_FAILED`: a date that is not a real calendar date, a start date after the end date,
-  a malformed cursor, or an invalid reflection.
+- `NOT_FOUND`: unknown node (`mark-reviewed`, `add-milestone`) or event (`update-entry`,
+  `delete-entry`), including IDs from another workspace.
+- `INVARIANT_VIOLATION`: `update-entry` changing the title or reflection of recorded activity, or
+  `delete-entry` on recorded activity. Only reviews and milestones can be changed or removed.
+- `VALIDATION_FAILED`: a date that is not a real calendar date, a start date after the end date, a
+  window that does not end after it starts, a malformed cursor, an invalid reflection, title or
+  learning date, or a title on an event that is not a milestone.

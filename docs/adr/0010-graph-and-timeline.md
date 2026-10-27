@@ -23,6 +23,9 @@ understanding, and imported history must be marked as imported (acceptance crite
 
 A redesign of the graph screen within Phase 4 added mind map membership, saved positions, a
 side panel and Focus mode; this record describes the redesigned graph and notes what it replaced.
+A redesign of the timeline within Phase 4 replaced the day-grouped list with a visual learning
+timeline (a horizontal time axis), added learning milestones and let the user say when learning
+actually happened; decisions 10 to 14 describe it. The first list is kept as the List tab.
 
 Migration 1 already has `timeline_events` (with `reflection`, `is_imported`, `import_origin`) and
 `workspaces.timezone`. The renderer is untrusted ([ADR-0003](0003-electron-version-and-security-baseline.md));
@@ -66,7 +69,9 @@ all database work runs on the main process thread.
    `note_updated` and `relationship_created` are written by the services that make the change, in
    the same transaction, and no channel can edit or delete them (`INVARIANT_VIOLATION`). Only
    `reviewed` events can be created, have their reflection edited, or be deleted by the user.
-   Nothing derives a score or level of understanding from the events.
+   Nothing derives a score or level of understanding from the events. _Extended by the timeline
+   redesign: milestones are user-owned too, and a learning date may be set on any event (decisions
+   11 and 12)._
 6. **Timezone-local date filters.** The workspace stores one IANA timezone, validated against the
    runtime's `Intl`. The renderer sends date filters as local calendar dates; the domain converts
    them into a half-open UTC range from the start of the first day to the start of the day after
@@ -87,7 +92,49 @@ all database work runs on the main process thread.
 9. **Migrations are immutable, also in development.** The saved viewport (`graph_view_state`,
    created by migration 3) was dropped by a new migration 4 rather than by editing migration 3,
    because migration 3 had already been applied to a development workspace and the runner refuses
-   a changed history. `checksums.test.ts` pins every migration's checksum.
+   a changed history. `checksums.test.ts` pins every migration's checksum. The timeline redesign
+   followed the same rule: migration 5 rebuilds `timeline_events` instead of changing migration 1.
+
+### Visual learning timeline (timeline redesign)
+
+10. **A horizontal time axis, with the list kept beside it.** The Timeline screen has a
+    **Timeline** tab, an SVG axis with older events on the left and newer ones on the right, date
+    ticks at local calendar boundaries in the workspace timezone and a "Now" line, and a **List**
+    tab with the earlier day-grouped list, newest first. The axis opens on recent activity (now at
+    85% of the width), or centred on the latest event when nothing is recent, so events are
+    visible at once. It pans (buttons, drag, wheel or touchpad) and zooms (Day, Week, Month, Year;
+    Ctrl+wheel), keeping the selected event, or now when visible, in place. The window math, ticks
+    and marker layout are pure functions (`timeline-axis.ts`) with their own tests.
+11. **Two times per event; the timeline uses the effective time.** `occurred_at` stays the time
+    the action was recorded and never changes. A new nullable `learned_at` holds the moment the
+    user says the learning happened (for example, a review recorded today of something learned
+    last week). The timeline places, orders, filters (date range) and pages events by the
+    effective time, `coalesce(learned_at, occurred_at)`, with an index on that expression. A
+    learning date must be a valid instant, not in the future (5 minutes of tolerance) and not
+    before 1900. Because it annotates the record rather than changing it, it may be set or cleared
+    on any event, recorded activity included; the event panel always shows both times ("Learned"
+    and "Recorded").
+12. **Milestones are user-owned entries.** A `milestone` event has a required title (1–200
+    characters after whitespace normalization), optional details (stored in `reflection`), an
+    optional node and a learning date. The user-owned types are `reviewed` and `milestone`: their
+    title and reflection can be edited and they can be deleted (`timeline:update-entry`,
+    `timeline:delete-entry`, which replace `timeline:update-reflection` and
+    `timeline:delete-reviewed`). Recorded activity still cannot be edited or deleted. The database
+    enforces that only milestones have a title.
+13. **A bounded window, spread evenly across its range.** The axis loads one time range at a time
+    (`timeline:window`): the total, and at most 2,000 events, oldest first. When the range holds
+    more, it is split into 200 time buckets and events are taken round-robin (the latest of each
+    bucket, then the second latest, and so on), so a burst of activity never hides a quieter
+    period. The status line says when the window is truncated ("Showing N of M events in this
+    period, spread across it; zoom in to see them all").
+14. **Shapes, words and buttons, not color alone.** Each type has its own marker shape and icon as
+    well as a color (Created: circle with plus; Note edits: bar spanning the editing session;
+    Relationships: diamond with link; Reviews: square with check-book; Milestones: pennant with
+    flag), and a small dot marks a user-set learning date. Markers stack in rows so they do not
+    overlap; nearby events become a numbered cluster at wide zoom, and activating a cluster zooms
+    in. Every marker and cluster is a focusable SVG button with a spoken label, activated with
+    Enter or Space; a legend names the shapes in words; the List tab presents the same events as
+    an ordinary list.
 
 ## Consequences
 
@@ -110,11 +157,23 @@ all database work runs on the main process thread.
 - Keyboard and screen-reader users get the information and actions through the list, not through
   the drawing. Creating relationships from the graph (PRD §5.5), including drag-to-connect, is not
   implemented yet. Labels of parallel edges can overlap.
-- The timeline is trustworthy as a record: what it shows happened, at the time shown. A future
-  import (Phase 5) must write imported events with `is_imported = 1` and an origin instead of new
-  activity; the view already marks them.
-- Events are ordered and filtered by their start time, so an editing session that spans midnight
-  belongs to the day it started.
+- The timeline is trustworthy as a record: what it shows happened, and the recorded time is kept
+  even when the user places an event at a different learning date. A future import (Phase 5) must
+  write imported events with `is_imported = 1` and an origin instead of new activity; the view
+  already marks them.
+- Events are ordered and filtered by their effective time. Without a learning date that is the
+  start time, so an editing session that spans midnight belongs to the day it started; with one,
+  the session is drawn as a point at that date.
+- A learning date moves an event on the timeline, so the order of events no longer always matches
+  the order in which they were recorded. The event panel, a dot on the marker and a "learning
+  date" badge in the List make this visible.
+- A truncated window shows a spread sample, not the newest events; the total is always reported,
+  and zooming in shows everything once a range holds 2,000 events or fewer.
+- Migration 5 rebuilds `timeline_events` (SQLite cannot change a `CHECK` constraint in place):
+  every row is copied, and the indexes and workspace triggers are recreated, in one transaction
+  after the usual verified backup. Builds from before the redesign refuse the upgraded workspace
+  as too new.
+- The axis is a single row of time; lanes per tag or topic are a planned later enhancement.
 - Changing the timezone changes only presentation and filter boundaries, never stored data.
 
 ## Alternatives considered
@@ -143,6 +202,15 @@ all database work runs on the main process thread.
   with standard controls. Rejected for now.
 - **Letting users edit or delete any timeline event.** Would turn the record into an editable
   diary and make imported versus recorded history indistinguishable. Rejected.
+- **Changing `occurred_at` to the learning date.** Simpler (one time per event), but the record
+  of when something was actually done would be lost, and recorded activity would become
+  editable. Rejected in favor of a separate `learned_at` and an effective time.
+- **Returning the newest 2,000 events of a full window.** One busy day would push every older
+  event in the range off the axis, so a year view could look empty apart from its last week.
+  Rejected in favor of round-robin buckets.
+- **Only the day-grouped list.** Accessible and simple, but it shows neither the shape of
+  learning over time nor quiet periods. Kept as the List tab next to the axis, not as the only
+  view.
 - **Filtering by UTC dates, or by the computer's current timezone.** UTC days do not match the
   user's days, and the computer's timezone can differ from the workspace's when the folder moves.
   Rejected in favor of the stored workspace timezone.

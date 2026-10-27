@@ -22,8 +22,8 @@ generated content or inferred relationships). The product requirements are in
   [Phase 3 status](docs/implementation-plan.md#8-phase-3-status-2026-10-27).
 - **Phase 4 — Graph and timeline: implemented on branch `phase-4-graph-timeline`.** Knowledge
   graph with bounded, clearly labelled partial views, mind map membership, saved positions and a
-  list alternative; learning timeline
-  with reviews, reflections and a workspace timezone. What works and what is still missing is
+  list alternative; a visual learning timeline with reviews, reflections, milestones, learning
+  dates and a workspace timezone. What works and what is still missing is
   listed in the [Phase 4 status](docs/implementation-plan.md#9-phase-4-status-2026-10-27).
 
 What works in the app today:
@@ -70,11 +70,17 @@ What works in the app today:
   most 1,000 nodes at a time, and the view always says whether it is partial ("showing X of Y").
   A List tab presents the same information for keyboard and screen-reader users. Map regions and
   collapsing maps are in progress.
-- **Timeline.** Created nodes, note editing sessions, new relationships and reviews, newest
-  first, grouped by day in the workspace's timezone (set in Settings), with date-range, event-type,
-  tag and node filters. "Mark as reviewed…" in the node panel records a review with an optional
-  reflection, which can be edited or deleted; recorded activity cannot be changed. The timeline is
-  a record, not a score.
+- **Timeline.** Created nodes, note editing sessions, new relationships, reviews and learning
+  milestones on a horizontal time axis (older left, newer right) with dates in the workspace's
+  timezone (set in Settings): pan by dragging, scrolling or the arrow buttons, zoom by day, week,
+  month or year, and click a marker for its details. Each kind of entry has its own marker shape,
+  nearby entries are grouped into a numbered cluster, and every marker is a keyboard-reachable
+  button; a List tab shows the same entries newest first, grouped by day. Filters by date range,
+  event type, tag and node. "Mark as reviewed…" in the node panel records a review with an
+  optional reflection; **Add milestone** records a milestone with a title and optional details.
+  Any entry can be given a learning date (when the learning actually happened), which places it
+  on the timeline while its recorded time is kept. Reviews and milestones can be edited or
+  deleted; recorded activity cannot be changed. The timeline is a record, not a score.
 
 Not yet available: export, import and backups (Phase 5)
 ([implementation plan](docs/implementation-plan.md)). End-user instructions are in the
@@ -131,7 +137,8 @@ Run from the repository root.
   lifecycle, write coordinator, autosave, notes, relationships, wikilinks, search, mind maps,
   knowledge graph, learning timeline, attachments, security
 - [Data model](docs/data-model.md): every table and how it is used, references and backlinks,
-  timeline grouping, reviews and timezone, attachment lifecycle, migrations
+  timeline grouping, reviews, milestones, learning dates and timezone, attachment lifecycle,
+  migrations
 - [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all channels
 - [Testing](docs/testing.md): test layers, rules, smoke test, search benchmark, what is not
   automated yet

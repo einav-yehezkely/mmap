@@ -641,21 +641,96 @@ shows (in Focus mode, only the nodes in focus), so the line above it applies to 
 
 ## Timeline
 
-**Timeline** in the sidebar lists what you did in this workspace, newest first, grouped by day:
+**Timeline** in the sidebar shows what you did and learned in this workspace:
 
 - **Created**: a node was created (including by duplicating one).
-- **Edited the note of**: you edited a node's note. Edits are grouped into one entry per editing
-  session, which ends after 30 minutes without changes, so you see "09:05–09:40" instead of one
-  entry per autosave. Changing only a title or summary is not recorded.
-- **Added a relationship from**: you added a relationship; the entry names the node the
-  relationship starts from.
-- **Reviewed**: you marked the node as reviewed, with your reflection if you wrote one.
-
-Click a node's title to open it. Entries of deleted nodes stay in the timeline with the title the
-node had, marked "(deleted)". **Load more** at the bottom shows older entries.
+- **Note edits** ("Edited the note of"): you edited a node's note. Edits are grouped into one
+  entry per editing session, which ends after 30 minutes without changes, so you see
+  "09:05–09:40" instead of one entry per autosave. Changing only a title or summary is not
+  recorded.
+- **Relationships** ("Added a relationship from"): you added a relationship; the entry names the
+  node the relationship starts from.
+- **Reviews**: you marked the node as reviewed, with your reflection if you wrote one.
+- **Milestones**: a learning milestone you added, such as finishing a course or understanding a
+  hard idea.
 
 The timeline is a record of what happened. It does not score, rate or estimate how well you know
 something, and it never adds entries on its own beyond the activity listed above.
+
+The screen has two tabs: **Timeline**, a time axis you can move along, and **List**, the same
+entries as a list.
+
+### Recorded time and learning date
+
+Every entry has the time it was **recorded**, which never changes. You can also give any entry a
+**learning date**: when the learning actually happened, for example if you review today something
+you learned last week. An entry with a learning date is shown at that date, both on the axis and
+in the list; without one it is shown at the recorded time. A learning date cannot be in the
+future or before 1900.
+
+### The time axis
+
+The **Timeline** tab shows a horizontal line of time: older entries on the left, newer ones on the
+right. Dates along the line are shown in the workspace's timezone, and a **Now** line marks the
+present. It opens on your recent activity, with now near the right edge; if nothing happened
+recently, it opens on your latest entry instead.
+
+- **Move through time**: click **‹** (earlier) or **›** (later), drag the background, or use the
+  mouse wheel or touchpad.
+- **Zoom**: click **Day**, **Week**, **Month** or **Year**, or hold **Ctrl** and use the mouse
+  wheel. Zooming keeps the selected entry (or now, when it is visible) in the same place.
+- **Today** brings back the present.
+
+Each kind of entry has its own shape and icon, as well as its own color:
+
+| Entry         | Marker                                                              |
+| ------------- | ------------------------------------------------------------------- |
+| Created       | Circle with a plus                                                  |
+| Note edits    | Bar; an editing session stretches from its start to its last change |
+| Relationships | Diamond with a link                                                 |
+| Reviews       | Square with a book and check mark                                   |
+| Milestones    | Pennant with a flag                                                 |
+
+A small dot on a marker means the entry is shown at a learning date you set. The legend under the
+axis explains the shapes in words.
+
+Markers that would overlap are stacked in rows. When you zoom out, entries close together become
+one round marker with a number; click it to zoom in and see them one by one.
+
+The line under the axis says how many entries are in the period shown. If there are none, it
+says "No events in this period." and offers **Go to the latest event**. If a long period holds
+very many entries (more than 2,000), it says "Showing N of M events in this period, spread across
+it; zoom in to see them all": entries are then taken evenly across the whole period, so a busy day
+never hides a quieter week. Zoom in to see every entry.
+
+**Keyboard**: every marker and numbered marker can be reached with **Tab** and activated with
+**Enter** or **Space**; screen readers announce what each marker stands for and when it happened.
+The **List** tab presents the same entries as an ordinary list.
+
+### The List tab
+
+**List** shows the entries newest first, grouped by day, with the time, what happened, the node or
+milestone title and any reflection. Entries placed at a learning date are marked **learning
+date**. **Load more** at the bottom shows older entries.
+
+### Entry details
+
+Click an entry, on the axis or in the list, to open its details at the side:
+
+- What happened, the title and the **Recorded** date (for an editing session, from start to
+  end), and the **Learned** date if you set one.
+- **Open …** opens the node. Entries of deleted nodes stay in the timeline with the title the node
+  had, marked "(deleted)".
+- **When did the learning happen?**: pick a date and time and click **Save learning date** to move
+  the entry to that date. **Use recorded time** removes the learning date again. This works for
+  every entry.
+- For your reviews and milestones: edit the **Title** (milestones), the **Details** (milestones)
+  or the **Reflection** (reviews) and click **Save**, or click **Delete** and confirm. Deleting
+  removes the entry from the timeline; nodes are not changed.
+
+Only your reviews and milestones can be edited or deleted. Created, edited and relationship
+entries are a record of what happened: you can give them a learning date, but you cannot change or
+delete them.
 
 ### Marking a node as reviewed
 
@@ -663,31 +738,35 @@ something, and it never adds entries on its own beyond the activity listed above
 2. Click **Mark as reviewed…** at the bottom of the side panel.
 3. Optionally write a short **reflection**: what became clear, what to revisit. It can have
    several lines and up to 2,000 characters.
-4. Click **Mark as reviewed**. "Review recorded in the timeline." confirms it.
+4. Optionally fill in **When did you learn this?**. Leave it empty to use the current time.
+5. Click **Mark as reviewed**. "Review recorded in the timeline." confirms it.
 
 You can mark the same node as reviewed as often as you like; each time adds an entry.
 
-### Changing or deleting a review
+### Adding a milestone
 
-Review entries have two buttons: the **pencil** edits the reflection (clear the text to remove the
-reflection but keep the review), and the **bin** deletes the review after you confirm. The node is
-not changed.
-
-Only your reviews can be changed. Created, edited and relationship entries are a record of what
-happened and cannot be edited or deleted.
+1. On the Timeline screen, click **Add milestone**.
+2. Enter a **Title** (up to 200 characters).
+3. **When did it happen?** is set to now; change it if the milestone was earlier. Left unchanged,
+   the milestone is placed at the moment you add it; a changed date becomes its learning date.
+4. Optionally add **Details** (up to 2,000 characters) and a **Related node**.
+5. Click **Add milestone**.
 
 ### Filters
 
+Click **Filters** to open or close the filter panel. The button shows how many filters are on.
+
 - **From** and **To**: only entries on these days, in your timezone (see below). Either can be left
-  empty.
-- **Event types**: click **Created**, **Note edits**, **Relationships** or **Reviews** to show only
-  those kinds of entries.
+  empty. Choosing dates also moves the axis to that period.
+- **Event types**: click **Created**, **Note edits**, **Relationships**, **Reviews** or
+  **Milestones** to show only those kinds of entries.
 - **Tags**: only entries of nodes that carry all selected tags now.
 - **Only this node**: pick a node to see its history; the **×** removes the filter.
 
-**Clear all filters** shows everything again. An editing session counts on the day and at the time
-it started: a session that began before the **From** day is not shown, even if it continued into
-it.
+**Clear all filters** shows everything again. Dates are matched by the time an entry is shown at:
+its learning date if it has one, otherwise the recorded time. An editing session counts on the day
+and at the time it started: a session that began before the **From** day is not shown, even if it
+continued into it.
 
 Entries marked **Imported** come from imported history. Importing is not available yet, so you
 will not see them today.
@@ -826,8 +905,8 @@ of mmap upgrades a workspace's storage format. It is placed in the workspace's `
 This is not a general backup.
 
 The first time this version opens a workspace created by an earlier version, it makes such a
-copy and upgrades the workspace (so that notes can contain links to nodes and the knowledge graph
-can remember where nodes are). After that, earlier versions of mmap can no longer open the
+copy and upgrades the workspace (so that notes can contain links to nodes, the knowledge graph
+can remember where nodes are, and the timeline can hold milestones and learning dates). After that, earlier versions of mmap can no longer open the
 workspace; they report that the workspace was created by a newer version and change nothing.
 
 ## Not available yet
@@ -842,6 +921,7 @@ These features are planned for later versions:
   **Rearrange**; and clearing expanded neighbors without leaving the graph. Labels of two lines
   between the same nodes can overlap; the node panel and the List name each one.
 - **Filtering search results by relationship type** (the graph has this filter).
+- In the timeline: **separate lanes per tag or topic**. Today all entries share one time axis.
 - **Changing the text of an existing node link.** Delete the link and insert it again with new
   **Link text**.
 - On mind maps: **labels on connectors**, **linking a connector to a relationship**, **dragging
