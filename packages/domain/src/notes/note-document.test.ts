@@ -107,7 +107,7 @@ function fullTiptapDocument(): Record<string, unknown> {
 
 describe('note schema constants', () => {
   it('exposes the schema version and limits', () => {
-    expect(NOTE_SCHEMA_VERSION).toBe(1);
+    expect(NOTE_SCHEMA_VERSION).toBe(2);
     expect(NOTE_LIMITS.maxDepth).toBe(40);
   });
 });
@@ -666,5 +666,50 @@ describe('utf8ByteLength', () => {
     ['\ude00\ud83d', 6],
   ])('counts %j as %i bytes', (value, expected) => {
     expect(utf8ByteLength(value)).toBe(expected);
+  });
+});
+
+describe('parseNoteDocument: wikilinks (schema version 2)', () => {
+  const TARGET = '3f2c9a4e-1b7d-4c2e-9f00-0123456789ab';
+  const withInline = (inline: unknown) => ({
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: 'See ' }, inline] }],
+  });
+
+  it('accepts a wikilink with a canonical target ID and a label', () => {
+    const link = { type: 'wikilink', attrs: { targetNodeId: TARGET, label: 'Entropy' } };
+
+    expect(parseNoteDocument(withInline(link))).toEqual(withInline(link));
+  });
+
+  it('drops unknown attributes such as a cached title', () => {
+    const parsed = parseNoteDocument(
+      withInline({
+        type: 'wikilink',
+        attrs: { targetNodeId: TARGET, label: 'Entropy', cachedTitle: 'Old' },
+      }),
+    );
+
+    expect(JSON.stringify(parsed)).not.toContain('cachedTitle');
+  });
+
+  it.each([
+    ['missing target', { label: 'x' }],
+    ['non-UUID target', { targetNodeId: 'Entropy', label: 'x' }],
+    ['uppercase target', { targetNodeId: TARGET.toUpperCase(), label: 'x' }],
+    ['empty label', { targetNodeId: TARGET, label: '  ' }],
+    ['label with a line break', { targetNodeId: TARGET, label: 'a\nb' }],
+    ['overlong label', { targetNodeId: TARGET, label: 'x'.repeat(301) }],
+  ])('rejects %s', (_label, attrs) => {
+    expect(() => parseNoteDocument(withInline({ type: 'wikilink', attrs }))).toThrow(DomainError);
+  });
+
+  it('rejects a wikilink used as a block', () => {
+    expect(() =>
+      parseNoteDocument({
+        type: 'doc',
+        content: [{ type: 'wikilink', attrs: { targetNodeId: TARGET, label: 'x' } }],
+      }),
+    ).toThrow(DomainError);
   });
 });

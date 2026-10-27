@@ -39,8 +39,14 @@ const api: MmapRendererApi = {
     duplicate: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesDuplicate, request),
     previewDelete: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesPreviewDelete, request),
     delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesDelete, request),
+    lookup: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesLookup, request),
+    backlinks: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesBacklinks, request),
+    resolveLinks: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesResolveLinks, request),
     addTag: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesAddTag, request),
     removeTag: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesRemoveTag, request),
+  },
+  search: {
+    query: (request) => ipcRenderer.invoke(IPC_CHANNELS.searchQuery, request),
   },
   tags: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.tagsList),
@@ -57,6 +63,21 @@ const api: MmapRendererApi = {
   preferences: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.preferencesGet),
     update: (request) => ipcRenderer.invoke(IPC_CHANNELS.preferencesUpdate, request),
+  },
+  relationshipTypes: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.relationshipTypesList),
+    create: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipTypesCreate, request),
+    rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipTypesRename, request),
+    setArchived: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.relationshipTypesSetArchived, request),
+    setDirectionality: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.relationshipTypesSetDirectionality, request),
+  },
+  relationships: {
+    listForNode: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsListForNode, request),
+    create: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsCreate, request),
+    update: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsUpdate, request),
+    delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsDelete, request),
   },
 };
 

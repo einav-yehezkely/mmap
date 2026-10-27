@@ -12,7 +12,8 @@ import type { z } from 'zod';
 import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
 import { attachmentContracts, preferenceContracts } from './attachments';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
-import { nodeContracts, tagContracts } from './nodes';
+import { nodeContracts, searchContracts, tagContracts } from './nodes';
+import { relationshipContracts, relationshipTypeContracts } from './relationships';
 import { workspaceContracts } from './workspace';
 
 export interface IpcContract<
@@ -43,6 +44,10 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.nodesDuplicate]: nodeContracts.duplicate,
   [IPC_CHANNELS.nodesPreviewDelete]: nodeContracts.previewDelete,
   [IPC_CHANNELS.nodesDelete]: nodeContracts.delete,
+  [IPC_CHANNELS.nodesLookup]: nodeContracts.lookup,
+  [IPC_CHANNELS.nodesBacklinks]: nodeContracts.backlinks,
+  [IPC_CHANNELS.nodesResolveLinks]: nodeContracts.resolveLinks,
+  [IPC_CHANNELS.searchQuery]: searchContracts.query,
   [IPC_CHANNELS.nodesAddTag]: nodeContracts.addTag,
   [IPC_CHANNELS.nodesRemoveTag]: nodeContracts.removeTag,
   [IPC_CHANNELS.tagsList]: tagContracts.list,
@@ -55,6 +60,15 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.attachmentsRemove]: attachmentContracts.remove,
   [IPC_CHANNELS.preferencesGet]: preferenceContracts.get,
   [IPC_CHANNELS.preferencesUpdate]: preferenceContracts.update,
+  [IPC_CHANNELS.relationshipTypesList]: relationshipTypeContracts.list,
+  [IPC_CHANNELS.relationshipTypesCreate]: relationshipTypeContracts.create,
+  [IPC_CHANNELS.relationshipTypesRename]: relationshipTypeContracts.rename,
+  [IPC_CHANNELS.relationshipTypesSetArchived]: relationshipTypeContracts.setArchived,
+  [IPC_CHANNELS.relationshipTypesSetDirectionality]: relationshipTypeContracts.setDirectionality,
+  [IPC_CHANNELS.relationshipsListForNode]: relationshipContracts.listForNode,
+  [IPC_CHANNELS.relationshipsCreate]: relationshipContracts.create,
+  [IPC_CHANNELS.relationshipsUpdate]: relationshipContracts.update,
+  [IPC_CHANNELS.relationshipsDelete]: relationshipContracts.delete,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

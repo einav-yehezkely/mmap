@@ -13,6 +13,7 @@ import { errorMessage, unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
 import { ManageTagsDialog } from './manage-tags-dialog';
 import { useNodesChanged } from './node-events';
+import { TagFilterBar, type TagOption } from './tag-filter-bar';
 
 const PAGE_SIZE = 50;
 
@@ -28,12 +29,6 @@ interface ListState {
   readonly items: readonly NodeSummary[];
   readonly nextCursor: string | null;
   readonly totalCount: number;
-}
-
-interface TagOption {
-  readonly id: string;
-  readonly label: string;
-  readonly nodeCount: number;
 }
 
 export interface LibraryViewProps {
@@ -106,11 +101,6 @@ export function LibraryView({
     }
   };
 
-  const toggleFilter = (tagId: string) =>
-    setFilterTagIds((current) =>
-      current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId],
-    );
-
   const isFiltered = filterTagIds.length > 0;
 
   return (
@@ -140,42 +130,9 @@ export function LibraryView({
         </select>
       </div>
 
-      {tagOptions.length > 0 && (
-        <div
-          role="group"
-          aria-label="Filter by tags"
-          className="mt-4 flex flex-wrap items-center gap-1.5"
-        >
-          <span className="mr-1 text-sm text-muted-foreground">Filter:</span>
-          {tagOptions.map((tag) => {
-            const selected = filterTagIds.includes(tag.id);
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => toggleFilter(tag.id)}
-                className={cn(
-                  'rounded-full border px-2.5 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  selected
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'hover:bg-accent',
-                )}
-              >
-                <span dir="auto">{tag.label}</span>
-                <span className={cn('ml-1 text-xs', !selected && 'text-muted-foreground')}>
-                  {tag.nodeCount}
-                </span>
-              </button>
-            );
-          })}
-          {isFiltered && (
-            <Button variant="ghost" size="sm" onClick={() => setFilterTagIds([])}>
-              Clear filters
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="mt-4">
+        <TagFilterBar options={tagOptions} selected={filterTagIds} onChange={setFilterTagIds} />
+      </div>
 
       {error && (
         <p role="alert" className="mt-4 text-sm text-destructive">

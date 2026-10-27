@@ -214,3 +214,30 @@
     content: '📎 ';
   }
 }
+
+/* Wikilinks inside notes (PRD §5.4). Unresolved links differ by text decoration and outline, not
+   only by color, and their tooltip explains the state. */
+@layer components {
+  .note-content .wikilink {
+    border-radius: 0.25rem;
+    padding: 0 0.2em;
+    background: var(--color-accent);
+    color: var(--color-primary);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .note-content .wikilink::before {
+    content: '[[';
+    opacity: 0.5;
+  }
+  .note-content .wikilink::after {
+    content: ']]';
+    opacity: 0.5;
+  }
+  .note-content .wikilink-unresolved {
+    background: transparent;
+    color: var(--color-destructive);
+    outline: 1px dashed var(--color-destructive);
+    text-decoration: line-through;
+  }
+}

@@ -73,6 +73,9 @@ function inlineNodeText(node: NoteInlineNode): string {
       return '\n';
     case 'inlineMath':
       return node.attrs.latex;
+    case 'wikilink':
+      // The label is what the reader sees, so it is what search should find.
+      return node.attrs.label;
   }
 }
 

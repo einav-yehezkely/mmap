@@ -4,5 +4,6 @@ export * from './catalogue';
 export * from './channels';
 export * from './envelope';
 export * from './nodes';
+export * from './relationships';
 export * from './renderer-api';
 export * from './workspace';

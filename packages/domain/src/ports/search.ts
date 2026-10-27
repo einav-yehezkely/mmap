@@ -5,6 +5,9 @@
  * The local adapter uses SQLite FTS5; a future server adapter may use PostgreSQL full-text
  * search. Query syntax is the adapter's private concern: callers pass plain user text, and the
  * adapter is responsible for escaping it so that user input can never inject query operators.
+ *
+ * Every operation is scoped to one workspace. Results from another workspace must never be
+ * returned, even when the same words appear there (PRD §5.8).
  */
 
 import type { NodeId, TagId, WorkspaceId } from '../ids';
@@ -34,6 +37,31 @@ export interface SnippetSegment {
   readonly isMatch: boolean;
 }
 
+export interface SearchResultPage extends Page<SearchHit> {
+  /** Total number of matching nodes (for "showing 20 of 134"). */
+  readonly totalCount: number;
+}
+
+/** One candidate for a node picker (wikilinks, relationship targets, map placement). */
+export interface TitleMatch {
+  readonly nodeId: NodeId;
+  readonly title: string;
+}
+
 export interface SearchIndex {
-  search(query: SearchQuery): Promise<Page<SearchHit>>;
+  /**
+   * Ranked full-text search over titles, summaries and derived note text. Title matches rank
+   * highest (PRD §5.8). Text without any searchable word returns an empty page, not an error.
+   */
+  search(query: SearchQuery): Promise<SearchResultPage>;
+  /**
+   * Deterministic title lookup for pickers (PRD §5.8): case-insensitive prefix matches first,
+   * then other substring matches; ties ordered by title length, title, ID. Empty text → [].
+   */
+  lookupTitles(
+    workspaceId: WorkspaceId,
+    text: string,
+    limit: number,
+    excludeNodeIds?: readonly NodeId[],
+  ): Promise<readonly TitleMatch[]>;
 }

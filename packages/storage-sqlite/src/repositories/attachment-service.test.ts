@@ -22,6 +22,7 @@ import type { SqliteConnections } from '../sqlite-connections';
 import { openWorkspaceDatabase } from '../workspace-database';
 import { SqliteAttachmentRepository } from './sqlite-attachment-repository';
 import { SqliteKnowledgeNodeRepository } from './sqlite-knowledge-node-repository';
+import { SqliteNoteReferenceRepository } from './sqlite-note-reference-repository';
 import { SqliteRelationshipTypeRepository } from './sqlite-relationship-type-repository';
 import { SqliteTagRepository } from './sqlite-tag-repository';
 import { SqliteTimelineEventRepository } from './sqlite-timeline-event-repository';
@@ -50,6 +51,7 @@ function services(workspaceId: WorkspaceId): {
       nodes: nodeRepository,
       timeline: new SqliteTimelineEventRepository(connections),
       tags: new SqliteTagRepository(connections),
+      references: new SqliteNoteReferenceRepository(connections),
       ids,
       clock,
     }),

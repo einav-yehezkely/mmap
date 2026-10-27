@@ -14,6 +14,7 @@
 import { DomainError, isSafeLinkHref, parseNoteDocument, type NoteDocument } from '@mmap/domain';
 import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
+import { Dialog as DialogPrimitive } from 'radix-ui';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import {
@@ -27,6 +28,7 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Brackets,
   Paperclip,
   Pi,
   Quote,
@@ -42,11 +44,15 @@ import {
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { FormDialog } from '../components/ui/dialog';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { errorMessage, unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
 import type { AttachmentNodeAttributes } from './attachment-node';
+import { NodePicker, type PickedNode } from '../nodes/node-picker';
+import { notifyNodesChanged } from '../nodes/node-events';
 import { createNoteExtensions, KATEX_OPTIONS } from './editor-extensions';
+import { collectWikilinkTargets, RESOLUTION_META } from './wikilink-node';
 
 export interface NoteEditorProps {
   readonly initialNote: unknown;
@@ -58,6 +64,8 @@ export interface NoteEditorProps {
    * attachments that were stored, which are then inserted at the cursor.
    */
   readonly onAttachFiles: () => Promise<readonly AttachmentNodeAttributes[]>;
+  /** Opens another node (following a wikilink). */
+  readonly onOpenNode: (nodeId: string) => void;
 }
 
 interface MathEditState {
@@ -67,20 +75,61 @@ interface MathEditState {
   readonly position: number | null;
 }
 
-export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: NoteEditorProps) {
+export function NoteEditor({
+  initialNote,
+  onChange,
+  onInvalid,
+  onAttachFiles,
+  onOpenNode,
+}: NoteEditorProps) {
   // Callbacks change on every render; the editor is created once, so it reads them via a ref.
-  const callbacks = useRef({ onChange, onInvalid });
+  const callbacks = useRef({ onChange, onInvalid, onOpenNode });
   useEffect(() => {
-    callbacks.current = { onChange, onInvalid };
+    callbacks.current = { onChange, onInvalid, onOpenNode };
   });
+  const [wikilinkDialog, setWikilinkDialog] = useState<
+    { readonly mode: 'insert' } | { readonly mode: 'repair'; readonly position: number } | null
+  >(null);
 
   const [mathEdit, setMathEdit] = useState<MathEditState | null>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const resolutionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * Asks the main process which link targets still exist (debounced), then redraws the links so
+   * unresolved ones are marked. Runs on load and after edits, because links can be added or a
+   * target can be deleted in the meantime.
+   */
+  const scheduleResolution = (target: Editor) => {
+    editorRef.current = target;
+    if (resolutionTimer.current !== null) clearTimeout(resolutionTimer.current);
+    resolutionTimer.current = setTimeout(() => {
+      const nodeIds = collectWikilinkTargets(target.state.doc);
+      unwrap(window.mmap.nodes.resolveLinks({ nodeIds })).then(
+        ({ items }) => {
+          if (target.isDestroyed) return;
+          target.storage.wikilink.resolvedTitles = new Map(
+            items.map((item) => [item.id, item.title]),
+          );
+          target.view.dispatch(target.state.tr.setMeta(RESOLUTION_META, true));
+        },
+        () => undefined,
+      );
+    }, 300);
+  };
+  useEffect(
+    () => () => {
+      if (resolutionTimer.current !== null) clearTimeout(resolutionTimer.current);
+    },
+    [],
+  );
   const [linkEdit, setLinkEdit] = useState<{ href: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const editor = useEditor({
     extensions: createNoteExtensions({
       onEditMath: (kind, latex, position) => setMathEdit({ kind, latex, position }),
+      onRequestLink: () => setWikilinkDialog({ mode: 'insert' }),
     }),
     content: initialNote as NoteDocument,
     // Each paragraph gets dir="auto", so Hebrew/Arabic and English paragraphs each align
@@ -116,7 +165,21 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
         }
         return false;
       },
-      handleClick: (_view, _position, event) => {
+      handleClick: (view, position, event) => {
+        // Wikilinks: a click follows the link, or offers a repair when the target is gone.
+        const wikilink = (event.target as HTMLElement | null)?.closest('[data-wikilink-target]');
+        const targetNodeId = wikilink?.getAttribute('data-wikilink-target');
+        if (targetNodeId) {
+          const resolved = editorRef.current?.storage.wikilink.resolvedTitles;
+          if (resolved?.has(targetNodeId)) {
+            callbacks.current.onOpenNode(targetNodeId);
+          } else if (resolved !== null && resolved !== undefined) {
+            const at =
+              view.state.doc.nodeAt(position)?.type.name === 'wikilink' ? position : position - 1;
+            setWikilinkDialog({ mode: 'repair', position: at });
+          }
+          return true;
+        }
         if (!(event.ctrlKey || event.metaKey)) return false;
         const href = (event.target as HTMLElement | null)?.closest('a')?.getAttribute('href');
         if (href) {
@@ -126,7 +189,9 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
         return false;
       },
     },
+    onCreate: ({ editor: created }) => scheduleResolution(created),
     onUpdate: ({ editor: updated }) => {
+      scheduleResolution(updated);
       try {
         callbacks.current.onChange(parseNoteDocument(updated.getJSON()));
       } catch (error) {
@@ -141,6 +206,7 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
     <div>
       <Toolbar
         editor={editor}
+        onInsertWikilink={() => setWikilinkDialog({ mode: 'insert' })}
         onEditLink={() => setLinkEdit({ href: String(editor.getAttributes('link').href ?? '') })}
         onInsertMath={(kind) => setMathEdit({ kind, latex: '', position: null })}
         onAttachFiles={() =>
@@ -153,9 +219,30 @@ export function NoteEditor({ initialNote, onChange, onInvalid, onAttachFiles }: 
       />
       <EditorContent editor={editor} />
       <p className="mt-1 text-xs text-muted-foreground">
-        Tip: Ctrl+click a link to open it in your browser. Click a formula to edit it. Double-click
-        an attached file to open it.
+        Tip: type [[ to link to another node. Ctrl+click a web link to open it in your browser.
+        Click a formula to edit it. Double-click an attached file to open it.
       </p>
+      {wikilinkDialog && (
+        <WikilinkDialog
+          mode={wikilinkDialog.mode}
+          onClose={() => {
+            setWikilinkDialog(null);
+            editor.commands.focus();
+          }}
+          onChoose={(target) => {
+            if (wikilinkDialog.mode === 'insert') {
+              editor
+                .chain()
+                .focus()
+                .insertWikilink({ targetNodeId: target.id, label: target.title })
+                .run();
+            } else {
+              editor.chain().focus().retargetWikilink(wikilinkDialog.position, target.id).run();
+            }
+            setWikilinkDialog(null);
+          }}
+        />
+      )}
       {notice && (
         <p role="alert" className="mt-1 text-sm text-destructive">
           {notice}
@@ -231,9 +318,16 @@ interface ToolbarProps {
   readonly onEditLink: () => void;
   readonly onInsertMath: (kind: 'inline' | 'block') => void;
   readonly onAttachFiles: () => void;
+  readonly onInsertWikilink: () => void;
 }
 
-function Toolbar({ editor, onEditLink, onInsertMath, onAttachFiles }: ToolbarProps) {
+function Toolbar({
+  editor,
+  onEditLink,
+  onInsertMath,
+  onAttachFiles,
+  onInsertWikilink,
+}: ToolbarProps) {
   const active = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -356,6 +450,7 @@ function Toolbar({ editor, onEditLink, onInsertMath, onAttachFiles }: ToolbarPro
         <Separator />
         <ToolbarButton icon={Pi} label="Inline formula" onClick={() => onInsertMath('inline')} />
         <ToolbarButton icon={Sigma} label="Display formula" onClick={() => onInsertMath('block')} />
+        <ToolbarButton icon={Brackets} label="Link to a node ([[)" onClick={onInsertWikilink} />
         <ToolbarButton icon={Paperclip} label="Attach files" onClick={onAttachFiles} />
         <Separator />
         <ToolbarButton
@@ -535,5 +630,70 @@ function LinkDialog({
         </p>
       )}
     </FormDialog>
+  );
+}
+
+/**
+ * Chooses the target of a wikilink: an existing node, or an explicitly created new one
+ * (PRD §5.4). Also used to repair a link whose target was deleted.
+ */
+function WikilinkDialog({
+  mode,
+  onClose,
+  onChoose,
+}: {
+  mode: 'insert' | 'repair';
+  onClose: () => void;
+  onChoose: (target: PickedNode) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+
+  const createAndChoose = async (title: string) => {
+    setError(null);
+    try {
+      const created = await unwrap(window.mmap.nodes.create({ title }));
+      notifyNodesChanged();
+      onChoose({ id: created.id, title: created.title });
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  };
+
+  return (
+    <DialogPrimitive.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 bg-black/50" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/4 w-full max-w-lg -translate-x-1/2 rounded-md border bg-background p-6 shadow-lg focus:outline-none">
+          <DialogPrimitive.Title className="text-lg font-semibold">
+            {mode === 'insert' ? 'Link to a node' : 'Repair link'}
+          </DialogPrimitive.Title>
+          <DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">
+            {mode === 'insert'
+              ? 'Choose the node to link to, or create a new one. Links do not create relationships.'
+              : 'The node this link pointed to no longer exists. Choose another node; the link text stays the same.'}
+          </DialogPrimitive.Description>
+          <div className="mt-4">
+            <NodePicker
+              label="Node to link to"
+              autoFocus
+              onPick={onChoose}
+              {...(mode === 'insert'
+                ? { onCreateNew: (title: string) => void createAndChoose(title) }
+                : {})}
+            />
+          </div>
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end">
+            <DialogPrimitive.Close asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogPrimitive.Close>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

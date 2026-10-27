@@ -5,7 +5,7 @@
 
 import type { WorkspaceSummary } from '@mmap/contracts';
 import { Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
@@ -15,6 +15,7 @@ import { NAVIGATION_ITEMS, type ViewId } from './navigation';
 import { LibraryView } from './nodes/library-view';
 import { NodeDetailPanel } from './nodes/node-detail-panel';
 import { notifyNodesChanged } from './nodes/node-events';
+import { SearchView } from './nodes/search-view';
 import { ComingSoonView } from './views/coming-soon-view';
 import { SettingsView } from './views/settings-view';
 import { CloudSyncWarning } from './workspace/cloud-sync-warning';
@@ -43,8 +44,32 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   const [activeView, setActiveView] = useState<ViewId>('library');
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInput = useRef<HTMLInputElement>(null);
 
-  const activeItem = NAVIGATION_ITEMS.find((item) => item.id === activeView) ?? NAVIGATION_ITEMS[0];
+  const activeItem =
+    activeView === 'search'
+      ? undefined
+      : (NAVIGATION_ITEMS.find((item) => item.id === activeView) ?? NAVIGATION_ITEMS[0]);
+
+  // Search while typing, but only after a short pause, so each keystroke does not run a query.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(searchText), 250);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  // Ctrl+K (Cmd+K) focuses the search box from anywhere (PRD §6: search is easy to reach).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInput.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   /** Creating a node is always an explicit action (PRD §5.6); it opens straight away. */
   const createNode = async () => {
@@ -100,11 +125,23 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <Input
+              ref={searchInput}
               type="search"
               aria-label="Search knowledge"
-              placeholder="Search (available in Phase 2)"
+              placeholder="Search (Ctrl+K)"
               className="pl-9"
-              disabled
+              dir="auto"
+              value={searchText}
+              onChange={(event) => {
+                setSearchText(event.target.value);
+                if (event.target.value.trim() !== '') setActiveView('search');
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  setSearchQuery(searchText);
+                  setActiveView('search');
+                }
+              }}
             />
           </div>
           <Button onClick={() => void createNode()}>
@@ -137,6 +174,9 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                 onOpenNode={setOpenNodeId}
                 onCreateNode={() => void createNode()}
               />
+            )}
+            {activeView === 'search' && (
+              <SearchView query={searchQuery} onOpenNode={setOpenNodeId} />
             )}
             {activeItem && activeItem.id !== 'settings' && activeItem.id !== 'library' && (
               <ComingSoonView item={activeItem} />

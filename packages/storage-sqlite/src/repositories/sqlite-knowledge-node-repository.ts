@@ -150,6 +150,27 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
     return Number(result.changes) === 1;
   }
 
+  public async findTitles(
+    workspaceId: WorkspaceId,
+    nodeIds: readonly NodeId[],
+  ): Promise<ReadonlyMap<NodeId, string>> {
+    const titles = new Map<NodeId, string>();
+    const database = this.connections.forRead();
+    for (let start = 0; start < nodeIds.length; start += TITLE_BATCH_SIZE) {
+      const batch = nodeIds.slice(start, start + TITLE_BATCH_SIZE);
+      const rows = database
+        .prepare(
+          `SELECT id, title FROM knowledge_nodes
+           WHERE workspace_id = ? AND id IN (${placeholders(batch.length)})`,
+        )
+        .all(workspaceId, ...batch);
+      for (const row of rows) {
+        titles.set(String(row.id) as NodeId, String(row.title));
+      }
+    }
+    return titles;
+  }
+
   public async countDependents(workspaceId: WorkspaceId, nodeId: NodeId): Promise<NodeDependents> {
     const database = this.connections.forRead();
     const count = (sql: string, ...parameters: string[]): number =>
@@ -207,6 +228,9 @@ export class SqliteKnowledgeNodeRepository implements KnowledgeNodeRepository {
 }
 
 type Row = Record<string, SQLOutputValue>;
+
+/** Splits large ID lists so a single statement stays far below SQLite's parameter limit. */
+const TITLE_BATCH_SIZE = 500;
 
 /**
  * SQL condition restricting nodes to those carrying every tag in `tagIds` ("match all", which is

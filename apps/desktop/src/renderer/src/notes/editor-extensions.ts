@@ -24,6 +24,7 @@ import StarterKit from '@tiptap/starter-kit';
 import type { KatexOptions } from 'katex';
 
 import { AttachmentNode } from './attachment-node';
+import { WikilinkNode } from './wikilink-node';
 
 export const KATEX_OPTIONS: KatexOptions = {
   throwOnError: false,
@@ -37,6 +38,8 @@ export const KATEX_OPTIONS: KatexOptions = {
 export interface EditorExtensionCallbacks {
   /** Called when the user activates a math node, to edit its LaTeX source. */
   readonly onEditMath?: (kind: 'inline' | 'block', latex: string, position: number) => void;
+  /** Called when the user typed `[[`, to show a node picker for a new wikilink. */
+  readonly onRequestLink?: () => void;
 }
 
 export function createNoteExtensions(callbacks: EditorExtensionCallbacks = {}): Extensions {
@@ -58,6 +61,7 @@ export function createNoteExtensions(callbacks: EditorExtensionCallbacks = {}): 
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
     AttachmentNode,
+    WikilinkNode.configure({ onRequestLink: callbacks.onRequestLink }),
     Mathematics.configure({
       katexOptions: KATEX_OPTIONS,
       inlineOptions: {

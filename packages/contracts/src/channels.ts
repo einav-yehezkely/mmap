@@ -28,6 +28,10 @@ export const IPC_CHANNELS = {
   nodesDuplicate: 'nodes:duplicate',
   nodesPreviewDelete: 'nodes:preview-delete',
   nodesDelete: 'nodes:delete',
+  nodesLookup: 'nodes:lookup',
+  nodesBacklinks: 'nodes:backlinks',
+  nodesResolveLinks: 'nodes:resolve-links',
+  searchQuery: 'search:query',
   nodesAddTag: 'nodes:add-tag',
   nodesRemoveTag: 'nodes:remove-tag',
   tagsList: 'tags:list',
@@ -40,6 +44,15 @@ export const IPC_CHANNELS = {
   attachmentsRemove: 'attachments:remove',
   preferencesGet: 'preferences:get',
   preferencesUpdate: 'preferences:update',
+  relationshipTypesList: 'relationship-types:list',
+  relationshipTypesCreate: 'relationship-types:create',
+  relationshipTypesRename: 'relationship-types:rename',
+  relationshipTypesSetArchived: 'relationship-types:set-archived',
+  relationshipTypesSetDirectionality: 'relationship-types:set-directionality',
+  relationshipsListForNode: 'relationships:list-for-node',
+  relationshipsCreate: 'relationships:create',
+  relationshipsUpdate: 'relationships:update',
+  relationshipsDelete: 'relationships:delete',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
