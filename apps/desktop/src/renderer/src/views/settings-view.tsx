@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 
 import { WorkspaceSettings } from '../workspace/workspace-settings';
 import { AttachmentPreferences } from './attachment-preferences';
+import { TimezoneSetting } from './timezone-setting';
 
 type LoadState =
   | { readonly status: 'loading' }
@@ -49,6 +50,9 @@ export function SettingsView({ workspace }: { workspace: WorkspaceSummary }) {
       <h2 className="mt-6 text-lg font-medium">Workspace</h2>
       <div className="mt-3">
         <WorkspaceSettings key={workspace.id} workspace={workspace} />
+      </div>
+      <div className="mt-6">
+        <TimezoneSetting timezone={workspace.timezone} />
       </div>
       <h2 className="mt-10 text-lg font-medium">Attachments</h2>
       <div className="mt-3">

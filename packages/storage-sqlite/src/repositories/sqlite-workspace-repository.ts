@@ -45,4 +45,15 @@ export class SqliteWorkspaceRepository implements WorkspaceRepository {
       .prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?')
       .run(name, updatedAt, workspaceId);
   }
+
+  public async setTimezone(
+    workspaceId: WorkspaceId,
+    timezone: string,
+    updatedAt: UtcTimestamp,
+  ): Promise<void> {
+    this.connections
+      .forWrite()
+      .prepare('UPDATE workspaces SET timezone = ?, updated_at = ? WHERE id = ?')
+      .run(timezone, updatedAt, workspaceId);
+  }
 }

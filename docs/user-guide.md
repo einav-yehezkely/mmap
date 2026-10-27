@@ -2,7 +2,8 @@
 
 mmap is a private knowledge base for Windows. You write down ideas, concepts and sources as
 **nodes**, give each one a rich note, tag them, attach files, connect them with typed
-**relationships**, link to other nodes from inside a note, arrange nodes on **mind maps**, and
+**relationships**, link to other nodes from inside a note, arrange nodes on **mind maps**, explore
+everything in the **knowledge graph**, look back on your activity in the **timeline**, and
 search everything you wrote. Everything stays in a folder on your computer. mmap works without an internet connection, has no
 account, and sends nothing anywhere.
 
@@ -491,6 +492,299 @@ deleted, mmap does not apply your change on top. It shows the latest version of 
 message "This map was changed elsewhere, so your last change was not applied." Make the change
 again.
 
+## Knowledge graph
+
+**Knowledge Graph** in the sidebar shows your nodes and the relationships between them across the
+whole workspace. It shows the same nodes as the Library and your maps, not copies, and looking at
+the graph never changes your knowledge or your maps; it only remembers where you placed nodes in
+the graph.
+
+### The toolbar
+
+Above the graph:
+
+- **Find in graph**: type part of a title to get up to eight matching nodes that are on the graph
+  now; choose one (or press Enter for the first) to select it and move the view to it.
+- **−** and **+** zoom out and in; **Fit** shows the whole graph again.
+- **Rearrange** lays out the visible graph again. It replaces the positions you gave those nodes
+  by dragging.
+- **Show Maps** marks which mind maps each node is on (see [Mind maps in the graph](#mind-maps-in-the-graph)).
+- **All labels** writes the relationship type on every line (otherwise labels appear when you
+  point at a line or select a node).
+- **Note links** adds the links you wrote in notes (`[[…]]`).
+- **Filters** opens and closes the filter panel; the button shows how many filters are active.
+- **Graph** and **List** switch between the drawing and the [List](#the-list-tab).
+
+### Reading the graph
+
+- Each dot is a node; better-connected nodes are drawn larger. Its title is written below it,
+  shortened if it is long. Point at a node to see its full title and its maps.
+- A line with an **arrow** is a directed relationship, read from the source to the target ("A
+  depends on B" points from A to B). A line **without an arrow** is an undirected relationship.
+- With **Note links** on, note links are **dashed** lines without an arrow. They are not
+  relationships, so they are drawn differently and are off by default. Several links from one note
+  to the same node are one line. The List says which way each link goes.
+- Being on the same mind map never draws a line between two nodes.
+
+The line under the graph repeats what the lines mean.
+
+### Where nodes are placed
+
+The graph remembers where nodes are. The first time you open it, mmap arranges the graph for you
+(for up to 300 nodes; in a larger graph, nodes are placed next to their neighbors without
+overlapping, and **Rearrange** arranges them). After that:
+
+- New nodes, and nodes that appear because of a filter or an expansion, are placed next to the
+  nodes they are connected to. Nothing that is already on screen moves.
+- **Drag** a node to move it; mmap remembers the new place.
+- Positions in the graph are separate from your mind maps: moving a node here never moves it on a
+  map, and the reverse.
+- **Rearrange** arranges the visible nodes again when the picture has become untidy.
+
+The graph always opens showing everything, and fits again when you change a filter or enter or
+leave Focus mode. It never zooms in so far that a few nodes fill the screen. Drag the background
+to pan and use the mouse wheel to zoom; once you have done so, the view stays where you put it.
+
+### Filters
+
+Click **Filters** to open the panel:
+
+- **Text**: shows only nodes whose title, summary or note contains the words, with the same rules
+  as [search](#how-matching-works). The graph updates a moment after you stop typing.
+- **Tags**: click tags to keep only nodes that carry all selected tags.
+- **Types**: click relationship types to show only relationships of those types, and only nodes
+  that take part in at least one of them. Directed types are marked with `→`. Archived types are
+  not listed.
+- **Mind maps**: search the list of maps and tick one or more to show only nodes that are on any
+  of them. Each map shows how many nodes it has, an **eye** button that highlights its nodes
+  without filtering, and a button that opens the mind map.
+
+Filters work together: a node must match all of them. **Clear all filters** removes them.
+
+### When the view is partial
+
+A workspace with many nodes is not drawn all at once. The graph first shows at most **1,000**
+nodes, the most connected ones first, and at most 3,000 relationships between them. The line
+above the graph always tells you what you are looking at:
+
+- "Showing all 240 matching nodes." means nothing that matches your filters is missing.
+- "Partial view: showing 1,000 of 10,000 matching nodes, the most connected first." means other
+  nodes match but are not drawn. Narrow the filters, or expand a node to see its neighbors. The
+  line turns amber while the view is partial.
+- Further sentences say when some relationships or note links between the shown nodes were left
+  out, or when an expanded node has more neighbors than were added.
+
+If the line does not say "Showing all", do not assume that a missing node or connection does not
+exist.
+
+### Selecting a node
+
+**Click** a node to select it. The node, its direct neighbors and the lines between them stay
+bright and everything else fades. A panel on the right shows:
+
+- the title, summary and tags;
+- the **mind maps** the node is on, each with an **eye** button (highlight that map's nodes on the
+  graph) and a button that opens the mind map;
+- its relationships in words, with direction;
+- **Open note**, which opens the node in the side panel as everywhere else in mmap
+  (**double-clicking** a node does the same);
+- **Focus** and **Expand neighbors** (below).
+
+Click the empty background, or the panel's close button, to clear the selection.
+
+### Focus mode and expanding
+
+- **Focus** shows only the selected node and the nodes directly connected to it. The line above
+  the graph says which node is in focus; **Exit focus** brings the rest back.
+- **Expand neighbors** adds the nodes directly connected to a node (up to 200 at a time) and the
+  relationships between them. Expanded nodes get an outline. In Focus mode, expanding a node adds
+  its neighbors to what is shown.
+
+mmap keeps your expansions when the graph reloads, for example after you change a filter or edit
+a note. They are removed when you leave the Knowledge Graph.
+
+### Mind maps in the graph
+
+The graph shows each node once, however many maps it is on.
+
+- Turn on **Show Maps** to color nodes by map: a node on maps is drawn as a small pie with one
+  slice per map. A node on more than six maps gets six colored slices and one gray slice. The line
+  under the graph lists the map colors. Colors repeat after eight maps, so the map names (when you
+  point at a node, in the panel and in the List) are what count.
+- The **eye** button next to a map (in the filter panel or the node panel) highlights that map's
+  nodes and fades the rest. The line above the graph says which map is highlighted; click **×** to
+  stop.
+- The open-map button opens the map in **Mind Maps**, with the map's own layout.
+- Turn on **Regions** to outline each map's nodes with a soft colored area labeled with the map's
+  name. Areas can overlap: a node on two maps lies inside both areas and is still shown once. If you
+  have many maps, regions are drawn for twelve of them; choose maps in **Filters** to pick which.
+- The **collapse** button next to a map (in **Filters**) folds the map into one box showing its
+  name and how many nodes it has. Nodes that are only on collapsed maps are tucked into the box;
+  a node that is also on another, expanded map stays visible. Lines from the box (for example
+  "3 connections") stand for relationships to the hidden nodes. Click the box, or **Expand all**
+  above the graph, to show the nodes again. Collapsing only changes this view: nothing in the map
+  or your knowledge changes.
+
+### The List tab
+
+Switch from **Graph** to **List** to see the same nodes as a list, sorted by title, which works
+fully with the keyboard and screen readers. Each node lists its mind maps and its connections in
+words, with direction:
+
+- "depends on → Probability": this node depends on Probability;
+- "← depends on Entropy": Entropy depends on this node;
+- "related to — Heat": an undirected relationship;
+- "note links to Heat" and "linked from the note of Heat": note links, when **Note links** is on.
+
+Each row has **Open**, **Focus** and **Expand** buttons. The list shows exactly what the graph
+shows (in Focus mode, only the nodes in focus), so the line above it applies to the list too.
+
+## Timeline
+
+**Timeline** in the sidebar shows what you did and learned in this workspace:
+
+- **Created**: a node was created (including by duplicating one).
+- **Note edits** ("Edited the note of"): you edited a node's note. Edits are grouped into one
+  entry per editing session, which ends after 30 minutes without changes, so you see
+  "09:05–09:40" instead of one entry per autosave. Changing only a title or summary is not
+  recorded.
+- **Relationships** ("Added a relationship from"): you added a relationship; the entry names the
+  node the relationship starts from.
+- **Reviews**: you marked the node as reviewed, with your reflection if you wrote one.
+- **Milestones**: a learning milestone you added, such as finishing a course or understanding a
+  hard idea.
+
+The timeline is a record of what happened. It does not score, rate or estimate how well you know
+something, and it never adds entries on its own beyond the activity listed above.
+
+The screen has two tabs: **Timeline**, a time axis you can move along, and **List**, the same
+entries as a list.
+
+### Recorded time and learning date
+
+Every entry has the time it was **recorded**, which never changes. You can also give any entry a
+**learning date**: when the learning actually happened, for example if you review today something
+you learned last week. An entry with a learning date is shown at that date, both on the axis and
+in the list; without one it is shown at the recorded time. A learning date cannot be in the
+future or before 1900.
+
+### The time axis
+
+The **Timeline** tab shows a horizontal line of time: older entries on the left, newer ones on the
+right. Dates along the line are shown in the workspace's timezone, and a **Now** line marks the
+present. It opens on your recent activity, with now near the right edge; if nothing happened
+recently, it opens on your latest entry instead.
+
+- **Move through time**: click **‹** (earlier) or **›** (later), drag the background, or use the
+  mouse wheel or touchpad.
+- **Zoom**: click **Day**, **Week**, **Month** or **Year**, or hold **Ctrl** and use the mouse
+  wheel. Zooming keeps the selected entry (or now, when it is visible) in the same place.
+- **Today** brings back the present.
+
+Each kind of entry has its own shape and icon, as well as its own color:
+
+| Entry         | Marker                                                              |
+| ------------- | ------------------------------------------------------------------- |
+| Created       | Circle with a plus                                                  |
+| Note edits    | Bar; an editing session stretches from its start to its last change |
+| Relationships | Diamond with a link                                                 |
+| Reviews       | Square with a book and check mark                                   |
+| Milestones    | Pennant with a flag                                                 |
+
+A small dot on a marker means the entry is shown at a learning date you set. The legend under the
+axis explains the shapes in words.
+
+Markers that would overlap are stacked in rows. When you zoom out, entries close together become
+one round marker with a number; click it to zoom in and see them one by one.
+
+The line under the axis says how many entries are in the period shown. If there are none, it
+says "No events in this period." and offers **Go to the latest event**. If a long period holds
+very many entries (more than 2,000), it says "Showing N of M events in this period, spread across
+it; zoom in to see them all": entries are then taken evenly across the whole period, so a busy day
+never hides a quieter week. Zoom in to see every entry.
+
+**Keyboard**: every marker and numbered marker can be reached with **Tab** and activated with
+**Enter** or **Space**; screen readers announce what each marker stands for and when it happened.
+The **List** tab presents the same entries as an ordinary list.
+
+### The List tab
+
+**List** shows the entries newest first, grouped by day, with the time, what happened, the node or
+milestone title and any reflection. Entries placed at a learning date are marked **learning
+date**. **Load more** at the bottom shows older entries.
+
+### Entry details
+
+Click an entry, on the axis or in the list, to open its details at the side:
+
+- What happened, the title and the **Recorded** date (for an editing session, from start to
+  end), and the **Learned** date if you set one.
+- **Open …** opens the node. Entries of deleted nodes stay in the timeline with the title the node
+  had, marked "(deleted)".
+- **When did the learning happen?**: pick a date and time and click **Save learning date** to move
+  the entry to that date. **Use recorded time** removes the learning date again. This works for
+  every entry.
+- For your reviews and milestones: edit the **Title** (milestones), the **Details** (milestones)
+  or the **Reflection** (reviews) and click **Save**, or click **Delete** and confirm. Deleting
+  removes the entry from the timeline; nodes are not changed.
+
+Only your reviews and milestones can be edited or deleted. Created, edited and relationship
+entries are a record of what happened: you can give them a learning date, but you cannot change or
+delete them.
+
+### Marking a node as reviewed
+
+1. Open the node.
+2. Click **Mark as reviewed…** at the bottom of the side panel.
+3. Optionally write a short **reflection**: what became clear, what to revisit. It can have
+   several lines and up to 2,000 characters.
+4. Optionally fill in **When did you learn this?**. Leave it empty to use the current time.
+5. Click **Mark as reviewed**. "Review recorded in the timeline." confirms it.
+
+You can mark the same node as reviewed as often as you like; each time adds an entry.
+
+### Adding a milestone
+
+1. On the Timeline screen, click **Add milestone**.
+2. Enter a **Title** (up to 200 characters).
+3. **When did it happen?** is set to now; change it if the milestone was earlier. Left unchanged,
+   the milestone is placed at the moment you add it; a changed date becomes its learning date.
+4. Optionally add **Details** (up to 2,000 characters) and a **Related node**.
+5. Click **Add milestone**.
+
+### Filters
+
+Click **Filters** to open or close the filter panel. The button shows how many filters are on.
+
+- **From** and **To**: only entries on these days, in your timezone (see below). Either can be left
+  empty. Choosing dates also moves the axis to that period.
+- **Event types**: click **Created**, **Note edits**, **Relationships**, **Reviews** or
+  **Milestones** to show only those kinds of entries.
+- **Tags**: only entries of nodes that carry all selected tags now.
+- **Only this node**: pick a node to see its history; the **×** removes the filter.
+
+**Clear all filters** shows everything again. Dates are matched by the time an entry is shown at:
+its learning date if it has one, otherwise the recorded time. An editing session counts on the day
+and at the time it started: a session that began before the **From** day is not shown, even if it
+continued into it.
+
+Entries marked **Imported** come from imported history. Importing is not available yet, so you
+will not see them today.
+
+### Timezone
+
+Dates and times in the timeline, and elsewhere in mmap, are shown in the workspace's timezone.
+It is set to your computer's timezone when the workspace is created. To change it, go to
+**Settings**, **Timezone for dates**, and pick a timezone, or click **Use this computer's
+timezone**.
+
+The timezone decides which calendar day an entry belongs to and what **From** and **To** mean: for
+example, with `Asia/Jerusalem`, "27 March" covers 27 March from midnight to midnight in Jerusalem,
+including on the day the clocks change. mmap stores every time in UTC, so changing the timezone
+never changes your history; entries only move to the day they belong to in the new timezone. The
+timezone is saved with the workspace, so it stays the same when you open the workspace on another
+computer.
+
 ## Search
 
 Use the **search box** at the top of the window, or press **Ctrl+K** to jump to it from anywhere.
@@ -610,28 +904,29 @@ The only automatic copy mmap makes today is a safety copy of the database before
 of mmap upgrades a workspace's storage format. It is placed in the workspace's `recovery` folder.
 This is not a general backup.
 
-The first time this version opens a workspace created by the previous version, it makes such a
-copy and upgrades the workspace so that notes can contain links to nodes. After that, the
-previous version of mmap can no longer open the workspace; it reports that the workspace was
-created by a newer version and changes nothing.
+The first time this version opens a workspace created by an earlier version, it makes such a
+copy and upgrades the workspace (so that notes can contain links to nodes, the knowledge graph
+can remember where nodes are, and the timeline can hold milestones and learning dates). After that, earlier versions of mmap can no longer open the
+workspace; they report that the workspace was created by a newer version and change nothing.
 
 ## Not available yet
 
 These features are planned for later versions:
 
-- The **knowledge graph**.
-- **Editing a relationship's explanation** after it was added, and creating relationships from
-  the graph.
+- **Editing a relationship's explanation** after it was added, and **creating relationships from
+  the graph**.
+- In the graph: **map regions** (an outline around each map's nodes) and **collapsing a map**
+  into one summary node, which are being built now; **dragging from one node to another to
+  connect them**; **keyboard use of the drawing itself** (use the List tab); undoing
+  **Rearrange**; and clearing expanded neighbors without leaving the graph. Labels of two lines
+  between the same nodes can overlap; the node panel and the List name each one.
+- **Filtering search results by relationship type** (the graph has this filter).
+- In the timeline: **separate lanes per tag or topic**. Today all entries share one time axis.
 - **Changing the text of an existing node link.** Delete the link and insert it again with new
   **Link text**.
 - On mind maps: **labels on connectors**, **linking a connector to a relationship**, **dragging
   an item onto another to change its parent**, a **search or sort** for the list of maps, and
   more colors.
-- **Timeline**: mmap already records when you create nodes and edit notes, but there is no view
-  for it yet, and you cannot yet mark a node as reviewed.
 - **Export, import and backups** inside the app. Until then, quit mmap and copy the workspace
   folder to back it up.
 - **More than one window.**
-
-The Knowledge Graph and Timeline areas in the sidebar show a short note saying when they become
-available.

@@ -13,6 +13,7 @@ import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from '.
 import { attachmentContracts, preferenceContracts } from './attachments';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
 import { nodeContracts, searchContracts, tagContracts } from './nodes';
+import { graphContracts, timelineContracts } from './graph-timeline';
 import { mapContracts } from './maps';
 import { relationshipContracts, relationshipTypeContracts } from './relationships';
 import { workspaceContracts } from './workspace';
@@ -38,6 +39,7 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.workspaceRevealFolder]: workspaceContracts.revealFolder,
   [IPC_CHANNELS.workspaceMove]: workspaceContracts.move,
   [IPC_CHANNELS.workspaceDelete]: workspaceContracts.delete,
+  [IPC_CHANNELS.workspaceSetTimezone]: workspaceContracts.setTimezone,
   [IPC_CHANNELS.nodesList]: nodeContracts.list,
   [IPC_CHANNELS.nodesGet]: nodeContracts.get,
   [IPC_CHANNELS.nodesCreate]: nodeContracts.create,
@@ -87,6 +89,16 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.mapsRemoveConnection]: mapContracts.removeConnection,
   [IPC_CHANNELS.mapsProposeHierarchy]: mapContracts.proposeHierarchy,
   [IPC_CHANNELS.mapsSwitchMode]: mapContracts.switchMode,
+  [IPC_CHANNELS.graphOverview]: graphContracts.overview,
+  [IPC_CHANNELS.graphNeighborhood]: graphContracts.neighborhood,
+  [IPC_CHANNELS.graphGetPositions]: graphContracts.getPositions,
+  [IPC_CHANNELS.graphSavePositions]: graphContracts.savePositions,
+  [IPC_CHANNELS.timelineList]: timelineContracts.list,
+  [IPC_CHANNELS.timelineWindow]: timelineContracts.window,
+  [IPC_CHANNELS.timelineMarkReviewed]: timelineContracts.markReviewed,
+  [IPC_CHANNELS.timelineAddMilestone]: timelineContracts.addMilestone,
+  [IPC_CHANNELS.timelineUpdateEntry]: timelineContracts.updateEntry,
+  [IPC_CHANNELS.timelineDeleteEntry]: timelineContracts.deleteEntry,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

@@ -16,6 +16,7 @@ import { verifySchemaOnFreshDatabase } from '@mmap/storage-sqlite';
 import type { BrowserWindow } from 'electron';
 
 import { checkAttachmentPreview } from './smoke-attachments';
+import { checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
 import type { WorkspaceManager } from './workspaces/workspace-manager';
 
 export interface SmokeTestCheck {
@@ -263,6 +264,16 @@ export async function runSmokeTest(
         rmSync(directory, { recursive: true, force: true });
       }
     }),
+  );
+
+  checks.push(
+    await check('1,000-node graph renders within 3 seconds', async () => {
+      const elapsed = await checkGraphRendering(window, workspaces);
+      console.log(`      graph render time: ${elapsed} ms`);
+    }),
+  );
+  checks.push(
+    await check('review recorded and shown in the timeline', () => checkTimeline(window)),
   );
 
   return { passed: checks.every((item) => item.passed), checks };

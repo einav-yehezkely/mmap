@@ -6,7 +6,7 @@
  */
 
 import type { NodeDependentsView } from '@mmap/contracts';
-import { Copy, Trash2, X } from 'lucide-react';
+import { BookCheck, Copy, Trash2, X } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 
@@ -21,6 +21,7 @@ import { errorMessage, unwrap } from '../lib/ipc';
 import type { SaveStatus } from './node-draft-saver';
 import { notifyNodesChanged } from './node-events';
 import { NodeRelationships } from '../relationships/node-relationships';
+import { ReviewDialog } from '../timeline/review-dialog';
 import { NodeTagsEditor } from './node-tags-editor';
 import { useNodeEditor, type ConflictChoice } from './use-node-editor';
 
@@ -53,6 +54,10 @@ export function NodeDetailPanel({
   const summaryId = useId();
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletePreview, setDeletePreview] = useState<NodeDependentsView | null>(null);
+  /** "Mark as reviewed" dialog (PRD §5.9) and the confirmation shown after recording a review. */
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewedNotice, setReviewedNotice] = useState(false);
   const [noteProblem, setNoteProblem] = useState<string | null>(null);
   const [attachmentsVersion, setAttachmentsVersion] = useState(0);
   const [attachNotices, setAttachNotices] = useState<readonly string[]>([]);
@@ -106,6 +111,19 @@ export function NodeDetailPanel({
       notifyNodesChanged();
       onOpenNode(copy.id);
     });
+
+  const markReviewed = async (reflection: string | null, learnedAt: string | null) => {
+    setReviewError(null);
+    try {
+      await unwrap(window.mmap.timeline.markReviewed({ nodeId, reflection, learnedAt }));
+      setReviewing(false);
+      setReviewedNotice(true);
+      // Refreshes views that show activity, such as the timeline.
+      notifyNodesChanged();
+    } catch (caught) {
+      setReviewError(errorMessage(caught));
+    }
+  };
 
   const askDelete = () =>
     runAction(async () => {
@@ -249,7 +267,19 @@ export function NodeDetailPanel({
         Created {formatDateTime(node.createdAt, timeZone)} · Revision {state.revision}
       </p>
 
-      <div className="flex gap-2 border-t pt-4">
+      <div className="flex flex-wrap gap-2 border-t pt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setReviewError(null);
+            setReviewedNotice(false);
+            setReviewing(true);
+          }}
+        >
+          <BookCheck aria-hidden="true" />
+          Mark as reviewed…
+        </Button>
         <Button variant="outline" size="sm" onClick={() => void duplicate()}>
           <Copy aria-hidden="true" />
           Duplicate
@@ -259,6 +289,21 @@ export function NodeDetailPanel({
           Delete…
         </Button>
       </div>
+
+      {reviewedNotice && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Review recorded in the timeline.
+        </p>
+      )}
+      {reviewing && (
+        <ReviewDialog
+          nodeTitle={node.title}
+          timeZone={timeZone}
+          error={reviewError}
+          onSubmit={(reflection, learnedAt) => void markReviewed(reflection, learnedAt)}
+          onClose={() => setReviewing(false)}
+        />
+      )}
 
       <ConfirmDialog
         open={deletePreview !== null}

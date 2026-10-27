@@ -17,9 +17,14 @@ generated content or inferred relationships). The product requirements are in
 - **Phase 2 — Connections and discovery: done, merged into `main`.** Relationships, wikilinks,
   backlinks and search. What works and what is still missing is listed in the
   [Phase 2 status](docs/implementation-plan.md#7-phase-2-status-2026-10-27).
-- **Phase 3 — Mind maps: implemented on branch `phase-3-mind-maps`.** Multiple maps that reuse
-  nodes, freeform and hierarchical modes, persistence. What works and what is still missing is
-  listed in the [Phase 3 status](docs/implementation-plan.md#8-phase-3-status-2026-10-27).
+- **Phase 3 — Mind maps: done, merged into `main`.** Multiple maps that reuse nodes, freeform
+  and hierarchical modes, persistence. What works and what is still missing is listed in the
+  [Phase 3 status](docs/implementation-plan.md#8-phase-3-status-2026-10-27).
+- **Phase 4 — Graph and timeline: implemented on branch `phase-4-graph-timeline`.** Knowledge
+  graph with bounded, clearly labelled partial views, mind map membership, saved positions and a
+  list alternative; a visual learning timeline with reviews, reflections, milestones, learning
+  dates and a workspace timezone. What works and what is still missing is
+  listed in the [Phase 4 status](docs/implementation-plan.md#9-phase-4-status-2026-10-27).
 
 What works in the app today:
 
@@ -54,8 +59,30 @@ What works in the app today:
   indenting and collapsing; a reviewed switch from freeform to hierarchy that keeps freeform
   positions; colors; and a keyboard-accessible outline. Deleting a map or removing an item never
   deletes nodes, and map hierarchy never creates relationships.
+- **Knowledge graph.** All nodes and typed relationships of the workspace in Cytoscape, with
+  arrows for directed relationships, labels on hover, selection or on request, and note links as a
+  separate dashed layer. Node positions are remembered (separately from mind maps): new nodes
+  appear next to their neighbors, dragged nodes stay put, and **Rearrange** lays the graph out
+  again on request; the view opens fitted. Mind map membership is shown on the nodes (colored
+  badges, always also named), never as lines; filter by text, tags, relationship types and maps,
+  highlight a map or open it. Selecting a node highlights its neighborhood and opens a side panel;
+  Focus mode shows a node with its neighbors; expand neighbors on demand. Large workspaces load at
+  most 1,000 nodes at a time, and the view always says whether it is partial ("showing X of Y").
+  A List tab presents the same information for keyboard and screen-reader users. Map regions and
+  collapsing maps are in progress.
+- **Timeline.** Created nodes, note editing sessions, new relationships, reviews and learning
+  milestones on a horizontal time axis (older left, newer right) with dates in the workspace's
+  timezone (set in Settings): pan by dragging, scrolling or the arrow buttons, zoom by day, week,
+  month or year, and click a marker for its details. Each kind of entry has its own marker shape,
+  nearby entries are grouped into a numbered cluster, and every marker is a keyboard-reachable
+  button; a List tab shows the same entries newest first, grouped by day. Filters by date range,
+  event type, tag and node. "Mark as reviewed…" in the node panel records a review with an
+  optional reflection; **Add milestone** records a milestone with a title and optional details.
+  Any entry can be given a learning date (when the learning actually happened), which places it
+  on the timeline while its recorded time is kept. Reviews and milestones can be edited or
+  deleted; recorded activity cannot be changed. The timeline is a record, not a score.
 
-Not yet available: the graph and timeline views (Phase 4), export, import and backups (Phase 5)
+Not yet available: export, import and backups (Phase 5)
 ([implementation plan](docs/implementation-plan.md)). End-user instructions are in the
 [user guide](docs/user-guide.md).
 
@@ -77,7 +104,7 @@ npm run dev       # start the app with hot reload
 | `apps/desktop`            | Electron app: `src/main` (main process: workspaces, attachment store, IPC services), `src/preload`, `src/renderer` (React) |
 | `packages/domain`         | Pure TypeScript domain rules, application services and ports; no Electron, React, SQLite or Node APIs                      |
 | `packages/contracts`      | IPC channel catalogue, zod request/response schemas, result envelope                                                       |
-| `packages/storage-sqlite` | `node:sqlite` adapter: connection settings, migrations, schema, write coordinator, repositories, FTS5 search               |
+| `packages/storage-sqlite` | `node:sqlite` adapter: connection settings, migrations, schema, write coordinator, repositories, FTS5 search, graph query  |
 | `tests`                   | Repository-level architecture (module boundary) test                                                                       |
 | `tooling`                 | `architecture-rules.mjs`, shared by ESLint and the architecture test                                                       |
 | `docs`                    | PRD, implementation plan, ADRs, developer documentation, runbooks                                                          |
@@ -105,12 +132,13 @@ Run from the repository root.
 - [Local setup](docs/setup.md): prerequisites, daily commands, environment variables,
   troubleshooting
 - [User guide](docs/user-guide.md): how to use workspaces, nodes, notes, links, relationships,
-  mind maps, search, tags and attachments
+  mind maps, the knowledge graph, the timeline, search, tags and attachments
 - [Architecture](docs/architecture.md): packages, process model, IPC request flow, workspace
   lifecycle, write coordinator, autosave, notes, relationships, wikilinks, search, mind maps,
-  attachments, security
+  knowledge graph, learning timeline, attachments, security
 - [Data model](docs/data-model.md): every table and how it is used, references and backlinks,
-  timeline grouping, attachment lifecycle, migrations
+  timeline grouping, reviews, milestones, learning dates and timezone, attachment lifecycle,
+  migrations
 - [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all channels
 - [Testing](docs/testing.md): test layers, rules, smoke test, search benchmark, what is not
   automated yet
@@ -127,3 +155,4 @@ Run from the repository root.
   - [ADR-0007 Database migrations strategy](docs/adr/0007-database-migrations-strategy.md)
   - [ADR-0008 Wikilinks and note schema version 2](docs/adr/0008-wikilinks-and-note-schema-v2.md)
   - [ADR-0009 Mind map editing](docs/adr/0009-mind-map-editing.md)
+  - [ADR-0010 Knowledge graph and learning timeline](docs/adr/0010-graph-and-timeline.md)

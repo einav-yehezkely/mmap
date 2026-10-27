@@ -1,36 +1,45 @@
 # Data model
 
 This page explains the SQLite schema created by migration 1,
-`packages/storage-sqlite/src/migrations/0001-initial-schema.ts`. It maps each table to the logical
-entities in PRD §7.3 and explains the constraints that are not obvious from the SQL. Migration 2
-changes no table; it only marks note schema version 2 (see [Migrations](#migrations)).
+`packages/storage-sqlite/src/migrations/0001-initial-schema.ts`, and the one table added since. It
+maps each table to the logical entities in PRD §7.3 and explains the constraints that are not
+obvious from the SQL. Migration 2 changes no table; it only marks note schema version 2.
+Migration 3 adds the knowledge graph's visual state (`graph_node_positions` and
+`graph_view_state`), migration 4 drops `graph_view_state` again, and migration 5 rebuilds
+`timeline_events` for learning milestones and learning dates (see [Migrations](#migrations)).
 
-Migration 1 creates the complete schema for the whole logical model. The Phase 1 to 3 services
+Migration 1 creates the complete schema for the whole logical model. The Phase 1 to 4 services
 use most of it; the rest waits for the phases that need it (see
-[Table usage](#table-usage-after-phase-3)). Phase 3 (mind maps) added no migration: the map tables
-were already in migration 1. The schema is verified by the tests in
-`packages/storage-sqlite/src/migrations/initial-schema.test.ts`.
+[Table usage](#table-usage-after-phase-4)). Phase 3 (mind maps) added no migration, and the first
+Phase 4 timeline needed none: the map tables, the timeline columns for reviews and imports, and
+the workspace timezone were already in migration 1. The redesigned Phase 4 graph needed a new
+table, for node positions that are kept apart from map placements, and the redesigned visual
+timeline needed a new event type and two new columns on `timeline_events`. The schema is verified
+by the tests in `packages/storage-sqlite/src/migrations/initial-schema.test.ts`, the graph tables
+by `packages/storage-sqlite/src/graph/graph-maps-layout.test.ts` and the timeline rebuild by
+`packages/storage-sqlite/src/migrations/timeline-rebuild.test.ts`.
 
-## Table usage after Phase 3
+## Table usage after Phase 4
 
 Repositories are in `packages/storage-sqlite/src/repositories/`; the services that call them are
 in `packages/domain/src/application/`. Every repository method takes the workspace ID and filters
 by it, so a record from another workspace behaves as not found.
 
-| Table                                            | Status       | Written by                                                                                                   |
-| ------------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------ |
-| `workspaces`                                     | Used         | `WorkspaceService.initialize` (create), `rename`; read on every open to check the manifest ID                |
-| `knowledge_nodes`                                | Used         | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders     |
-| `knowledge_nodes_fts`                            | Used         | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`)                |
-| `relationship_types`                             | Used         | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction |
-| `tags`, `node_tags`                              | Used         | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search           |
-| `timeline_events`                                | Used (write) | `node_created`, `note_updated` (grouped by session), `relationship_created`. No UI reads them yet            |
-| `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                            |
-| `relationships`                                  | Used         | `RelationshipService`: create, update (type, description, reverse), delete, list for a node                  |
-| `note_references`                                | Used         | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks and delete preview      |
-| `mind_maps`, `map_placements`, `map_connections` | Used         | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below)    |
-| `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                      |
-| `schema_migrations`                              | Used         | Migration runner                                                                                             |
+| Table                                            | Status       | Written by                                                                                                                                                                                                                                                                |
+| ------------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspaces`                                     | Used         | `WorkspaceService.initialize` (create), `rename`, `setTimezone`; read on every open to check the manifest ID; `timezone` read by timeline date filters                                                                                                                    |
+| `knowledge_nodes`                                | Used         | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders                                                                                                                                                                  |
+| `knowledge_nodes_fts`                            | Used         | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`) and by the graph text filter                                                                                                                                                |
+| `relationship_types`                             | Used         | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction                                                                                                                                                              |
+| `tags`, `node_tags`                              | Used         | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search                                                                                                                                                                        |
+| `timeline_events`                                | Used         | `node_created`, `note_updated` (grouped by session), `relationship_created`; `TimelineService` writes `reviewed` and `milestone` events, edits their title and reflection, deletes them, sets or clears `learned_at` on any event, and lists all events (Timeline screen) |
+| `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                                                                                                                                                                                         |
+| `relationships`                                  | Used         | `RelationshipService`: create, update (type, description, reverse), delete, list for a node; read by `SqliteGraphQuery` for the graph                                                                                                                                     |
+| `note_references`                                | Used         | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks, delete preview and the graph's note-link layer                                                                                                                                      |
+| `mind_maps`, `map_placements`, `map_connections` | Used         | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below); read by `SqliteGraphQuery` for map membership and the graph's map filter                                                                                       |
+| `graph_node_positions` (migration 3)             | Used         | `GraphService.savePositions` through `SqliteGraphLayoutRepository` (`graph:save-positions`); read by `graph:get-positions`; rows cascade when a node is deleted                                                                                                           |
+| `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                                                                                                                                                                                   |
+| `schema_migrations`                              | Used         | Migration runner                                                                                                                                                                                                                                                          |
 
 ## Three kinds of connection
 
@@ -46,6 +55,11 @@ implicitly (PRD §14).
 
 A map connector may point at an existing semantic relationship through
 `map_connections.relationship_id`, but only when the user explicitly links them (PRD §4.4).
+
+The knowledge graph draws relationships as edges and note references as a separate dashed layer.
+It shows map membership (which maps have a placement for a node) on the node itself and never as
+an edge: two nodes on the same map are not connected in the graph unless a relationship or note
+reference connects them.
 
 ## Schema-wide conventions
 
@@ -96,8 +110,15 @@ database file is `PRAGMA user_version` plus the `schema_migrations` table (see
 `mmap-workspace.json` records the same workspace ID; opening fails with `WORKSPACE_DAMAGED` if the
 database has no row for it ([architecture](architecture.md#workspace-lifecycle),
 [ADR-0005](adr/0005-workspace-location-and-supported-filesystems.md)). The row is created in the
-same transaction as the built-in relationship types. `timezone` is set from the operating system
-when the workspace is created and is used to display dates.
+same transaction as the built-in relationship types.
+
+`timezone` is set from the operating system when the workspace is created. Since Phase 4 the user
+can change it in Settings (`workspace:set-timezone`, which also updates `updated_at`). Only IANA
+names that the runtime's `Intl` knows are stored (`validateTimeZone`); offsets such as `+02:00`
+are refused. It controls how dates are shown and how the timeline's local date filters are turned
+into UTC ranges. No stored timestamp is ever converted or rewritten when it changes, because
+every timestamp in the database is UTC. The timezone belongs to the workspace, so it travels with
+the folder to another computer.
 
 ### `knowledge_nodes` (KnowledgeNode)
 
@@ -331,23 +352,43 @@ label from a `LEFT JOIN`.
 
 ### `timeline_events` (TimelineEvent)
 
-Recorded learning activity: `event_type` (`node_created`, `note_updated`,
-`relationship_created`, `reviewed`), `occurred_at`, `last_activity_at`, optional `reflection`,
-`is_imported`, `import_origin`.
+Recorded learning activity and the user's own learning entries: `event_type` (`node_created`,
+`note_updated`, `relationship_created`, `reviewed`, `milestone`), `occurred_at`,
+`last_activity_at`, optional `learned_at`, `title` (milestones only), optional `reflection`,
+`is_imported`, `import_origin`. Since migration 5 the table has this shape; migration 1 created it
+without `milestone`, `learned_at` and `title`.
 
 - Events outlive deleted nodes: `node_id` becomes `NULL` and `node_title_snapshot` keeps the
-  label readable.
+  label readable. A milestone may have no node at all.
 - Grouped note edits use `occurred_at` as the start and `last_activity_at` as the latest activity
   of an editing session (ended by 30 minutes of inactivity, PRD §5.9).
   `CHECK (last_activity_at >= occurred_at)`.
+- **Two times.** `occurred_at` is when the action was recorded and never changes. `learned_at`
+  (nullable, a UTC timestamp with the same fixed-width `CHECK` as every other timestamp) is an
+  optional moment, chosen by the user, when the learning actually happened. The timeline places
+  each event at its effective time, `coalesce(learned_at, occurred_at)`, so without a learning
+  date it shows the recorded time. `TimelineService` accepts a learning date only if it is a valid
+  instant, not in the future (5 minutes of clock difference tolerated) and not before 1900.
+- `title` holds a milestone's title:
+  `CHECK ((event_type = 'milestone' AND title IS NOT NULL AND length(trim(title)) > 0) OR (event_type <> 'milestone' AND title IS NULL))`.
+  The service also collapses whitespace and limits it to 200 characters
+  (`normalizeMilestoneTitle`).
 - `CHECK (is_imported = 1 OR import_origin IS NULL)`: only imported events carry an origin, so
   imported history is always recognisable and never counts as new learning.
+- `reflection` is used only by `reviewed` and `milestone` events: the user's optional note about
+  a review, or a milestone's details, at most 2,000 characters after trimming, with line breaks
+  kept (`normalizeReflection` in `timeline-service.ts`). Recorded activity always has
+  `reflection = NULL`.
+- `is_imported` and `import_origin`: every event written today has `is_imported = 0` and no
+  origin. Import (Phase 5) will set them, and the Timeline view shows an "Imported" badge for such
+  events. `import_origin` is never sent to the renderer.
 
 #### What is recorded
 
 `KnowledgeNodeService` (`packages/domain/src/application/knowledge-node-service.ts`) writes two
-event types, always in the same transaction as the node change, and `RelationshipService` writes
-a third. No UI shows them yet (Phase 4).
+event types, always in the same transaction as the node change, `RelationshipService` writes a
+third, and `TimelineService` (`packages/domain/src/application/timeline-service.ts`) writes the
+fourth and fifth when the user asks for them.
 
 - **`node_created`**: one event when a node is created, including by duplication, with the title
   as `node_title_snapshot`.
@@ -355,7 +396,14 @@ a third. No UI shows them yet (Phase 4).
   only the title or summary, or that send an identical note, record nothing.
 - **`relationship_created`** (Phase 2): one event per created relationship, in the same
   transaction, with the request's source node as `node_id` and its title as snapshot. Updates and
-  deletions of relationships record nothing.
+  deletions of relationships record nothing, and the event names neither the target nor the type.
+- **`reviewed`** (Phase 4): one event each time the user chooses "Mark as reviewed…" for a node,
+  with `occurred_at = last_activity_at` = the time of the review, the node's title as snapshot,
+  the optional `reflection` and an optional `learned_at`.
+- **`milestone`** (Phase 4, migration 5): one event each time the user adds a learning milestone,
+  with `occurred_at = last_activity_at` = the time it was added, the `title`, optional details in
+  `reflection`, an optional node (with its title as snapshot) and an optional `learned_at` (the
+  dialog fills in the current time by default).
 
 **Editing-session grouping** (`packages/domain/src/timeline/editing-session.ts`, PRD §5.9). Autosave
 writes roughly once per second of idle typing, so recording every save would flood the timeline.
@@ -363,7 +411,67 @@ On a note change, the service looks up the node's latest `note_updated` event. I
 30 minutes have passed since its `last_activity_at`, the same event is extended: `last_activity_at`
 moves to the new save time and `node_title_snapshot` is refreshed. Otherwise (a gap of exactly 30
 minutes or more, or a clock that moved backwards) a new event starts with
-`occurred_at = last_activity_at = save time`. `reviewed` is not written yet.
+`occurred_at = last_activity_at = save time`.
+
+#### Who may change an event
+
+Recorded activity (`node_created`, `note_updated`, `relationship_created`) is immutable from the
+user's side: no channel changes its title or reflection or deletes it, and `TimelineService`
+refuses with `INVARIANT_VIOLATION`. The only later writes are the node service extending a
+running editing session as described above, and `learned_at`, which the user may set or clear
+on any event because it annotates the record without changing what was recorded. `reviewed` and
+`milestone` events are the user's own: the reflection (and a milestone's title) can be changed or
+cleared, and the event can be deleted. `SqliteTimelineEventRepository.update` writes only the
+columns that change (`title`, `reflection`, `learned_at`). See
+[architecture.md](architecture.md#learning-timeline) for the reasons.
+
+#### How the timeline reads it
+
+Both queries of `SqliteTimelineEventRepository` work on the effective time,
+`coalesce(learned_at, occurred_at)`, and filter by workspace, by event type, by node, and by tags
+that the node carries now. A `LEFT JOIN` on `knowledge_nodes` adds the node's current title; for
+a deleted node the snapshot is shown instead.
+
+- **`list`** (List tab) filters by an effective-time range (inclusive start, exclusive end,
+  computed from local dates in the workspace timezone), orders by effective time `DESC, id DESC`
+  and pages with a keyset cursor holding the last row's effective time and ID.
+- **`window`** (Timeline tab) takes a half-open UTC range of effective times and returns its
+  total and at most 2,000 events, oldest first. When the range holds more, it is split into 200
+  equal time buckets and events are taken round-robin with `row_number()` per bucket (the latest
+  event of every bucket, then the second latest, and so on), so a burst of activity never hides a
+  quieter period.
+
+Migration 5 keeps the three migration 1 indexes `timeline_events_by_time`,
+`timeline_events_by_node` and `timeline_events_by_type` (each starting with `workspace_id` and
+ending with `occurred_at DESC`) and adds `timeline_events_by_effective_time` on
+`(workspace_id, coalesce(learned_at, occurred_at) DESC, id DESC)` for the effective-time order.
+Because an editing session is stored with its start in `occurred_at`, it is ordered, filtered and
+grouped by day by its start time unless it has a learning date.
+
+### `graph_node_positions` (graph layout)
+
+Created by migration 3 (`0003-graph-layout.ts`). Where the user left each node on the global
+knowledge graph: `workspace_id`, `node_id`, `x`, `y` (`REAL`) and `updated_at`, with primary key
+`(workspace_id, node_id)`. This is visual state of the graph view only (PRD §5.7):
+
+- It never changes knowledge (nodes, relationships, note references).
+- It is separate from `map_placements`, so moving a node on the graph never moves it on any map,
+  and the reverse (PRD §4.4: each map keeps its own layout). Test: "never moves a node inside any
+  mind map".
+- `FOREIGN KEY (workspace_id, node_id) REFERENCES knowledge_nodes (workspace_id, id) ON DELETE CASCADE`:
+  a position belongs to a node of the same workspace and is deleted with it.
+- `SqliteGraphLayoutRepository` reads positions in batches of 500 IDs and saves with
+  `INSERT … SELECT … WHERE EXISTS … ON CONFLICT DO UPDATE`, so a position for a node deleted since
+  the renderer read it (or of another workspace) is skipped instead of failing the whole save.
+  `GraphService` refuses coordinates beyond ±1,000,000 and more than 5,000 positions per call.
+
+Only nodes the user has seen on the graph have a row; the renderer places the rest
+([architecture.md](architecture.md#stable-positions)).
+
+**`graph_view_state`** (one row per workspace with `viewport_json`) was also created by migration
+3, to reopen the graph at the last pan and zoom. The graph now always opens fitted to view, so
+nothing reads or writes it, and migration 4 drops it. It held only pan and zoom, so no knowledge
+is lost.
 
 ### `attachments` (Attachment)
 
@@ -441,13 +549,29 @@ installed build cannot be missing one. The strategy and its reasons are recorded
 
 ### Shipped migrations
 
-| Version | File                            | What it does                                                                                                                                                                                                                                                             |
-| ------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1       | `0001-initial-schema.ts`        | The complete schema described on this page.                                                                                                                                                                                                                              |
-| 2       | `0002-note-schema-v2-marker.ts` | `SELECT 1;`. No table change. Raises the database version so that builds that only understand note schema version 1 (Phase 1) refuse the workspace as "too new" instead of failing later on notes with wikilinks ([ADR-0008](adr/0008-wikilinks-and-note-schema-v2.md)). |
+| Version | File                                     | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `0001-initial-schema.ts`                 | The complete schema described on this page.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2       | `0002-note-schema-v2-marker.ts`          | `SELECT 1;`. No table change. Raises the database version so that builds that only understand note schema version 1 (Phase 1) refuse the workspace as "too new" instead of failing later on notes with wikilinks ([ADR-0008](adr/0008-wikilinks-and-note-schema-v2.md)).                                                                                                                                                                                                                                |
+| 3       | `0003-graph-layout.ts`                   | Creates `graph_node_positions` and `graph_view_state` for the knowledge graph ([above](#graph_node_positions-graph-layout)).                                                                                                                                                                                                                                                                                                                                                                            |
+| 4       | `0004-drop-graph-view-state.ts`          | `DROP TABLE graph_view_state;`. The graph now always opens fitted to view, so the saved viewport is no longer used.                                                                                                                                                                                                                                                                                                                                                                                     |
+| 5       | `0005-timeline-milestones-learned-at.ts` | Rebuilds `timeline_events` ([above](#timeline_events-timelineevent)), because SQLite cannot change a `CHECK` constraint in place: creates the new table with `milestone` allowed in `event_type` and the new columns `learned_at` and `title`, copies every row (with both new columns `NULL`), drops the old table, renames the new one, recreates the three indexes and both workspace triggers, and adds the index `timeline_events_by_effective_time`. No other table references `timeline_events`. |
 
 Opening a Phase 1 workspace with a Phase 2 build therefore takes a verified backup to `recovery/`
-and applies migration 2. After that, a Phase 1 build cannot open the workspace.
+and applies migration 2. After that, a Phase 1 build cannot open the workspace. In the same way,
+the Phase 4 build backs up a Phase 2 or Phase 3 workspace and applies migrations 3 to 5 (or only
+migration 5 to a workspace already at version 4); after that, a Phase 3 build refuses it as too
+new, and so does a Phase 4 build from before the timeline redesign.
+
+**Why migration 4 instead of editing migration 3.** Migration 3 had already been applied to a
+development workspace when the saved viewport was dropped. The runner compares the SHA-256 of
+every applied migration with the shipped code and refuses a workspace whose history differs
+(`MigrationHistoryError`), so editing migration 3 would have locked that workspace out. The change
+was therefore made as a new migration, and migration 3 keeps its original SQL (its header comment
+explains this). `packages/storage-sqlite/src/migrations/checksums.test.ts` now pins the checksum
+of every shipped migration (1 to 5), so such an edit fails in the test suite instead of on a
+user's workspace. For the same reason the timeline redesign added migration 5 instead of changing
+migration 1.
 
 ### Adding a migration
 
@@ -456,7 +580,8 @@ and applies migration 2. After that, a Phase 1 build cannot open the workspace.
 2. Append it to `ALL_MIGRATIONS` in `migrations/index.ts`. Never edit or reorder earlier entries.
 3. Add tests on real temporary databases (`test-support/temporary-database.ts`) for the new
    constraints and for migrating a database created at the previous version.
-4. Update this page.
+4. Append its checksum to `PINNED_CHECKSUMS` in `migrations/checksums.test.ts`.
+5. Update this page.
 
 ## Connection settings
 

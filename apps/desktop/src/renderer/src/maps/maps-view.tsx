@@ -19,12 +19,14 @@ import { MapEditor } from './map-editor';
 type MapMode = MapSummaryDto['mode'];
 
 export interface MapsViewProps {
+  /** Map to open right away, with its own saved layout (e.g. "Open Mind Map" in the graph). */
+  readonly initialMapId?: string | null;
   readonly timeZone: string;
   readonly onOpenNode: (nodeId: string) => void;
 }
 
-export function MapsView({ timeZone, onOpenNode }: MapsViewProps) {
-  const [openMapId, setOpenMapId] = useState<string | null>(null);
+export function MapsView({ initialMapId = null, timeZone, onOpenNode }: MapsViewProps) {
+  const [openMapId, setOpenMapId] = useState<string | null>(initialMapId);
   if (openMapId !== null) {
     return (
       <MapEditor

@@ -7,18 +7,19 @@ add a channel, and lists every channel that exists. For the end-to-end path of a
 
 ## The contract catalogue
 
-| File                                      | Contents                                                                                        |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `packages/contracts/src/channels.ts`      | `IPC_CHANNELS`: the allow-list of channel names. No dependencies, so the preload can import it. |
-| `packages/contracts/src/app-info.ts`      | `app:*` schemas (diagnostics, external links).                                                  |
-| `packages/contracts/src/workspace.ts`     | `workspace:*` schemas and `WORKSPACE_ERROR_CODES`.                                              |
-| `packages/contracts/src/nodes.ts`         | `nodes:*`, `search:*` and `tags:*` schemas.                                                     |
-| `packages/contracts/src/relationships.ts` | `relationship-types:*` and `relationships:*` schemas.                                           |
-| `packages/contracts/src/attachments.ts`   | `attachments:*` and `preferences:*` schemas, the preview URL scheme.                            |
-| `packages/contracts/src/maps.ts`          | `maps:*` schemas and the map view DTOs.                                                         |
-| `packages/contracts/src/catalogue.ts`     | `IPC_CATALOGUE`: pairs each channel with `{ request, response }` schemas.                       |
-| `packages/contracts/src/envelope.ts`      | `IpcResult<Data>`, `ipcErrorSchema`, the combined list of error codes.                          |
-| `packages/contracts/src/renderer-api.ts`  | `MmapRendererApi`: the type of `window.mmap`.                                                   |
+| File                                       | Contents                                                                                        |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/channels.ts`       | `IPC_CHANNELS`: the allow-list of channel names. No dependencies, so the preload can import it. |
+| `packages/contracts/src/app-info.ts`       | `app:*` schemas (diagnostics, external links).                                                  |
+| `packages/contracts/src/workspace.ts`      | `workspace:*` schemas and `WORKSPACE_ERROR_CODES`.                                              |
+| `packages/contracts/src/nodes.ts`          | `nodes:*`, `search:*` and `tags:*` schemas.                                                     |
+| `packages/contracts/src/relationships.ts`  | `relationship-types:*` and `relationships:*` schemas.                                           |
+| `packages/contracts/src/attachments.ts`    | `attachments:*` and `preferences:*` schemas, the preview URL scheme.                            |
+| `packages/contracts/src/maps.ts`           | `maps:*` schemas and the map view DTOs.                                                         |
+| `packages/contracts/src/graph-timeline.ts` | `graph:*` and `timeline:*` schemas, the graph slice and timeline entry DTOs.                    |
+| `packages/contracts/src/catalogue.ts`      | `IPC_CATALOGUE`: pairs each channel with `{ request, response }` schemas.                       |
+| `packages/contracts/src/envelope.ts`       | `IpcResult<Data>`, `ipcErrorSchema`, the combined list of error codes.                          |
+| `packages/contracts/src/renderer-api.ts`   | `MmapRendererApi`: the type of `window.mmap`.                                                   |
 
 Rules the code relies on:
 
@@ -182,12 +183,12 @@ that needs it and document it here.
 
 ## Channel reference
 
-There are 61 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+There are 72 channels. The renderer method is `window.mmap.<group>.<method>`; for example
 `nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
 is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
-the other codes. Node, search, tag, relationship, map and attachment channels return
-`WORKSPACE_MISSING` when no workspace is open.
+the other codes. Node, search, tag, relationship, map, graph, timeline and attachment channels,
+and `workspace:set-timezone`, return `WORKSPACE_MISSING` when no workspace is open.
 
 ### App
 
@@ -221,6 +222,7 @@ Service: `apps/desktop/src/main/services/workspace-ipc-services.ts`, which calls
 | `workspace:reveal-folder` | Open the workspace folder in Explorer.                                                                                      | none                                               | `{ revealed }`                                          |
 | `workspace:move`          | Move the open workspace into a folder chosen in a native dialog: verified copy, open the copy, original to the Recycle Bin. | none                                               | `{ cancelled, state, originalRemoved, originalFolder }` |
 | `workspace:delete`        | Move the open workspace folder to the Recycle Bin after the typed name matches.                                             | `{ confirmName }`                                  | `{ state }` (status `none`)                             |
+| `workspace:set-timezone`  | Set the IANA timezone used to show dates and to read timeline date filters. Stored timestamps do not change.                | `{ timezone }` (1–100 chars)                       | `WorkspaceState`                                        |
 
 `WorkspaceState` is one of `{ status: 'open', workspace }`,
 `{ status: 'unavailable', reason, message, lastWorkspace }` (the last workspace could not be
@@ -232,7 +234,9 @@ looks like a cloud-sync folder). `RecentWorkspace` has `workspaceId`, `name`, `f
 `cancelled: true` means the user closed the native dialog; `state` is then the unchanged current
 state. Errors: `create`, `open-folder` and `open-recent` can return any workspace code;
 `forget-recent` returns `WORKSPACE_INVALID` for the open workspace; `create` and `rename` return
-`VALIDATION_FAILED` for an empty name or one longer than 80 characters.
+`VALIDATION_FAILED` for an empty name or one longer than 80 characters; `set-timezone` returns
+`VALIDATION_FAILED` for a name the runtime's `Intl` does not know, and for offsets such as
+`+02:00`, which are not IANA zones.
 
 ### Nodes
 
@@ -474,3 +478,130 @@ Errors:
 - `VALIDATION_FAILED`: invalid title, label, coordinates, zoom or color; a `relationshipId` that is
   unknown or does not connect the two nodes; `switch-mode` to hierarchy without `parents`, with a
   missing entry, or with an unknown item.
+
+### Knowledge graph
+
+Service: `apps/desktop/src/main/services/graph-timeline-ipc-services.ts`, which calls the domain
+`GraphService` (`packages/domain/src/application/graph-service.ts`) and maps its slices field by
+field to the DTOs below. Schemas: `packages/contracts/src/graph-timeline.ts`. See
+[architecture.md](architecture.md#knowledge-graph) for how slices are chosen.
+
+| Channel                | Purpose                                                                                     | Request                                       | Response                            |
+| ---------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------- |
+| `graph:overview`       | The best-connected nodes matching the filters, with the relationships and links among them. | `{ ...filters, maxNodes? (1–1,000) }`         | `GraphSlice`                        |
+| `graph:neighborhood`   | One node and its direct neighbors, for expanding the view.                                  | `{ nodeId, ...filters }`                      | `GraphSlice`                        |
+| `graph:get-positions`  | Saved graph positions of the given nodes; nodes without one are absent.                     | `{ nodeIds }` (≤ 5,000 UUIDs)                 | `{ positions: [{ nodeId, x, y }] }` |
+| `graph:save-positions` | Stores graph positions (after placement, a drag or Rearrange).                              | `{ positions: [{ nodeId, x, y }] }` (1–5,000) | `{ saved: true }`                   |
+
+Filters (all optional): `tagIds` (≤ 20 UUIDs, a node must carry all of them),
+`relationshipTypeIds` (≤ 100 UUIDs; only these types, and only nodes taking part in one of them),
+`mapIds` (≤ 200 UUIDs; only nodes placed on at least one of these mind maps, the union; empty or
+absent means no map filter, so nodes on no map stay visible), `text` (`null` or a string; same
+matching rules as search over title, summary and note text) and `includeReferences` (the
+note-link layer, `false` by default). Neighborhoods apply the same filters to the neighbors.
+
+`GraphSlice` has `nodes` (`id`, `title`, `degree`: relationships of the node within the type
+filter, across the whole workspace; `mapIds`: the mind maps that place the node), `maps` (every
+mind map of the workspace, ordered by title: `id`, `title`, `nodeCount`), `edges` (`id`,
+`sourceNodeId`, `targetNodeId`, `typeId`, `typeLabel`, `directionality`), `references`
+(`sourceNodeId`, `targetNodeId`, `occurrences`: one entry per linking note and target),
+`totalNodes`, `edgesTruncated` and `referencesTruncated`. Map membership is never expressed as an
+edge: two nodes on the same map are not connected unless a relationship or note link connects
+them.
+
+**Positions.** Graph positions are visual state of the knowledge graph only, stored in
+`graph_node_positions` and never in mind map placements. Coordinates must be finite numbers within
+±1,000,000 and a call carries at most 5,000 positions or IDs; the contract refuses anything else
+with `INVALID_REQUEST`, and `GraphService` checks the same bounds again (`VALIDATION_FAILED`).
+Positions of nodes that no longer exist, or belong to another workspace, are silently skipped
+when saving and never returned when reading. There is no channel for the viewport: the graph
+always opens fitted to view.
+
+**Limits and completeness.** The overview returns at most 1,000 nodes (`maxNodes` can only lower
+this), ranked by degree, then title, then ID. A neighborhood returns the node first and at most
+200 neighbors. Each returns at most 3,000 relationships and 3,000 references among the returned
+nodes. `totalNodes` is the number of matching nodes in the workspace (overview) or of matching
+neighbors (neighborhood, not counting the node itself), and the two flags say whether
+relationships or references between returned nodes were left out. A client must compare
+`nodes.length` with `totalNodes` and read the flags before presenting a view as complete.
+
+Limits: the contract accepts `text` up to 1,000 characters; the domain refuses more than 500
+after trimming with `VALIDATION_FAILED`. Text without a searchable word returns an empty slice.
+
+Errors: `NOT_FOUND` for an unknown `nodeId` in `graph:neighborhood`, including a node of another
+workspace; `VALIDATION_FAILED` for filter text that is too long.
+
+### Timeline
+
+Same service file; it calls the domain `TimelineService`
+(`packages/domain/src/application/timeline-service.ts`). See
+[architecture.md](architecture.md#learning-timeline).
+
+| Channel                  | Purpose                                                                                    | Request                                                                                       | Response                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `timeline:list`          | Recorded activity, reviews and milestones, newest first by effective time, one page.       | `{ limit (1–200), cursor?, fromDate?, toDate?, eventTypes? (≤ 10), tagIds? (≤ 20), nodeId? }` | `{ items: TimelineEntry[], nextCursor }` |
+| `timeline:window`        | The events of one time range of the visual timeline, oldest first, with their total.       | `{ fromUtc, toUtcExclusive, eventTypes?, tagIds?, nodeId? }`                                  | `{ items: TimelineEntry[], total }`      |
+| `timeline:mark-reviewed` | Record that the user reviewed a node, with an optional reflection and learning date.       | `{ nodeId, reflection?, learnedAt? }`                                                         | `TimelineEntry`                          |
+| `timeline:add-milestone` | Add a learning milestone, optionally about one node.                                       | `{ title, details?, nodeId?, learnedAt? }`                                                    | `TimelineEntry`                          |
+| `timeline:update-entry`  | Change the title or reflection of the user's own entry, or the learning date of any entry. | `{ eventId, title?, reflection?, learnedAt? }`                                                | `TimelineEntry`                          |
+| `timeline:delete-entry`  | Delete one of the user's own entries (a review or a milestone). Nodes are not changed.     | `{ eventId }`                                                                                 | `{ deleted: true }`                      |
+
+`timeline:update-entry` and `timeline:delete-entry` replace the earlier
+`timeline:update-reflection` and `timeline:delete-reviewed`.
+
+**Two times per event.** `occurredAt` is when the action was recorded; it never changes.
+`learnedAt` is an optional moment, chosen by the user, when the learning actually happened (for
+example, a review recorded today of something learned last week). The effective time is
+`learnedAt ?? occurredAt`: the list and the window place, order, filter and page events by it. A
+learning date can be set or cleared on any event, recorded activity included, because it annotates
+the record rather than changing it.
+
+**Ownership.** Reviews (`reviewed`) and milestones (`milestone`) belong to the user: their
+reflection, and a milestone's title, can be edited, and they can be deleted. Recorded activity
+(`node_created`, `note_updated`, `relationship_created`) cannot be edited or deleted; only its
+learning date can be set or cleared.
+
+**List.** `fromDate` and `toDate` are calendar dates `YYYY-MM-DD` in the workspace timezone
+(either may be `null` or left out); the main process converts them to a UTC range that covers the
+whole local days, including 23- and 25-hour days, and compares it with the effective time.
+`eventTypes` takes `node_created`, `note_updated`, `relationship_created`, `reviewed` and
+`milestone`; empty means all. `tagIds` keeps events of nodes that carry all those tags now. The
+cursor is opaque (keyset: effective time and ID of the last row); pass `nextCursor` back
+unchanged.
+
+**Window.** `fromUtc` and `toUtcExclusive` are UTC instants (ISO 8601) bounding a half-open range
+of effective times; the filters work as in the list. The response holds at most 2,000 events,
+oldest first, and `total`, the number of matching events in the range. When the range holds more
+than 2,000, the events are taken evenly across it: the range is split into 200 time buckets and
+events are taken round-robin (the latest event of every bucket, then the second latest, and so
+on), so a burst of activity never hides a quieter period. A client must compare `items.length`
+with `total` before presenting a window as complete.
+
+**Milestones.** `title` is required: whitespace is collapsed and trimmed, and the result must be
+1–200 characters without control characters. `details` follows the reflection rules and is stored
+as the milestone's reflection. `nodeId` is optional. Without `learnedAt`, the milestone is placed
+at the time it was added.
+
+`TimelineEntry` has `id`, `eventType`, `occurredAt` (UTC; when the action was recorded, the start
+of an editing session), `lastActivityAt` (UTC; the latest save of a session, otherwise equal to
+`occurredAt`), `learnedAt` (UTC, or `null` when not set), `title` (a milestone's title, `null` for
+other events), `nodeId` (`null` when the node was deleted or the event has no node), `nodeTitle`
+(the node's current title, or the title recorded with the event when the node is gone),
+`reflection` and `isImported`. The workspace ID and `import_origin` are never sent.
+
+Limits: the contract accepts reflections and details up to 10,000 characters and titles up to
+1,000; the domain trims reflections, treats an empty one as none, keeps line breaks and tabs, and
+refuses more than 2,000 characters or other control characters with `VALIDATION_FAILED`. A
+`learnedAt` must be a valid instant, not in the future (5 minutes of clock difference are
+tolerated) and not before 1900; in `update-entry`, `null` clears it and the event returns to its
+recorded time.
+
+Errors:
+
+- `NOT_FOUND`: unknown node (`mark-reviewed`, `add-milestone`) or event (`update-entry`,
+  `delete-entry`), including IDs from another workspace.
+- `INVARIANT_VIOLATION`: `update-entry` changing the title or reflection of recorded activity, or
+  `delete-entry` on recorded activity. Only reviews and milestones can be changed or removed.
+- `VALIDATION_FAILED`: a date that is not a real calendar date, a start date after the end date, a
+  window that does not end after it starts, a malformed cursor, an invalid reflection, title or
+  learning date, or a title on an event that is not a milestone.

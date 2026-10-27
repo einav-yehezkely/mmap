@@ -199,6 +199,19 @@ export class WorkspaceManager {
     });
   }
 
+  /** Changes the timezone used to display dates (PRD §5.9). Stored timestamps stay UTC. */
+  public setTimezone(timezone: string): Promise<WorkspaceState> {
+    return this.serialize(async () => {
+      const opened = this.requireOpen();
+      const record = await opened.workspace.services.workspace.setTimezone(
+        opened.workspace.id,
+        timezone,
+      );
+      this.opened = { ...opened, record };
+      return this.getState();
+    });
+  }
+
   public listRecent(): Promise<RecentWorkspace[]> {
     return this.serialize(() => this.readRecent());
   }

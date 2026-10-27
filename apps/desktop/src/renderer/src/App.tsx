@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { errorMessage, unwrap } from './lib/ipc';
+import { GraphView } from './graph/graph-view';
 import { cn } from './lib/utils';
 import { MapsView } from './maps/maps-view';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
@@ -17,7 +18,7 @@ import { LibraryView } from './nodes/library-view';
 import { NodeDetailPanel } from './nodes/node-detail-panel';
 import { notifyNodesChanged } from './nodes/node-events';
 import { SearchView } from './nodes/search-view';
-import { ComingSoonView } from './views/coming-soon-view';
+import { TimelineView } from './timeline/timeline-view';
 import { SettingsView } from './views/settings-view';
 import { CloudSyncWarning } from './workspace/cloud-sync-warning';
 import { useWorkspace } from './workspace/workspace-context';
@@ -44,6 +45,8 @@ export function App() {
 function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   const [activeView, setActiveView] = useState<ViewId>('library');
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
+  /** A mind map to open from another view (e.g. the graph); the counter remounts the maps view. */
+  const [mapRequest, setMapRequest] = useState<{ mapId: string; request: number } | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -177,13 +180,27 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               />
             )}
             {activeItem?.id === 'maps' && (
-              <MapsView timeZone={workspace.timezone} onOpenNode={setOpenNodeId} />
+              <MapsView
+                key={mapRequest?.request ?? 0}
+                initialMapId={mapRequest?.mapId ?? null}
+                timeZone={workspace.timezone}
+                onOpenNode={setOpenNodeId}
+              />
             )}
             {activeView === 'search' && (
               <SearchView query={searchQuery} onOpenNode={setOpenNodeId} />
             )}
-            {activeItem && (activeItem.id === 'graph' || activeItem.id === 'timeline') && (
-              <ComingSoonView item={activeItem} />
+            {activeItem?.id === 'graph' && (
+              <GraphView
+                onOpenNode={setOpenNodeId}
+                onOpenMap={(mapId) => {
+                  setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
+                  setActiveView('maps');
+                }}
+              />
+            )}
+            {activeItem?.id === 'timeline' && (
+              <TimelineView timeZone={workspace.timezone} onOpenNode={setOpenNodeId} />
             )}
           </main>
 

@@ -5,18 +5,22 @@
 
 import {
   createAttachmentService,
+  createGraphService,
   createKnowledgeNodeService,
   createMapService,
   createRelationshipService,
   createTagService,
+  createTimelineService,
   createWorkspaceService,
   type AttachmentService,
   type Clock,
+  type GraphService,
   type KnowledgeNodeService,
   type MapService,
   type RelationshipService,
   type SearchIndex,
   type TagService,
+  type TimelineService,
   type IdGenerator,
   type WorkspaceId,
   type WorkspaceRecord,
@@ -29,6 +33,8 @@ import {
   openWorkspaceDatabase,
   SchemaTooNewError,
   SqliteAttachmentRepository,
+  SqliteGraphLayoutRepository,
+  SqliteGraphQuery,
   SqliteKnowledgeNodeRepository,
   SqliteMapRepository,
   SqliteNoteReferenceRepository,
@@ -54,6 +60,8 @@ export interface WorkspaceServices {
   readonly relationships: RelationshipService;
   readonly maps: MapService;
   readonly search: SearchIndex;
+  readonly graph: GraphService;
+  readonly timeline: TimelineService;
 }
 
 export interface OpenWorkspace {
@@ -97,6 +105,22 @@ export function createWorkspaceServices(
   });
   return {
     search: new SqliteSearchIndex(connections),
+    graph: createGraphService({
+      workspaceId,
+      graph: new SqliteGraphQuery(connections),
+      layout: new SqliteGraphLayoutRepository(connections),
+      transactions: connections,
+      clock: dependencies.clock,
+    }),
+    timeline: createTimelineService({
+      workspaceId,
+      transactions: connections,
+      timeline: timelineRepository,
+      nodes: nodeRepository,
+      workspaces: new SqliteWorkspaceRepository(connections),
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+    }),
     maps: createMapService({
       workspaceId,
       transactions: connections,

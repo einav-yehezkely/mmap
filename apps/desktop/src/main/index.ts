@@ -40,6 +40,7 @@ import {
 } from './services/attachment-ipc-services';
 import { createExternalLinkService } from './services/external-link-service';
 import { createNodeIpcServices } from './services/node-ipc-services';
+import { createGraphTimelineIpcServices } from './services/graph-timeline-ipc-services';
 import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
 import {
@@ -217,6 +218,7 @@ async function startApplication(): Promise<void> {
       ...createNodeIpcServices(workspaces),
       ...createRelationshipIpcServices(workspaces),
       ...createMapIpcServices(workspaces),
+      ...createGraphTimelineIpcServices(workspaces),
       ...createAttachmentIpcServices({
         currentWorkspace: () => workspaces.current,
         maxAttachmentBytes: async () =>

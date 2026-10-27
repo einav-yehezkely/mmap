@@ -41,9 +41,10 @@ All commands run from the repository root.
 
    This runs `release/win-unpacked/mmap.exe --smoke-test` hidden, with network traffic sent to a
    dead proxy and a temporary profile (your real workspaces are never touched), and must end with
-   `Packaged smoke test passed.` The twelve checks, including first-run workspace creation, node
-   operations and mind maps through the bridge, and opening a 200-item map in the real editor,
-   are described in
+   `Packaged smoke test passed.` The 14 checks, including first-run workspace creation, node
+   operations and mind maps through the bridge, opening a 200-item map in the real editor,
+   rendering a 1,000-node graph, and finding a review and a milestone on the visual timeline, are
+   described in
    [testing.md](../testing.md#packaged-smoke-test).
 
 4. **Check the fuses** (after changing `electron-builder.yml` or upgrading Electron or

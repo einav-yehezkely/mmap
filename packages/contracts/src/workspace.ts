@@ -125,4 +125,9 @@ export const workspaceContracts = {
     request: z.strictObject({ confirmName: z.string().max(200) }),
     response: z.strictObject({ state: workspaceStateSchema }),
   },
+  /** IANA timezone used to display dates (PRD §5.9); validated again by the main process. */
+  setTimezone: {
+    request: z.strictObject({ timezone: z.string().min(1).max(100) }),
+    response: workspaceStateSchema,
+  },
 } as const;
