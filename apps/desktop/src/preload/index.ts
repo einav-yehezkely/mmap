@@ -131,6 +131,8 @@ const api: MmapRendererApi = {
     setPlacementColor: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSetPlacementColor, request),
     addConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsAddConnection, request),
     removeConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRemoveConnection, request),
+    setConnectionLabel: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.mapsSetConnectionLabel, request),
     proposeHierarchy: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsProposeHierarchy, request),
     switchMode: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSwitchMode, request),
   },

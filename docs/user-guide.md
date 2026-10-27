@@ -444,10 +444,13 @@ relationship that a map connector already shows (a connector linked to it) is dr
 
 - **Move** an item by dragging it, or select it and use the arrow keys. Positions are saved
   automatically.
-- **Draw a connector** by dragging from the small handle on the right edge of one item to another
-  item. Connectors are dashed arrows from the item where you started. They may form loops.
+- **Draw a connector** by dragging from either dot on an item's edge to another item. Connectors
+  are dashed arrows from the item where you started. They may form loops.
 - Connectors are pictures on this map only. They never create relationships between the nodes.
-  You cannot add a label to a connector yet.
+- **Write a note on a connector**: click the connector, then the speech-bubble button on it. Type
+  the note (up to 200 characters, in any language) and press Enter, or click elsewhere. Escape
+  cancels. Double-click a note to change it; erase its text to remove it. Ctrl+Z (or **Undo**)
+  reverses the last note change, like other connector changes.
 - **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
 - **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
   has focus. This removes them from the map only; the nodes stay in your library.

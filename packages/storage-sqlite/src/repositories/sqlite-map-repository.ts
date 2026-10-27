@@ -300,6 +300,20 @@ export class SqliteMapRepository implements MapRepository {
       .prepare('DELETE FROM map_connections WHERE workspace_id = ? AND id = ?')
       .run(workspaceId, connectionId);
   }
+
+  public async updateConnectionLabel(
+    workspaceId: WorkspaceId,
+    connectionId: MapConnectionId,
+    label: string | null,
+    updatedAt: string,
+  ): Promise<void> {
+    this.connections
+      .forWrite()
+      .prepare(
+        'UPDATE map_connections SET label = ?, updated_at = ? WHERE workspace_id = ? AND id = ?',
+      )
+      .run(label, updatedAt, workspaceId, connectionId);
+  }
 }
 
 export function toMindMapRecord(row: Row): MindMapRecord {

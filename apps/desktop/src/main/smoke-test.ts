@@ -251,6 +251,69 @@ export async function runSmokeTest(
     ),
   );
   checks.push(
+    await check('a note written on a connector is saved, shown and undone', async () => {
+      const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { nodes, maps } = window.mmap;
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const until = async (predicate, timeoutMs) => {
+            const start = performance.now();
+            while (performance.now() - start < timeoutMs) {
+              if (predicate()) return true;
+              await wait(20);
+            }
+            return false;
+          };
+          const buttonWithText = (text) =>
+            [...document.querySelectorAll('button')].find((button) => button.textContent.includes(text));
+          const press = (element, what) => {
+            if (!element) throw new Error(what + ' not found');
+            element.click();
+          };
+          const a = (await nodes.create({ title: 'Smoke note source' })).data;
+          const b = (await nodes.create({ title: 'Smoke note target' })).data;
+          let view = (await maps.create({ title: 'Smoke connector note' })).data;
+          view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision, nodeId: a.id, x: 0, y: 0 })).data;
+          view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision, nodeId: b.id, x: 400, y: 0 })).data;
+          view = (await maps.addConnection({ mapId: view.map.id, expectedRevision: view.map.revision,
+            sourcePlacementId: view.placements[0].id, targetPlacementId: view.placements[1].id })).data;
+          const mapId = view.map.id;
+          // Leave Mind Maps first, so its list loads again with the new map.
+          press(buttonWithText('Home'), 'Home');
+          await wait(300);
+          press(buttonWithText('Mind Maps'), 'Mind Maps');
+          const shown = await until(() => {
+            const button = document.querySelector('main')?.textContent.includes('New map') ? buttonWithText('Smoke connector note') : undefined;
+            button?.click();
+            return Boolean(button);
+          }, 3000);
+          if (!shown) return 'map list did not show the map';
+          const edge = () => document.querySelector('.react-flow__edge.mmap-connector-line');
+          if (!(await until(edge, 3000))) return 'connector not shown';
+          edge().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          const noteButton = () => document.querySelector('button[aria-label="Add a note to this connector"]');
+          if (!(await until(noteButton, 3000))) return 'note button not shown on the selected connector';
+          press(noteButton(), 'note button');
+          const input = () => document.querySelector('input[aria-label="Note on this connector"]');
+          if (!(await until(() => input() && document.activeElement === input(), 3000))) return 'note box did not open focused';
+          input().value = 'heats up';
+          input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          const saved = async (label) => (await maps.get({ mapId })).data.connections[0].label === label;
+          if (!(await until(() => [...document.querySelectorAll('.react-flow__edgelabel-renderer span')].some((span) => span.textContent === 'heats up'), 3000))) return 'note not shown on the line';
+          if (!(await saved('heats up'))) return 'note not saved';
+          press(buttonWithText('Undo'), 'Undo');
+          await wait(800);
+          if (!(await saved(null))) return 'undo did not remove the note';
+          press(buttonWithText('All maps'), 'All maps');
+          await maps.delete({ mapId });
+          return 'ok';
+        })()`)) as string;
+      if (outcome !== 'ok') {
+        throw new Error(outcome);
+      }
+    }),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",

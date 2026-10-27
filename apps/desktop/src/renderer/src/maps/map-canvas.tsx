@@ -42,7 +42,7 @@ import {
   type OnSelectionChangeParams,
   useReactFlow,
 } from '@xyflow/react';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquareText, X } from 'lucide-react';
 import {
   memo,
   useCallback,
@@ -74,21 +74,46 @@ interface ConnectorEdgeData extends Record<string, unknown> {
   readonly connectionId: string;
   readonly label: string | null;
   readonly onRemove: (connectionId: string) => void;
+  /** Saves the connector's note; null removes it. */
+  readonly onEditLabel: (connectionId: string, label: string | null) => void;
 }
 
 type ConnectorFlowEdge = Edge<ConnectorEdgeData, 'connector'>;
 
+/** Longest connector note (the map service enforces the same limit). */
+const MAX_CONNECTOR_NOTE_LENGTH = 200;
+
 /**
- * A map connector: dashed line with its label and, while selected, a button that removes it.
- * The invisible interaction stroke is wide so the thin line is easy to click.
+ * A map connector: dashed line with its note and, while selected, buttons to write the note and
+ * to remove the connector. The invisible interaction stroke is wide so the thin line is easy to
+ * click. The note is written in a small box on the line: Enter or clicking elsewhere saves,
+ * Escape cancels, and a blank note removes it. Double-clicking a note edits it.
  */
 const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlowEdge>) {
   const [path, labelX, labelY] = getBezierPath(props);
   const { data, selected } = props;
+  const [editing, setEditing] = useState(false);
+  const noteInput = useRef<HTMLInputElement | null>(null);
+  /** Set once the edit is saved or cancelled, so the blur that follows does not save again. */
+  const finished = useRef(false);
+  useEffect(() => {
+    if (!editing) return;
+    finished.current = false;
+    noteInput.current?.focus();
+    noteInput.current?.select();
+  }, [editing]);
+  const finish = (text: string | null) => {
+    if (finished.current) return;
+    finished.current = true;
+    setEditing(false);
+    if (text === null || data === undefined) return;
+    const note = text.trim();
+    if (note !== (data.label ?? '')) data.onEditLabel(data.connectionId, note === '' ? null : note);
+  };
   return (
     <>
       <BaseEdge id={props.id} path={path} markerEnd={props.markerEnd} interactionWidth={24} />
-      {(data?.label !== null || selected === true) && data !== undefined && (
+      {(data?.label !== null || selected === true || editing) && data !== undefined && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan absolute flex items-center gap-1"
@@ -97,12 +122,54 @@ const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlow
               pointerEvents: 'all',
             }}
           >
-            {data.label !== null && (
-              <span className="rounded bg-background px-1 text-xs text-muted-foreground" dir="auto">
-                {data.label}
-              </span>
+            {editing ? (
+              <input
+                ref={noteInput}
+                aria-label="Note on this connector"
+                placeholder="Write a note…"
+                dir="auto"
+                defaultValue={data.label ?? ''}
+                maxLength={MAX_CONNECTOR_NOTE_LENGTH}
+                className="h-7 w-48 rounded-md border bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    finish(event.currentTarget.value);
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    finish(null);
+                  }
+                }}
+                onBlur={(event) => finish(event.currentTarget.value)}
+              />
+            ) : (
+              data.label !== null && (
+                <span
+                  className="max-w-48 rounded bg-background px-1 text-xs text-muted-foreground"
+                  dir="auto"
+                  title="Double-click to edit the note"
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    setEditing(true);
+                  }}
+                >
+                  {data.label}
+                </span>
+              )
             )}
-            {selected === true && (
+            {selected === true && !editing && (
+              <button
+                type="button"
+                aria-label={data.label === null ? 'Add a note to this connector' : 'Edit the note'}
+                title={data.label === null ? 'Add a note' : 'Edit the note'}
+                onClick={() => setEditing(true)}
+                className="flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <MessageSquareText aria-hidden="true" className="size-3.5" />
+              </button>
+            )}
+            {selected === true && !editing && (
               <button
                 type="button"
                 aria-label="Remove connector"
@@ -208,6 +275,8 @@ export interface MapCanvasProps {
     targetPlacementId: string,
   ) => void;
   readonly onViewportChange: (viewport: { x: number; y: number; zoom: number }) => void;
+  /** Saves a connector's note; null removes it. */
+  readonly onConnectorLabel: (connectionId: string, label: string | null) => void;
 }
 
 export function MapCanvas({
@@ -221,6 +290,7 @@ export function MapCanvas({
   onRemove,
   onReconnect,
   onViewportChange,
+  onConnectorLabel,
 }: MapCanvasProps) {
   // Stable for the edge data (rebuilding every edge on each render would loop), while still
   // calling the latest handler.
@@ -230,6 +300,14 @@ export function MapCanvas({
   }, [onRemove]);
   const removeConnector = useCallback(
     (connectionId: string) => latestOnRemove.current([], [connectionId]),
+    [],
+  );
+  const latestOnLabel = useRef(onConnectorLabel);
+  useEffect(() => {
+    latestOnLabel.current = onConnectorLabel;
+  }, [onConnectorLabel]);
+  const editConnectorLabel = useCallback(
+    (connectionId: string, label: string | null) => latestOnLabel.current(connectionId, label),
     [],
   );
   /** Item a new connector is being drawn from (see onConnect). */
@@ -298,10 +376,11 @@ export function MapCanvas({
                 connectionId: line.id.slice('connector:'.length),
                 label: line.label,
                 onRemove: removeConnector,
+                onEditLabel: editConnectorLabel,
               },
             };
       }),
-    [model, isFreeform, removeConnector],
+    [model, isFreeform, removeConnector, editConnectorLabel],
   );
 
   // React Flow works on local copies (selection, measured sizes, positions while dragging). When

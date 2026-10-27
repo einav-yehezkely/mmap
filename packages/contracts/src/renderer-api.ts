@@ -127,6 +127,7 @@ export interface MmapRendererApi {
     readonly setPlacementColor: BridgeCall<'maps:set-placement-color'>;
     readonly addConnection: BridgeCall<'maps:add-connection'>;
     readonly removeConnection: BridgeCall<'maps:remove-connection'>;
+    readonly setConnectionLabel: BridgeCall<'maps:set-connection-label'>;
     readonly proposeHierarchy: BridgeCall<'maps:propose-hierarchy'>;
     readonly switchMode: BridgeCall<'maps:switch-mode'>;
   };

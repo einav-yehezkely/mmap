@@ -474,6 +474,57 @@ describe('connectors', () => {
       maps.removeConnection(view.map.id, view.map.revision, connectionId),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
+
+  it('writes, changes and removes the note on a connector', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B']);
+    view = await maps.addConnection(view.map.id, view.map.revision, {
+      sourcePlacementId: placementOf(view, 'A').id,
+      targetPlacementId: placementOf(view, 'B').id,
+    });
+    const connectionId = view.connections[0]!.id;
+
+    view = await maps.setConnectionLabel(
+      view.map.id,
+      view.map.revision,
+      connectionId,
+      '  causes\n heat ',
+    );
+    expect(view.connections[0]!.label).toBe('causes heat');
+    expect((await maps.getMap(view.map.id)).connections[0]!.label).toBe('causes heat');
+
+    view = await maps.setConnectionLabel(
+      view.map.id,
+      view.map.revision,
+      connectionId,
+      'שגורם לחום',
+    );
+    expect(view.connections[0]!.label).toBe('שגורם לחום');
+
+    view = await maps.setConnectionLabel(view.map.id, view.map.revision, connectionId, '   ');
+    expect(view.connections[0]!.label).toBeNull();
+  });
+
+  it('rejects a note on a missing connector, a stale map and an over-long note', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B']);
+    view = await maps.addConnection(view.map.id, view.map.revision, {
+      sourcePlacementId: placementOf(view, 'A').id,
+      targetPlacementId: placementOf(view, 'B').id,
+    });
+    const connectionId = view.connections[0]!.id;
+
+    await expect(
+      maps.setConnectionLabel(view.map.id, view.map.revision - 1, connectionId, 'stale'),
+    ).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    await expect(
+      maps.setConnectionLabel(view.map.id, view.map.revision, connectionId, 'x'.repeat(201)),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    view = await maps.removeConnection(view.map.id, view.map.revision, connectionId);
+    await expect(
+      maps.setConnectionLabel(view.map.id, view.map.revision, connectionId, 'gone'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
 });
 
 describe('duplicating a map', () => {

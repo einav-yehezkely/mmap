@@ -43,7 +43,8 @@ interface ConnectorSnapshot {
 type ConnectorChange =
   | { readonly kind: 'added'; readonly connectionId: string }
   | { readonly kind: 'removed'; readonly connectors: readonly ConnectorSnapshot[] }
-  | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot };
+  | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot }
+  | { readonly kind: 'noted'; readonly connectionId: string; readonly previous: string | null };
 
 const UNDO_LIMIT = 20;
 /** How long the "Undo" notice stays; Ctrl+Z keeps working afterwards. */
@@ -53,6 +54,7 @@ const CHANGE_TEXT: Record<ConnectorChange['kind'], string> = {
   added: 'Connector added.',
   removed: 'Connector removed.',
   moved: 'Connector moved.',
+  noted: 'Connector note saved.',
 };
 
 export interface MapEditorProps {
@@ -154,6 +156,14 @@ function LoadedMapEditor({
     [apply],
   );
 
+  const writeConnectorNote = useCallback(
+    (connectionId: string, label: string | null) =>
+      apply((mapId, expectedRevision) =>
+        window.mmap.maps.setConnectionLabel({ mapId, expectedRevision, connectionId, label }),
+      ),
+    [apply],
+  );
+
   const snapshotOf = (connectionId: string): ConnectorSnapshot | null => {
     const connection = view.connections.find((item) => item.id === connectionId);
     return connection === undefined
@@ -182,8 +192,11 @@ function LoadedMapEditor({
       case 'moved':
         if (await deleteConnector(change.connectionId)) await createConnector(change.previous);
         break;
+      case 'noted':
+        await writeConnectorNote(change.connectionId, change.previous);
+        break;
     }
-  }, [undoStack, createConnector, deleteConnector]);
+  }, [undoStack, createConnector, deleteConnector, writeConnectorNote]);
 
   /** Ctrl+Z anywhere in the editor, except while typing in a field. */
   const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -293,6 +306,13 @@ function LoadedMapEditor({
       if (createdId !== null) remember({ kind: 'moved', connectionId: createdId, previous });
       else await createConnector(previous);
     })();
+  };
+
+  const onConnectorLabel = (connectionId: string, label: string | null) => {
+    const previous = view.connections.find((item) => item.id === connectionId)?.label ?? null;
+    void writeConnectorNote(connectionId, label).then((ok) => {
+      if (ok) remember({ kind: 'noted', connectionId, previous });
+    });
   };
 
   const switchToHierarchy = async (
@@ -431,6 +451,7 @@ function LoadedMapEditor({
             onToggleCollapse={onToggleCollapse}
             onRemove={onRemove}
             onReconnect={onReconnect}
+            onConnectorLabel={onConnectorLabel}
             onViewportChange={document.saveViewport}
           />
         </div>
@@ -519,7 +540,8 @@ function MapLegend({ isHierarchy }: { isHierarchy: boolean }) {
           <>
             <li>Drag from an item's dot to another item to connect them.</li>
             <li>
-              Click a connector, then × or Delete to remove it; drag its round end to move it.
+              Click a connector to write a note on it, remove it (× or Delete), or drag its round
+              end to move it.
             </li>
             <li>Ctrl+Z undoes connector changes. Double-click an item to preview its note.</li>
           </>

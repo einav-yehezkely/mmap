@@ -163,6 +163,13 @@ export interface MapService {
     expectedRevision: Revision,
     connectionId: MapConnectionId,
   ): Promise<MapView>;
+  /** Writes, changes or (with null or blank text) removes the note on a connector. */
+  setConnectionLabel(
+    mapId: MapId,
+    expectedRevision: Revision,
+    connectionId: MapConnectionId,
+    label: string | null,
+  ): Promise<MapView>;
   /** Parent suggestions for the user to review before switching to hierarchical mode. */
   proposeHierarchy(mapId: MapId): Promise<MapHierarchyProposal>;
   /**
@@ -604,6 +611,20 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
           throw new DomainError('NOT_FOUND', 'This connector no longer exists.');
         }
         await maps.deleteConnection(workspaceId, connectionId);
+      }),
+
+    setConnectionLabel: (mapId, expectedRevision, connectionId, label) =>
+      structuralChange(mapId, expectedRevision, async (map) => {
+        const connections = await maps.listConnections(workspaceId, map.id);
+        if (!connections.some((connection) => connection.id === connectionId)) {
+          throw new DomainError('NOT_FOUND', 'This connector no longer exists.');
+        }
+        await maps.updateConnectionLabel(
+          workspaceId,
+          connectionId,
+          normalizeConnectorLabel(label),
+          clock.now(),
+        );
       }),
 
     proposeHierarchy: async (mapId) => {

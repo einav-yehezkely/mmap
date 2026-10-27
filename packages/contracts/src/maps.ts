@@ -207,6 +207,15 @@ export const mapContracts = {
     request: z.strictObject({ ...structural, connectionId: z.uuid() }),
     response: mapViewSchema,
   },
+  /** Note on a connector; null or blank text removes it. */
+  setConnectionLabel: {
+    request: z.strictObject({
+      ...structural,
+      connectionId: z.uuid(),
+      label: z.string().max(1_000).nullable(),
+    }),
+    response: mapViewSchema,
+  },
   proposeHierarchy: {
     request: z.strictObject({ mapId: z.uuid() }),
     response: z.strictObject({
