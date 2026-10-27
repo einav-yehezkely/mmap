@@ -33,7 +33,10 @@ let sources: string;
 let outside: string;
 
 beforeEach(() => {
-  sandbox = mkdtempSync(join(tmpdir(), 'mmap-attachments-'));
+  // Resolve to the real long path: on machines with 8.3 short names (e.g. GitHub runners,
+  // RUNNER~1 instead of runneradmin) tmpdir() is a short path, while the code under test returns
+  // real paths.
+  sandbox = realpathSync.native(mkdtempSync(join(tmpdir(), 'mmap-attachments-')));
   attachments = join(sandbox, 'workspace', 'attachments');
   sources = join(sandbox, 'sources');
   outside = join(sandbox, 'outside');

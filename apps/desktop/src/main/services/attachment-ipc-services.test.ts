@@ -11,6 +11,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,7 +61,10 @@ function storedFiles(): string[] {
 }
 
 beforeEach(async () => {
-  sandbox = mkdtempSync(join(tmpdir(), 'mmap-attach-ipc-'));
+  // Resolve to the real long path: on machines with 8.3 short names (e.g. GitHub runners,
+  // RUNNER~1 instead of runneradmin) tmpdir() is a short path, while the code under test returns
+  // real paths.
+  sandbox = realpathSync.native(mkdtempSync(join(tmpdir(), 'mmap-attach-ipc-')));
   sources = join(sandbox, 'sources');
   mkdirSync(sources);
   mkdirSync(join(sandbox, 'userData'));

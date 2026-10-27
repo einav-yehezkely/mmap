@@ -10,6 +10,7 @@ import {
   renameSync,
   rmSync,
   writeFileSync,
+  realpathSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,7 +50,10 @@ const managers: WorkspaceManager[] = [];
 beforeEach(() => {
   trash.failNext = false;
   trash.trashed = [];
-  sandbox = mkdtempSync(join(tmpdir(), 'mmap-manager-'));
+  // Resolve to the real long path: on machines with 8.3 short names (e.g. GitHub runners,
+  // RUNNER~1 instead of runneradmin) tmpdir() is a short path, while the code under test returns
+  // real paths.
+  sandbox = realpathSync.native(mkdtempSync(join(tmpdir(), 'mmap-manager-')));
   userData = join(sandbox, 'userData');
   mkdirSync(userData);
 });
