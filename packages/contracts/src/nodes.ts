@@ -103,6 +103,40 @@ export const nodeContracts = {
     request: z.strictObject({ nodeId: nodeIdSchema, expectedRevision: revisionSchema }),
     response: z.strictObject({ deleted: z.literal(true) }),
   },
+  /** Deterministic title lookup for node pickers (PRD §5.8). */
+  lookup: {
+    request: z.strictObject({
+      text: z.string().max(200),
+      limit: z.number().int().min(1).max(50).optional(),
+      excludeNodeIds: z.array(nodeIdSchema).max(50).optional(),
+    }),
+    response: z.strictObject({
+      items: z.array(z.strictObject({ id: nodeIdSchema, title: z.string() })).readonly(),
+    }),
+  },
+  backlinks: {
+    request: z.strictObject({ nodeId: nodeIdSchema }),
+    response: z.strictObject({
+      items: z
+        .array(
+          z.strictObject({
+            sourceNodeId: nodeIdSchema,
+            sourceTitle: z.string(),
+            label: z.string(),
+            excerpt: z.string(),
+            occurrences: z.number().int().positive(),
+          }),
+        )
+        .readonly(),
+    }),
+  },
+  /** Current titles of wikilink targets that still exist (missing ones render as unresolved). */
+  resolveLinks: {
+    request: z.strictObject({ nodeIds: z.array(nodeIdSchema).max(1_000) }),
+    response: z.strictObject({
+      items: z.array(z.strictObject({ id: nodeIdSchema, title: z.string() })).readonly(),
+    }),
+  },
   addTag: {
     request: z.strictObject({ nodeId: nodeIdSchema, label: z.string().max(500) }),
     response: z.strictObject({ tags: tagListSchema }),
@@ -110,6 +144,31 @@ export const nodeContracts = {
   removeTag: {
     request: z.strictObject({ nodeId: nodeIdSchema, tagId: z.uuid() }),
     response: z.strictObject({ tags: tagListSchema }),
+  },
+} as const;
+
+/** Full-text search (PRD §5.8). Snippets are plain-text segments, never HTML. */
+export const searchContracts = {
+  query: {
+    request: z.strictObject({
+      text: z.string().max(1_000),
+      tagIds: z.array(z.uuid()).max(20).optional(),
+      limit: z.number().int().min(1).max(100),
+      cursor: z.string().max(200).optional(),
+    }),
+    response: z.strictObject({
+      items: z
+        .array(
+          z.strictObject({
+            nodeId: nodeIdSchema,
+            title: z.string(),
+            snippet: z.array(z.strictObject({ text: z.string(), isMatch: z.boolean() })).readonly(),
+          }),
+        )
+        .readonly(),
+      nextCursor: z.string().nullable(),
+      totalCount: z.number().int().nonnegative(),
+    }),
   },
 } as const;
 

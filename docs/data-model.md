@@ -2,32 +2,34 @@
 
 This page explains the SQLite schema created by migration 1,
 `packages/storage-sqlite/src/migrations/0001-initial-schema.ts`. It maps each table to the logical
-entities in PRD §7.3 and explains the constraints that are not obvious from the SQL.
+entities in PRD §7.3 and explains the constraints that are not obvious from the SQL. Migration 2
+changes no table; it only marks note schema version 2 (see [Migrations](#migrations)).
 
-Migration 1 creates the complete schema for the whole logical model. Phase 1 services use part of
-it; the rest waits for the phases that need it (see [Table usage](#table-usage-in-phase-1)). The
-schema is verified by the tests in `packages/storage-sqlite/src/migrations/initial-schema.test.ts`.
+Migration 1 creates the complete schema for the whole logical model. Phase 1 and Phase 2 services
+use part of it; the rest waits for the phases that need it (see
+[Table usage](#table-usage-after-phase-2)). The schema is verified by the tests in
+`packages/storage-sqlite/src/migrations/initial-schema.test.ts`.
 
-## Table usage in Phase 1
+## Table usage after Phase 2
 
 Repositories are in `packages/storage-sqlite/src/repositories/`; the services that call them are
 in `packages/domain/src/application/`. Every repository method takes the workspace ID and filters
 by it, so a record from another workspace behaves as not found.
 
-| Table                                            | Status       | Written by                                                                                               |
-| ------------------------------------------------ | ------------ | -------------------------------------------------------------------------------------------------------- |
-| `workspaces`                                     | Used         | `WorkspaceService.initialize` (create), `rename`; read on every open to check the manifest ID            |
-| `knowledge_nodes`                                | Used         | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders |
-| `knowledge_nodes_fts`                            | Maintained   | Kept in sync by triggers on every node write; not queried until the Phase 2 search UI                    |
-| `relationship_types`                             | Seeded only  | `WorkspaceService.initialize` inserts the five built-in types; nothing else reads or writes them yet     |
-| `tags`, `node_tags`                              | Used         | `TagService`; `KnowledgeNodeService.duplicate` copies assignments                                        |
-| `timeline_events`                                | Used (write) | `node_created` on create and duplicate; `note_updated` grouped by editing session. No UI reads them yet  |
-| `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                        |
-| `relationships`                                  | Not used yet | Phase 2. Only counted by the node delete preview                                                         |
-| `note_references`                                | Not used yet | Phase 2. Only counted by the node delete preview                                                         |
-| `mind_maps`, `map_placements`, `map_connections` | Not used yet | Phase 3. Node deletion already promotes child placements (see below)                                     |
-| `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                  |
-| `schema_migrations`                              | Used         | Migration runner                                                                                         |
+| Table                                            | Status       | Written by                                                                                                   |
+| ------------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `workspaces`                                     | Used         | `WorkspaceService.initialize` (create), `rename`; read on every open to check the manifest ID                |
+| `knowledge_nodes`                                | Used         | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders     |
+| `knowledge_nodes_fts`                            | Used         | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`)                |
+| `relationship_types`                             | Used         | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction |
+| `tags`, `node_tags`                              | Used         | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search           |
+| `timeline_events`                                | Used (write) | `node_created`, `note_updated` (grouped by session), `relationship_created`. No UI reads them yet            |
+| `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                            |
+| `relationships`                                  | Used         | `RelationshipService`: create, update (type, description, reverse), delete, list for a node                  |
+| `note_references`                                | Used         | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks and delete preview      |
+| `mind_maps`, `map_placements`, `map_connections` | Not used yet | Phase 3. Node deletion already promotes child placements (see below)                                         |
+| `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                      |
+| `schema_migrations`                              | Used         | Migration runner                                                                                             |
 
 ## Three kinds of connection
 
@@ -108,15 +110,17 @@ search only), `revision` (starts at 1, used for optimistic concurrency), timesta
   rowids and silently break the link between a node and its index entry.
 - Indexes: `(workspace_id, title COLLATE NOCASE)` for pickers, and `(workspace_id, updated_at)`
   and `(workspace_id, created_at)` for lists and the timeline.
-- Phase 1 behaviour: titles are NFC-normalized, single-line, 1 to 300 characters; summaries are
+- Behaviour: titles are NFC-normalized, single-line, 1 to 300 characters; summaries are
   optional, up to 2,000 characters (`packages/domain/src/knowledge/node-fields.ts`). `note_json`,
-  `note_schema_version` (currently 1) and `note_plain_text` are always written together from the
+  `note_schema_version` (2 since Phase 2; notes saved by Phase 1 keep 1 until the note itself is
+  saved again, and both are read the same way) and `note_plain_text` are always written together
+  from the
   same validated document. Every update increments `revision`; an update or delete with an outdated
   revision fails with `REVISION_CONFLICT` and changes nothing. Tag changes do not touch the
   revision.
 - Deleting a node first moves the children of its map placements up to the deleted placement's
   parent (the hierarchy foreign key refuses to orphan them), then deletes the row; relationships,
-  placements, references from this node, tag assignments and attachment rows cascade.
+  placements, note references from and to this node, tag assignments and attachment rows cascade.
   `timeline_events.node_id` becomes `NULL`.
 
 ### `knowledge_nodes_fts` (search index, PRD §5.8)
@@ -128,10 +132,13 @@ An FTS5 virtual table over `title`, `summary` and `note_plain_text`.
 - Three triggers (`knowledge_nodes_fts_after_insert`, `_after_delete`, `_after_update`) keep the
   index in sync. The update trigger fires only when an indexed column changes.
 - Tokenizer `unicode61 remove_diacritics 2`: language-neutral tokenization that handles Unicode
-  and right-to-left scripts and matches `cafe` to `Café`.
-- The index has no `workspace_id` column. Every search query must join back to
-  `knowledge_nodes` on `row_key` and filter by `workspace_id`; the tests check that a match in
-  another workspace is never returned.
+  and right-to-left scripts and matches `cafe` to `Café`. It does not remove Hebrew niqqud, so
+  pointed and unpointed Hebrew words are different tokens.
+- `note_plain_text` includes wikilink labels, so search finds the link text the reader sees.
+- The index has no `workspace_id` column. Every search query joins back to `knowledge_nodes` on
+  `row_key` and filters by `workspace_id`; the tests check that a match in another workspace is
+  never returned or counted. Query building, ranking and snippets are described in
+  [architecture.md](architecture.md#search).
 
 ### `relationship_types` (RelationshipType)
 
@@ -142,8 +149,15 @@ existing edges while hiding it from new-edge choices.
 Every new workspace is seeded with the five built-in types from PRD §4.2
 (`packages/domain/src/knowledge/builtin-relationship-types.ts`): `related to` (undirected),
 `depends on`, `part of`, `example of` (directed) and `contradicts` (undirected), with
-`is_builtin = 1`. Seeding happens in the same transaction as the `workspaces` row. Nothing else uses
-the table until relationships arrive in Phase 2.
+`is_builtin = 1`. Seeding happens in the same transaction as the `workspaces` row.
+
+Phase 2 behaviour (`packages/domain/src/application/relationship-service.ts`): users create
+custom types, rename any type (built-in ones included) and archive or restore them. Labels follow
+the tag label rules: trimmed, whitespace collapsed, at most 60 characters, unique by their NFKC
+lower-cased `normalized_label`. Types are never deleted. `directionality` can be updated only
+while no relationship uses the type; the service refuses earlier with `INVARIANT_VIOLATION`, and
+the foreign key described below would refuse it anyway. Usage counts are computed with
+`GROUP BY type_id` on `relationships`, not stored.
 
 ### `relationships` (Relationship)
 
@@ -170,16 +184,47 @@ defense behind the domain rule in `packages/domain/src/knowledge/relationship-ru
   either; it can only be archived.
 - Deleting either endpoint node cascades to the relationship.
 
+Phase 2 behaviour: rows are written only by `RelationshipService`, always after an explicit user
+action. The service applies the same rules first (self-link → `INVARIANT_VIOLATION`, existing
+row with the same stored endpoints and type → `DUPLICATE`, archived type → `VALIDATION_FAILED`),
+so users see a clear message instead of a constraint error. `description` is trimmed, `NULL` when
+empty, at most 1,000 characters. Updating a relationship can change its type (endpoints are
+re-ordered canonically when the new type is undirected), its description, or swap source and
+target of a directed one. `listForNode` returns both directions of a node with the type label and
+both titles from one join. Creating a relationship also writes a `relationship_created` timeline
+event.
+
 ### `note_references` (NoteReference)
 
-One row per wikilink occurrence in a saved note: `source_node_id`, `ordinal` (position in the
-note), `target_node_id`, `label`, `context_excerpt` (shown in the target's backlinks). Primary key
-`(source_node_id, ordinal)`.
+One row per wikilink occurrence in a saved note: `source_node_id`, `ordinal`, `target_node_id`,
+`label`, `context_excerpt` (shown in the target's backlinks). Primary key
+`(source_node_id, ordinal)`; index `(workspace_id, target_node_id)` for backlinks.
 
-These rows are derived data. Phase 2 rebuilds them for a node in the same transaction that saves
-its note (PRD §14). Deleting the target node cascades and removes the rows, but the link label
-stays readable in the source note's JSON, where it is rendered as an unresolved link with a
-repair action (PRD §5.4).
+These rows are derived data; the note JSON is the source of truth. How they are written
+(`packages/storage-sqlite/src/repositories/sqlite-note-reference-repository.ts`):
+
+- **Rebuilt per save.** Whenever a note is written (create, duplicate, or an update that includes
+  the note), `KnowledgeNodeService` deletes all rows of that source node and inserts the current
+  ones, in the same transaction as the node row (PRD §14). Removing a link and saving removes its
+  row.
+- **Only existing targets.** Each insert is `INSERT … SELECT … WHERE EXISTS` on
+  `knowledge_nodes` in the same workspace. A link to a deleted node, or an ID from another
+  workspace, is not stored; it stays in the note JSON and is shown as unresolved.
+- **`ordinal`** is the occurrence's position among all wikilinks of the note, counted before
+  missing targets are filtered out, so stored ordinals can have gaps.
+- **`label`** is the link text as written in the note, not the target's title.
+- **`context_excerpt`** is plain text from the block that contains the link (paragraph, heading,
+  list item or table cell), about 160 characters centred on the link, cut at word boundaries with
+  `…` (`excerptAround` in `packages/domain/src/notes/note-references.ts`).
+
+**Backlinks** (`listBacklinks`) group rows by source note: one item per source with the label and
+excerpt of its lowest `ordinal`, the number of occurrences, and the source's current title, ordered
+by title (`COLLATE NOCASE`) then ID. Rows where source and target are the same node are ignored.
+The delete preview counts distinct source notes the same way.
+
+Deleting the target node cascades and removes the rows, but the link label stays readable in the
+source note's JSON, where it is rendered as an unresolved link with a repair action (PRD §5.4).
+Deleting the source node removes its own rows.
 
 ### `tags` and `node_tags` (Tag / NodeTag)
 
@@ -246,15 +291,19 @@ Recorded learning activity: `event_type` (`node_created`, `note_updated`,
 - `CHECK (is_imported = 1 OR import_origin IS NULL)`: only imported events carry an origin, so
   imported history is always recognisable and never counts as new learning.
 
-#### What Phase 1 records
+#### What is recorded
 
 `KnowledgeNodeService` (`packages/domain/src/application/knowledge-node-service.ts`) writes two
-event types, always in the same transaction as the node change. No UI shows them yet (Phase 4).
+event types, always in the same transaction as the node change, and `RelationshipService` writes
+a third. No UI shows them yet (Phase 4).
 
 - **`node_created`**: one event when a node is created, including by duplication, with the title
   as `node_title_snapshot`.
 - **`note_updated`**: recorded only when a save changes the stored note JSON. Saves that change
   only the title or summary, or that send an identical note, record nothing.
+- **`relationship_created`** (Phase 2): one event per created relationship, in the same
+  transaction, with the request's source node as `node_id` and its title as snapshot. Updates and
+  deletions of relationships record nothing.
 
 **Editing-session grouping** (`packages/domain/src/timeline/editing-session.ts`, PRD §5.9). Autosave
 writes roughly once per second of idle typing, so recording every save would flood the timeline.
@@ -262,8 +311,7 @@ On a note change, the service looks up the node's latest `note_updated` event. I
 30 minutes have passed since its `last_activity_at`, the same event is extended: `last_activity_at`
 moves to the new save time and `node_title_snapshot` is refreshed. Otherwise (a gap of exactly 30
 minutes or more, or a clock that moved backwards) a new event starts with
-`occurred_at = last_activity_at = save time`. `relationship_created` and `reviewed` are not
-written yet.
+`occurred_at = last_activity_at = save time`. `reviewed` is not written yet.
 
 ### `attachments` (Attachment)
 
@@ -338,6 +386,16 @@ installed build cannot be missing one. The strategy and its reasons are recorded
   brand-new database (version 0) is not backed up.
 - Migration SQL must not contain statements that are invalid inside a transaction, such as
   `VACUUM` or `PRAGMA journal_mode`.
+
+### Shipped migrations
+
+| Version | File                            | What it does                                                                                                                                                                                                                                                             |
+| ------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1       | `0001-initial-schema.ts`        | The complete schema described on this page.                                                                                                                                                                                                                              |
+| 2       | `0002-note-schema-v2-marker.ts` | `SELECT 1;`. No table change. Raises the database version so that builds that only understand note schema version 1 (Phase 1) refuse the workspace as "too new" instead of failing later on notes with wikilinks ([ADR-0008](adr/0008-wikilinks-and-note-schema-v2.md)). |
+
+Opening a Phase 1 workspace with a Phase 2 build therefore takes a verified backup to `recovery/`
+and applies migration 2. After that, a Phase 1 build cannot open the workspace.
 
 ### Adding a migration
 

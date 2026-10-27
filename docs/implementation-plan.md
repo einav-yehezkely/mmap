@@ -11,7 +11,7 @@ exit criteria verified by automated tests where possible and a short manual chec
 | Storage identity                               | One workspace = one folder = one SQLite file, yet the logical model carries `workspace_id` everywhere.                                    | Keep `workspace_id` columns and enforce them with composite foreign keys `(workspace_id, id)`. Cross-workspace links become impossible at the constraint level, and the schema stays server-ready.                        |
 | Relationships vs. references vs. map structure | Three distinct concepts that users will confuse (§4.2–4.4, §14).                                                                          | Three separate tables (`relationships`, `note_references`, `map_connections` / placement parent) and separate domain modules. Nothing creates one from another implicitly.                                                |
 | Undirected duplicates                          | Must use canonical endpoint ordering.                                                                                                     | Domain rule normalizes ordering, and a CHECK constraint rejects non-canonical undirected rows as a second line of defense.                                                                                                |
-| Type directionality                            | Cannot change while used.                                                                                                                 | Relationships copy the type's directionality into a composite FK, so the DB blocks the change; service check and migration flow in Phase 2.                                                                               |
+| Type directionality                            | Cannot change while used.                                                                                                                 | Relationships copy the type's directionality into a composite FK, so the DB blocks the change. Phase 2 adds the service check and requires a new type instead of a migration flow.                                        |
 | Native dependencies                            | The build machine has no C++ toolchain; `better-sqlite3@13.0.3` has **no** Electron 44 Windows prebuild (verified: HTTP 404 for ABI 149). | Use the SQLite engine built into Node (`node:sqlite`) — no native build, same engine (SQLite 3.53.4, FTS5, online backup API) in Node 24 tests and inside Electron 44. Recorded in ADR-0002.                              |
 | Testing vs. runtime parity                     | Tests run on system Node 24.21, app runs on Electron's Node 24.22.                                                                        | Same SQLite version in both (verified). CI additionally runs a packaged-app smoke test that exercises migrations inside Electron.                                                                                         |
 | Security                                       | Electron hardening, narrow IPC, sanitized notes, safe archives (§8, §11).                                                                 | Built into Phase 0 shell (not retrofitted): sandbox, context isolation, CSP, custom `app://` protocol, navigation/window denial, sender validation, schema-validated IPC. Later phases add their own hostile-input tests. |
@@ -71,8 +71,7 @@ missing-folder handling, verified move), node CRUD with revisions and autosave s
 Tiptap editor with KaTeX (bundled), validated versioned note JSON + derived plain text,
 tags, managed attachments (staging, checksums, reconciliation, traversal/symlink protection),
 note sanitization tests. Exit: workspace isolation, content survives restart, offline.
-Implemented on branch `phase-1-knowledge-base`; see [§6](#6-phase-1-status-2026-10-26) for what is
-done and what is not.
+Merged into `main`; see [§6](#6-phase-1-status-2026-10-26) for what was done and what was not.
 
 ### Phase 2 — Connections and discovery
 
@@ -80,6 +79,7 @@ Relationship types (seeded defaults, custom, archive), relationship CRUD with di
 uniqueness rules, wikilink picker and reference reconciliation in the note-save transaction,
 backlinks with excerpts, unresolved-link repair, FTS5 search with title boosting, snippets,
 filters, pagination; search benchmark harness on the PRD dataset.
+Implemented on branch `phase-2-connections`; see [§7](#7-phase-2-status-2026-10-27).
 
 ### Phase 3 — Mind maps
 
@@ -173,3 +173,56 @@ Other gaps found while checking the code:
   components or native dialogs.
 - **Accessibility pass** (PRD §6, §11): components use labels, roles and keyboard-reachable
   controls, but no structured accessibility check has been run (Phase 5).
+
+## 7. Phase 2 status (2026-10-27)
+
+Implemented on branch `phase-2-connections` (not yet committed at the time of writing; see
+`git diff main --stat`). Test suite: 736 passing tests in 37 files plus one benchmark file that is
+skipped by default ([testing.md](testing.md)).
+
+| PRD §12 exit criterion / deliverable             | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Exit: direction and uniqueness rules pass        | `relationship-service.test.ts`, block "direction and uniqueness (acceptance criterion 4)": A `depends on` B stays A → B from both nodes, a reversed `related to` duplicate is `DUPLICATE` while other types are allowed, the reverse of a directed type is allowed, self-links are rejected; reversal and type change are re-checked. Domain rule: `relationship-rules.test.ts`. Second line of defense: `initial-schema.test.ts` (canonical order, directionality copy, cross-workspace). Packaged smoke check 7. |
+| Exit: rename/delete references behave correctly  | `note-references.test.ts`, block "wikilinks and backlinks (acceptance criterion 5)": the link survives a rename of the target, removing the link removes the backlink after save, deleting the target leaves the link readable and unresolved, no relationship is created. `wikilink-node.test.ts` (jsdom) marks only missing targets and repairs a link without changing its label. Packaged smoke check 7.                                                                                                       |
+| Exit: search targets measured                    | `search.benchmark.test.ts` on 10,000 nodes, 30,000 relationships and 200 tags, on a developer machine: search p50 3.3 ms, p95 50 ms, max 63 ms (250 queries); title lookup p50 25 ms, p95 31 ms, max 41 ms (220 lookups). PRD target: search p95 below 500 ms. Measured, but not yet on the reference machine (see below).                                                                                                                                                                                         |
+| Relationship types (PRD §4.2, §5.5)              | Five seeded built-in types; create, rename, archive and restore; direction changes only while unused, otherwise "create a new type"; `manage-relationship-types-dialog.tsx`                                                                                                                                                                                                                                                                                                                                        |
+| Relationship editing                             | `relationship-service.ts`, `relationships:*` channels, `node-relationships.tsx`: add with type, direction, other node and optional description; reverse; change type; delete with confirmation; direction shown as arrow or dash, with text for screen readers; `relationship_created` timeline event                                                                                                                                                                                                              |
+| Wikilinks (PRD §4.3, §5.4)                       | Note schema version 2 with the `wikilink` node; `[[` and a toolbar button open a picker; new nodes only through an explicit "Create a new node" option; links store the target ID and a label; [ADR-0008](adr/0008-wikilinks-and-note-schema-v2.md)                                                                                                                                                                                                                                                                |
+| Reference reconciliation in the save transaction | `KnowledgeNodeService` rebuilds `note_references` on create, duplicate and note update, in the same transaction as the note (PRD §14); only existing targets are stored                                                                                                                                                                                                                                                                                                                                            |
+| Backlinks with excerpts                          | `nodes:backlinks`, "Linked from" section: one entry per source note with excerpt and link count                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Unresolved-link repair                           | `nodes:resolve-links` plus ProseMirror decorations; clicking an unresolved link opens a picker for a new target                                                                                                                                                                                                                                                                                                                                                                                                    |
+| FTS5 search (PRD §5.8)                           | `SqliteSearchIndex`: escaped queries, BM25 weights 10/4/1 (title boosting), plain-text snippet segments, tag filters, totals, paging; search view and Ctrl+K; `sqlite-search-index.test.ts` including hostile input and workspace isolation                                                                                                                                                                                                                                                                        |
+| Deterministic title lookup for pickers           | `nodes:lookup`: prefix matches first, then other substring matches, ordered by length, title and ID; `NodePicker` combobox                                                                                                                                                                                                                                                                                                                                                                                         |
+| Compatibility with Phase 1 builds                | Migration 2 (`0002-note-schema-v2-marker.ts`) raises the database version, so Phase 1 builds refuse upgraded workspaces with `WORKSPACE_TOO_NEW`; verified pre-migration backup as for every migration                                                                                                                                                                                                                                                                                                             |
+| IPC                                              | 13 new channels (44 in total) with strict request and response schemas; [ipc-contracts.md](ipc-contracts.md)                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Documentation                                    | [architecture](architecture.md), [data model](data-model.md), [IPC contracts](ipc-contracts.md), [testing](testing.md), [user guide](user-guide.md), ADR-0008                                                                                                                                                                                                                                                                                                                                                      |
+
+Phase 1 gaps closed by Phase 2: the search UI exists; nodes open from search results, backlinks
+and relationships, not only from the Library; the delete preview reports real relationship and
+linking-note counts.
+
+### Not yet done in Phase 2
+
+- **Search target not confirmed on the reference machine.** The benchmark ran on a developer
+  machine, on system Node, calling the index directly (no IPC, no renderer), with rows inserted by
+  SQL. PRD §9 requires the installed release on the documented four-core, 16 GB, SSD computer.
+  That measurement belongs to the Phase 5 performance pass. The benchmark is not run in CI.
+- **"Ambiguous title requires selection" applies only to the picker.** There is no Markdown or
+  raw-text import yet, so no code resolves `[[Title]]` text. Every link is made by choosing one
+  node in the picker, so ambiguity cannot arise today. Import (Phase 5) needs its own resolution
+  step that asks the user.
+- **Changing the text of an existing link.** New links can get custom text (`[[target|label]]`
+  via the "Link text" field); to change it later, delete the link and insert it again.
+- **Hebrew niqqud.** Pointed and unpointed Hebrew words do not match each other in search (a
+  tokenizer limitation, documented and tested). Fixing it needs custom normalization of indexed
+  and query text.
+- **Offset-based search paging.** Editing nodes between "Load more" requests can repeat or skip a
+  result; ranked results have no stable keyset.
+- **Picker case and accent folding.** Title lookup folds ASCII case only and does not ignore
+  accents, unlike full-text search, because `node:sqlite` has no ICU.
+- **Relationship-type filters in search** (PRD §5.8, "where applicable") are not implemented.
+  Creating relationships from a graph action (PRD §5.5) waits for the Phase 4 graph.
+- **No UI tests** for the picker, relationship form, types dialog, backlinks or search view, and no
+  structured accessibility check of them (Phase 5).
+- **Worker thread** (carried from Phases 0 and 1). Search and all other database work still run on
+  the main process thread.

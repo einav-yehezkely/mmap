@@ -10,7 +10,10 @@ import type { OpenWorkspace, WorkspaceServices } from '../workspaces/open-worksp
 import { WorkspaceError } from '../workspaces/workspace-errors';
 import type { WorkspaceManager } from '../workspaces/workspace-manager';
 
-type NodeChannel = Extract<keyof IpcServices, `nodes:${string}` | `tags:${string}`>;
+type NodeChannel = Extract<
+  keyof IpcServices,
+  `nodes:${string}` | `tags:${string}` | `search:${string}`
+>;
 
 export function createNodeIpcServices(manager: WorkspaceManager): Pick<IpcServices, NodeChannel> {
   const requireWorkspace = (): OpenWorkspace => {
@@ -26,6 +29,29 @@ export function createNodeIpcServices(manager: WorkspaceManager): Pick<IpcServic
     'nodes:list': ({ sort, limit, cursor, tagIds = [] }) =>
       services().nodes.list({ sort, page: { limit, cursor }, tagIds: tagIds as TagId[] }),
     'nodes:get': ({ nodeId }) => services().nodes.get(nodeId as NodeId),
+    'nodes:lookup': async ({ text, limit = 8, excludeNodeIds = [] }) => ({
+      items: (
+        await services().search.lookupTitles(
+          requireWorkspace().id,
+          text,
+          limit,
+          excludeNodeIds as NodeId[],
+        )
+      ).map((match) => ({ id: match.nodeId, title: match.title })),
+    }),
+    'nodes:backlinks': async ({ nodeId }) => ({
+      items: await services().nodes.backlinks(nodeId as NodeId),
+    }),
+    'nodes:resolve-links': async ({ nodeIds }) => ({
+      items: await services().nodes.resolveLinkTargets(nodeIds as NodeId[]),
+    }),
+    'search:query': ({ text, tagIds = [], limit, cursor }) =>
+      services().search.search({
+        workspaceId: requireWorkspace().id,
+        text,
+        tagIds: tagIds as TagId[],
+        page: { limit, cursor },
+      }),
     'nodes:create': ({ title, summary }) =>
       services().nodes.create({ title, summary: summary ?? null }),
     'nodes:update': ({ nodeId, expectedRevision, changes }) =>

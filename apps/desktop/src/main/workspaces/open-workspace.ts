@@ -6,11 +6,14 @@
 import {
   createAttachmentService,
   createKnowledgeNodeService,
+  createRelationshipService,
   createTagService,
   createWorkspaceService,
   type AttachmentService,
   type Clock,
   type KnowledgeNodeService,
+  type RelationshipService,
+  type SearchIndex,
   type TagService,
   type IdGenerator,
   type WorkspaceId,
@@ -25,7 +28,10 @@ import {
   SchemaTooNewError,
   SqliteAttachmentRepository,
   SqliteKnowledgeNodeRepository,
+  SqliteNoteReferenceRepository,
+  SqliteRelationshipRepository,
   SqliteRelationshipTypeRepository,
+  SqliteSearchIndex,
   SqliteTagRepository,
   SqliteTimelineEventRepository,
   SqliteWorkspaceRepository,
@@ -42,6 +48,8 @@ export interface WorkspaceServices {
   readonly nodes: KnowledgeNodeService;
   readonly tags: TagService;
   readonly attachments: AttachmentService;
+  readonly relationships: RelationshipService;
+  readonly search: SearchIndex;
 }
 
 export interface OpenWorkspace {
@@ -70,13 +78,27 @@ export function createWorkspaceServices(
 ): WorkspaceServices {
   const nodeRepository = new SqliteKnowledgeNodeRepository(connections);
   const tagRepository = new SqliteTagRepository(connections);
+  const timelineRepository = new SqliteTimelineEventRepository(connections);
+  const relationshipTypeRepository = new SqliteRelationshipTypeRepository(connections);
   return {
+    search: new SqliteSearchIndex(connections),
+    relationships: createRelationshipService({
+      workspaceId,
+      transactions: connections,
+      relationships: new SqliteRelationshipRepository(connections),
+      types: relationshipTypeRepository,
+      nodes: nodeRepository,
+      timeline: timelineRepository,
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+    }),
     nodes: createKnowledgeNodeService({
       workspaceId,
       transactions: connections,
       nodes: nodeRepository,
-      timeline: new SqliteTimelineEventRepository(connections),
+      timeline: timelineRepository,
       tags: tagRepository,
+      references: new SqliteNoteReferenceRepository(connections),
       ids: dependencies.ids,
       clock: dependencies.clock,
     }),

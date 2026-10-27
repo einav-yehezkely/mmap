@@ -23,13 +23,16 @@ import {
   parseNoteDocument,
   type NoteDocument,
 } from '../notes/note-document';
+import { extractNoteReferences } from '../notes/note-references';
 import { extractPlainText } from '../notes/plain-text';
 import { clampPageSize, type PageRequest } from '../ports/pagination';
 import type {
+  BacklinkRecord,
   KnowledgeNodeRecord,
   KnowledgeNodeRepository,
   KnowledgeNodeSummary,
   NodeDependents,
+  NoteReferenceRepository,
   NodeSortOrder,
   Revision,
   TagRepository,
@@ -45,6 +48,7 @@ export interface KnowledgeNodeServiceDependencies {
   readonly nodes: KnowledgeNodeRepository;
   readonly timeline: TimelineEventRepository;
   readonly tags: TagRepository;
+  readonly references: NoteReferenceRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
 }
@@ -95,12 +99,36 @@ export interface KnowledgeNodeService {
   duplicate(nodeId: NodeId): Promise<KnowledgeNodeView>;
   previewDelete(nodeId: NodeId): Promise<NodeDependents>;
   delete(nodeId: NodeId, expectedRevision: Revision): Promise<void>;
+  /** Notes that link to this node, with an excerpt around the link (PRD §5.4). */
+  backlinks(nodeId: NodeId): Promise<readonly BacklinkRecord[]>;
+  /**
+   * Current titles of the given link targets that still exist. Targets missing from the result
+   * are shown as unresolved links with a repair action (PRD §5.4).
+   */
+  resolveLinkTargets(
+    nodeIds: readonly NodeId[],
+  ): Promise<readonly { readonly id: NodeId; readonly title: string }[]>;
 }
 
 export function createKnowledgeNodeService(
   dependencies: KnowledgeNodeServiceDependencies,
 ): KnowledgeNodeService {
-  const { workspaceId, transactions, nodes, timeline, tags, ids, clock } = dependencies;
+  const { workspaceId, transactions, nodes, timeline, tags, references, ids, clock } = dependencies;
+
+  /**
+   * Rebuilds the derived note references of a node from its note, in the caller's transaction,
+   * so references never diverge from the saved note (PRD §14).
+   */
+  async function reconcileReferences(nodeId: NodeId, note: NoteDocument): Promise<void> {
+    await references.replaceForSource(
+      workspaceId,
+      nodeId,
+      extractNoteReferences(note).map((reference) => ({
+        ...reference,
+        targetNodeId: reference.targetNodeId as NodeId,
+      })),
+    );
+  }
 
   async function toView(record: KnowledgeNodeRecord): Promise<KnowledgeNodeView> {
     const nodeTags = (await tags.listForNodes(workspaceId, [record.id])).get(record.id) ?? [];
@@ -141,6 +169,7 @@ export function createKnowledgeNodeService(
       updatedAt: now,
     };
     await nodes.insert(record);
+    await reconcileReferences(record.id, fields.note);
     await timeline.insert({
       id: ids.newId() as TimelineEventId,
       workspaceId,
@@ -243,14 +272,19 @@ export function createKnowledgeNodeService(
           // concurrent writers (e.g. a future server).
           throw revisionConflict();
         }
+        if (note !== undefined) {
+          // Removed links disappear from the targets' backlinks with this save (PRD §5.4).
+          await reconcileReferences(nodeId, note);
+        }
         return toView(next);
       }),
 
     duplicate: (nodeId) =>
       transactions.runInTransaction(async () => {
         const source = await toView(await requireNode(nodeId));
-        // Copies content and tags. Relationships, map placements and references are not
-        // duplicated: they describe the original node's identity and position (PRD §4).
+        // Copies content, tags and the note's outgoing links (the copy's references are derived
+        // from its note like any other). Relationships and map placements are not duplicated:
+        // they describe the original node's identity and position (PRD §4).
         const copy = await insertNode({
           title: duplicateTitle(source.title),
           summary: source.summary,
@@ -265,6 +299,16 @@ export function createKnowledgeNodeService(
     previewDelete: async (nodeId) => {
       await requireNode(nodeId);
       return nodes.countDependents(workspaceId, nodeId);
+    },
+
+    backlinks: async (nodeId) => {
+      await requireNode(nodeId);
+      return references.listBacklinks(workspaceId, nodeId);
+    },
+
+    resolveLinkTargets: async (nodeIds) => {
+      const titles = await nodes.findTitles(workspaceId, [...new Set(nodeIds)]);
+      return [...titles].map(([id, title]) => ({ id, title }));
     },
 
     delete: (nodeId, expectedRevision) =>

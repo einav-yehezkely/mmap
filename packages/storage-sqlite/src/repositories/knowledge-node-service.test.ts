@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SqliteConnections } from '../sqlite-connections';
 import { openWorkspaceDatabase } from '../workspace-database';
 import { SqliteKnowledgeNodeRepository } from './sqlite-knowledge-node-repository';
+import { SqliteNoteReferenceRepository } from './sqlite-note-reference-repository';
 import { SqliteRelationshipTypeRepository } from './sqlite-relationship-type-repository';
 import { SqliteTagRepository } from './sqlite-tag-repository';
 import { SqliteTimelineEventRepository } from './sqlite-timeline-event-repository';
@@ -52,6 +53,7 @@ function nodeService(workspaceId: WorkspaceId): KnowledgeNodeService {
     nodes: new SqliteKnowledgeNodeRepository(connections),
     timeline: new SqliteTimelineEventRepository(connections),
     tags: new SqliteTagRepository(connections),
+    references: new SqliteNoteReferenceRepository(connections),
     ids: { newId: nextId },
     clock,
   });

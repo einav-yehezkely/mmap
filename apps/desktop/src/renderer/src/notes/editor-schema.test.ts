@@ -92,6 +92,16 @@ const EVERYTHING = {
     },
     { type: 'blockMath', attrs: { latex: '\\int_0^1 x\\,dx' } },
     {
+      type: 'paragraph',
+      content: [
+        text('See '),
+        {
+          type: 'wikilink',
+          attrs: { targetNodeId: '3f2c9a4e-1b7d-4c2e-9f00-0123456789ad', label: 'Entropy' },
+        },
+      ],
+    },
+    {
       type: 'attachment',
       attrs: {
         attachmentId: '3f2c9a4e-1b7d-4c2e-9f00-0123456789ab',

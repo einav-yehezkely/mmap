@@ -16,6 +16,7 @@ import type { UtcTimestamp } from '../clock';
 import type {
   AttachmentId,
   NodeId,
+  RelationshipId,
   RelationshipTypeId,
   TagId,
   TimelineEventId,
@@ -97,6 +98,45 @@ export interface KnowledgeNodeRepository {
    * placement's parent so no subtree disappears silently.
    */
   delete(workspaceId: WorkspaceId, nodeId: NodeId): Promise<void>;
+  /** Titles of those nodes that exist in the workspace; missing IDs are simply absent. */
+  findTitles(
+    workspaceId: WorkspaceId,
+    nodeIds: readonly NodeId[],
+  ): Promise<ReadonlyMap<NodeId, string>>;
+}
+
+/** One wikilink occurrence to store for a source note (see `extractNoteReferences`). */
+export interface NoteReferenceInput {
+  readonly ordinal: number;
+  readonly targetNodeId: NodeId;
+  readonly label: string;
+  readonly excerpt: string;
+}
+
+/** A note that links to a node, as shown in that node's backlinks (PRD §5.4). */
+export interface BacklinkRecord {
+  readonly sourceNodeId: NodeId;
+  readonly sourceTitle: string;
+  /** Label and excerpt of the first occurrence in the source note. */
+  readonly label: string;
+  readonly excerpt: string;
+  /** How many times the source note links to the node. */
+  readonly occurrences: number;
+}
+
+export interface NoteReferenceRepository {
+  /**
+   * Replaces all references of `sourceNodeId`. Only references whose target exists in the
+   * workspace are stored; links to missing nodes stay readable in the note itself and are
+   * shown as unresolved (PRD §5.4).
+   */
+  replaceForSource(
+    workspaceId: WorkspaceId,
+    sourceNodeId: NodeId,
+    references: readonly NoteReferenceInput[],
+  ): Promise<void>;
+  /** Notes linking to `targetNodeId` (excluding the node itself), ordered by source title. */
+  listBacklinks(workspaceId: WorkspaceId, targetNodeId: NodeId): Promise<readonly BacklinkRecord[]>;
 }
 
 export const TIMELINE_EVENT_TYPES = [
@@ -168,6 +208,58 @@ export interface RelationshipTypeRecord {
 export interface RelationshipTypeRepository {
   insert(record: RelationshipTypeRecord): Promise<void>;
   listByWorkspace(workspaceId: WorkspaceId): Promise<readonly RelationshipTypeRecord[]>;
+  findById(
+    workspaceId: WorkspaceId,
+    typeId: RelationshipTypeId,
+  ): Promise<RelationshipTypeRecord | null>;
+  findByNormalizedLabel(
+    workspaceId: WorkspaceId,
+    normalizedLabel: string,
+  ): Promise<RelationshipTypeRecord | null>;
+  /** Replaces label, normalized label, directionality, archived state and updated time. */
+  update(record: RelationshipTypeRecord): Promise<void>;
+  /** Number of relationships using each type, keyed by type ID (types without any are absent). */
+  countUsage(workspaceId: WorkspaceId): Promise<ReadonlyMap<RelationshipTypeId, number>>;
+}
+
+export interface RelationshipRecord {
+  readonly id: RelationshipId;
+  readonly workspaceId: WorkspaceId;
+  /** For undirected types, the endpoint with the lower ID (canonical order, PRD §4.2). */
+  readonly sourceNodeId: NodeId;
+  readonly targetNodeId: NodeId;
+  readonly typeId: RelationshipTypeId;
+  /** Copy of the type's directionality, enforced by the schema to match the type. */
+  readonly directionality: RelationshipDirectionality;
+  readonly description: string | null;
+  readonly createdAt: UtcTimestamp;
+  readonly updatedAt: UtcTimestamp;
+}
+
+/** A relationship with the labels needed to show it, loaded in one query. */
+export interface RelationshipDetails extends RelationshipRecord {
+  readonly typeLabel: string;
+  readonly sourceTitle: string;
+  readonly targetTitle: string;
+}
+
+export interface RelationshipRepository {
+  insert(record: RelationshipRecord): Promise<void>;
+  findById(
+    workspaceId: WorkspaceId,
+    relationshipId: RelationshipId,
+  ): Promise<RelationshipRecord | null>;
+  /** The relationship with exactly these stored endpoints and type, if any. */
+  findByEndpoints(
+    workspaceId: WorkspaceId,
+    sourceNodeId: NodeId,
+    targetNodeId: NodeId,
+    typeId: RelationshipTypeId,
+  ): Promise<RelationshipRecord | null>;
+  update(record: RelationshipRecord): Promise<void>;
+  delete(workspaceId: WorkspaceId, relationshipId: RelationshipId): Promise<void>;
+  /** Every relationship in which the node is source or target, ordered by type label and title. */
+  listForNode(workspaceId: WorkspaceId, nodeId: NodeId): Promise<readonly RelationshipDetails[]>;
 }
 
 export interface TagRecord {

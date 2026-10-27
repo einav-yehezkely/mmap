@@ -16,9 +16,11 @@ import { formatDateTime } from '../lib/format-date';
 import type { AttachmentNodeAttributes } from '../notes/attachment-node';
 import { NoteEditor } from '../notes/note-editor';
 import { NodeAttachments } from './node-attachments';
+import { NodeBacklinks } from './node-backlinks';
 import { errorMessage, unwrap } from '../lib/ipc';
 import type { SaveStatus } from './node-draft-saver';
 import { notifyNodesChanged } from './node-events';
+import { NodeRelationships } from '../relationships/node-relationships';
 import { NodeTagsEditor } from './node-tags-editor';
 import { useNodeEditor, type ConflictChoice } from './use-node-editor';
 
@@ -218,6 +220,8 @@ export function NodeDetailPanel({
 
       <NodeTagsEditor nodeId={node.id} initialTags={node.tags} />
 
+      <NodeRelationships nodeId={node.id} onOpenNode={onOpenNode} />
+
       <section aria-label="Note">
         <NoteEditor
           key={editor.contentVersion}
@@ -228,6 +232,7 @@ export function NodeDetailPanel({
           }}
           onInvalid={setNoteProblem}
           onAttachFiles={attachFiles}
+          onOpenNode={onOpenNode}
         />
         {noteProblem && (
           <p role="alert" className="mt-2 text-sm text-destructive">
@@ -237,6 +242,8 @@ export function NodeDetailPanel({
       </section>
 
       <NodeAttachments nodeId={node.id} version={attachmentsVersion} notices={attachNotices} />
+
+      <NodeBacklinks nodeId={node.id} onOpenNode={onOpenNode} />
 
       <p className="text-xs text-muted-foreground">
         Created {formatDateTime(node.createdAt, timeZone)} · Revision {state.revision}

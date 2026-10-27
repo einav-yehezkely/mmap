@@ -119,6 +119,41 @@ export async function runSmokeTest(
     }),
   );
   checks.push(
+    await check('relationships, wikilinks, backlinks and search through the bridge', async () => {
+      const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { nodes, relationships, relationshipTypes, search } = window.mmap;
+          const a = (await nodes.create({ title: 'Smoke source' })).data;
+          const b = (await nodes.create({ title: 'Smoke target zebra' })).data;
+          const types = (await relationshipTypes.list()).data.items;
+          const dependsOn = types.find((t) => t.label === 'depends on');
+          const relatedTo = types.find((t) => t.label === 'related to');
+          const directed = await relationships.create({ sourceNodeId: a.id, targetNodeId: b.id, typeId: dependsOn.id });
+          if (!directed.ok || directed.data.source.id !== a.id) return 'directed relationship failed';
+          await relationships.create({ sourceNodeId: a.id, targetNodeId: b.id, typeId: relatedTo.id });
+          const reversed = await relationships.create({ sourceNodeId: b.id, targetNodeId: a.id, typeId: relatedTo.id });
+          if (reversed.ok || reversed.error.code !== 'DUPLICATE') return 'reversed undirected duplicate was not rejected';
+          const note = { type: 'doc', content: [{ type: 'paragraph', content: [
+            { type: 'text', text: 'Unicorn notes about ' },
+            { type: 'wikilink', attrs: { targetNodeId: b.id, label: 'the target' } } ] }] };
+          const saved = await nodes.update({ nodeId: a.id, expectedRevision: a.revision, changes: { note } });
+          if (!saved.ok) return 'saving a note with a wikilink failed: ' + saved.error.code;
+          const backlinks = await nodes.backlinks({ nodeId: b.id });
+          if (!backlinks.ok || backlinks.data.items[0]?.sourceNodeId !== a.id) return 'backlink missing';
+          const found = await search.query({ text: 'unicorn', limit: 10 });
+          if (!found.ok || found.data.items[0]?.nodeId !== a.id) return 'search did not find the note';
+          const lookup = await nodes.lookup({ text: 'smoke target' });
+          if (!lookup.ok || lookup.data.items[0]?.id !== b.id) return 'title lookup failed';
+          await nodes.delete({ nodeId: a.id, expectedRevision: saved.data.revision });
+          await nodes.delete({ nodeId: b.id, expectedRevision: b.revision });
+          return 'ok';
+        })()`)) as string;
+      if (outcome !== 'ok') {
+        throw new Error(outcome);
+      }
+    }),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",

@@ -26,8 +26,15 @@ import { normalizeLinkHref } from './link-policy';
 /**
  * Version of the note schema implemented by this module. Stored alongside each note so a future
  * schema change can migrate old documents explicitly instead of guessing their shape.
+ *
+ * - 1: initial schema (Phase 1).
+ * - 2: adds the `wikilink` inline node (PRD §5.4). Every version-1 document is a valid
+ *   version-2 document, so no conversion is needed when reading old notes.
  */
-export const NOTE_SCHEMA_VERSION = 1;
+export const NOTE_SCHEMA_VERSION = 2;
+
+/** Upper bound for a wikilink's visible label (what the user typed or picked). */
+export const MAX_WIKILINK_LABEL_LENGTH = 300;
 
 /**
  * Resource limits for a single note document.
@@ -95,7 +102,18 @@ export interface NoteInlineMathNode {
   attrs: { latex: string };
 }
 
-export type NoteInlineNode = NoteTextNode | NoteHardBreakNode | NoteInlineMathNode;
+/**
+ * A note reference (PRD §4.3, §5.4). Identity is `targetNodeId`, never the label: renaming the
+ * target keeps the link working, and the label stays as the author wrote it. A reference is not a
+ * semantic relationship and never creates one.
+ */
+export interface NoteWikilinkNode {
+  type: 'wikilink';
+  attrs: { targetNodeId: string; label: string };
+}
+
+export type NoteInlineNode =
+  NoteTextNode | NoteHardBreakNode | NoteInlineMathNode | NoteWikilinkNode;
 
 export interface NoteParagraphNode {
   type: 'paragraph';
@@ -336,6 +354,7 @@ const KNOWN_NODE_TYPES: ReadonlySet<string> = new Set([
   'text',
   'hardBreak',
   'inlineMath',
+  'wikilink',
 ]);
 
 const EMPTY_ATTRS: ReadonlyMap<string, unknown> = new Map();
@@ -617,6 +636,9 @@ function parseInline(value: unknown, depth: number, state: ParseState): NoteInli
     case 'inlineMath':
       expectLeaf(raw);
       return { type: 'inlineMath', attrs: { latex: readLatex(raw, state) } };
+    case 'wikilink':
+      expectLeaf(raw);
+      return { type: 'wikilink', attrs: readWikilinkAttrs(raw.attrs, state) };
     default:
       throw misplaced(raw.type, 'an inline node');
   }
@@ -784,6 +806,28 @@ function readLinkHref(attrs: ReadonlyMap<string, unknown>, state: ParseState): s
     throw invalid('A link must point to an absolute http, https or mailto URL.');
   }
   return chargeString(normalized, state, 'Link');
+}
+
+function readWikilinkAttrs(
+  attrs: ReadonlyMap<string, unknown>,
+  state: ParseState,
+): NoteWikilinkNode['attrs'] {
+  const targetNodeId = attrs.get('targetNodeId');
+  if (typeof targetNodeId !== 'string' || !isCanonicalUuid(targetNodeId)) {
+    throw invalid('A "wikilink" node requires a canonical lowercase UUID targetNodeId.');
+  }
+  const label = attrs.get('label');
+  if (
+    typeof label !== 'string' ||
+    label.trim().length === 0 ||
+    label.length > MAX_WIKILINK_LABEL_LENGTH ||
+    hasControlCharacter(label)
+  ) {
+    throw invalid(
+      `A "wikilink" label must be 1 to ${MAX_WIKILINK_LABEL_LENGTH} characters without control characters.`,
+    );
+  }
+  return { targetNodeId, label: chargeString(label, state, 'Link label') };
 }
 
 function readAttachmentAttrs(

@@ -40,6 +40,7 @@ import {
 } from './services/attachment-ipc-services';
 import { createExternalLinkService } from './services/external-link-service';
 import { createNodeIpcServices } from './services/node-ipc-services';
+import { createRelationshipIpcServices } from './services/relationship-ipc-services';
 import {
   createWorkspaceIpcServices,
   type NativeWorkspaceInteractions,
@@ -213,6 +214,7 @@ async function startApplication(): Promise<void> {
       'app:open-external-link': createExternalLinkService((url) => shell.openExternal(url)),
       ...createWorkspaceIpcServices(workspaces, nativeInteractions),
       ...createNodeIpcServices(workspaces),
+      ...createRelationshipIpcServices(workspaces),
       ...createAttachmentIpcServices({
         currentWorkspace: () => workspaces.current,
         maxAttachmentBytes: async () =>

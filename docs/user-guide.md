@@ -1,9 +1,10 @@
 # mmap user guide
 
 mmap is a private knowledge base for Windows. You write down ideas, concepts and sources as
-**nodes**, give each one a rich note, tag them, and attach files. Everything stays in a folder on
-your computer. mmap works without an internet connection, has no account, and sends nothing
-anywhere.
+**nodes**, give each one a rich note, tag them, attach files, connect them with typed
+**relationships**, link to other nodes from inside a note, and search everything you wrote.
+Everything stays in a folder on your computer. mmap works without an internet connection, has no
+account, and sends nothing anywhere.
 
 This guide covers what the current version can do. Features that are planned but not available
 yet are listed at the end.
@@ -110,6 +111,8 @@ and attached files. Several nodes can have the same title.
 - The **Library** lists every node in the workspace with its last update time and tags. Choose
   **Sort by**: Recently updated, Recently created, or Title (A–Z). Click **Load more** to see more
   nodes. Click a node to open it.
+- To find a node by what it says, use the **search box** at the top of the window (see
+  [Search](#search)).
 
 ### Saving is automatic
 
@@ -158,17 +161,21 @@ that restoring will replace those newer changes.
 ### Duplicating a node
 
 **Duplicate** creates a copy called "Original title (copy)" with the same summary, note and tags,
-and opens it. Attached files stay with the original node.
+and opens it. Attached files stay with the original node. Relationships are not copied. Links in
+the note are copied with the note, so the nodes it links to also list the copy under
+**Linked from**.
 
 ### Deleting a node
 
-**Delete…** first shows what will be affected, for example how many attached files will be
-deleted with the node. Deleting cannot be undone. The files you originally attached, wherever they
-are on your computer, are not affected.
+**Delete…** first shows what will be affected: how many relationships and attached files will be
+deleted with the node, and how many other notes link to it. Those links are not removed from the
+other notes; they stay readable and are marked as unresolved so you can repair them (see
+[Linking to other nodes](#linking-to-other-nodes)). Deleting cannot be undone. The files you
+originally attached, wherever they are on your computer, are not affected.
 
 ## Rich notes
 
-The **Note** area under the tags is a rich text editor. Use the toolbar above it:
+The **Note** area under the tags and relationships is a rich text editor. Use the toolbar above it:
 
 | Toolbar button                                   | What it does                                                                             |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
@@ -180,6 +187,7 @@ The **Note** area under the tags is a rich text editor. Use the toolbar above it
 | Quote, Code block                                | Quoted text and blocks of code                                                           |
 | Insert table                                     | Adds a table; inside a table you can add or remove rows and columns, or delete the table |
 | Inline formula, Display formula                  | Mathematics (see below)                                                                  |
+| Link to a node ([[)                              | Links to another node (see [Linking to other nodes](#linking-to-other-nodes))            |
 | Attach files                                     | Adds files to the node (see [Attachments](#attachments))                                 |
 | Undo, Redo (Ctrl+Z, Ctrl+Y)                      | Undo or redo your last changes                                                           |
 
@@ -190,14 +198,16 @@ line of text, for example `E = mc^2`. **Display formula** puts it on its own lin
 the result while you type. Click a formula later to edit it. For safety, LaTeX commands that create
 links or raw HTML (such as `\href`) are not available.
 
-### Links
+### Web links
 
-Links can point to web pages (`https://…` or `http://…`) and email addresses (`mailto:…`). Other
-kinds of links, such as links to files on your computer or to programs, are refused. Web addresses
-you type or paste become links automatically.
+Web links can point to web pages (`https://…` or `http://…`) and email addresses (`mailto:…`).
+Other kinds of links, such as links to files on your computer or to programs, are refused. Web
+addresses you type or paste become links automatically.
 
-- A normal click on a link only places the cursor, so you can edit the link text.
-- **Ctrl+click** a link to open it in your web browser or email program.
+- A normal click on a web link only places the cursor, so you can edit the link text.
+- **Ctrl+click** a web link to open it in your web browser or email program.
+
+Links to other nodes work differently; see [Linking to other nodes](#linking-to-other-nodes).
 
 ### Right-to-left and mixed text
 
@@ -210,6 +220,168 @@ work the same way.
 A note can be very long (up to about 2 MB, including its formatting). If a note becomes too large, mmap shows a
 message under the editor and does not save until you shorten it. Attached files do not count
 towards this limit.
+
+## Linking to other nodes
+
+You can link from a note to another node, wiki style. A link is a reference inside your text; it
+is **not** a relationship (see [Links and relationships are different](#links-and-relationships-are-different)).
+
+### Adding a link
+
+1. In the note, type `[[` (or click **Link to a node ([[)** in the toolbar). The brackets
+   disappear and a **Link to a node** window opens.
+2. Start typing the node's title. Titles that start with what you typed are listed first, then
+   titles that contain it. Use the arrow keys and Enter, or click.
+3. If the node does not exist yet, choose **Create a new node “…”** at the end of the list. mmap
+   creates the node with that title and links to it. A node is only ever created when you choose
+   this option.
+
+The link appears in the note as `[[title]]`, using the node's title at the moment you linked it.
+To show different text, fill in **Link text (optional)** in the same window before choosing the
+node; for example, link to "Photosynthesis" with the text "how plants make sugar".
+Links are always to one specific node you picked, so two nodes with the same title are never
+confused.
+
+### Following a link
+
+Click a link to open the linked node. (Web links need Ctrl+click; node links open with a normal
+click.)
+
+### Renaming keeps links working
+
+A link remembers which node it points to, not its title. If you rename the linked node, the link
+still opens it. The link text in your note stays as you wrote it; hovering over the link shows the
+node's current title.
+
+### Unresolved links and repair
+
+If the linked node is deleted, the link stays in your note so you can still read it, but it is
+shown struck through with a red dashed outline, and its tooltip says "Unresolved link". Click it
+to **Repair link**: choose another node (or create a new one), and the link points there from now
+on. The link text does not change.
+
+### Links and relationships are different
+
+Writing a link never creates a relationship between the two nodes. Links show up under
+**Linked from** on the node you link to; relationships are added only on purpose, in the
+**Relationships** section (see [Relationships](#relationships)).
+
+## Linked from (backlinks)
+
+The node panel has a **Linked from** section listing every other note that links to this node,
+with the title of that note and a short piece of text around the link. If a note links here
+several times, it is listed once with the number of links. Click a title to open that note.
+
+The list follows saved notes: when you remove a link from a note, the entry disappears once that
+note has been saved (about a second after you stop typing). A note that links to itself is not
+listed.
+
+## Relationships
+
+A **relationship** is a statement you make about two nodes, such as "Entropy _depends on_
+Probability". Relationships have a **type**, and every type is either:
+
+- **directed** (shown with an arrow, `→`): it reads from a source to a target. "A depends on B" is
+  not the same as "B depends on A", and both can exist; or
+- **undirected** (shown with a dash, `—`, and no arrow): it reads the same both ways. "A related
+  to B" and "B related to A" are the same relationship.
+
+Every workspace starts with five types: **related to** (undirected), **depends on**, **part of**,
+**example of** (directed) and **contradicts** (undirected).
+
+Relationships are only created when you add them yourself. Links in notes never create them.
+
+### Adding a relationship
+
+1. Open a node and find the **Relationships** section under the tags.
+2. Click **Add**.
+3. Choose the type. The form reads as a sentence: "This node", the type, then the other node. For
+   a directed type, this node is the source; click **Swap** if it should be the target instead.
+4. Type part of the other node's title in the field below and pick it from the list. (Creating a
+   new node from here is not possible; create it first with **New node**.)
+5. Optionally explain **Why are they related?** (up to 1,000 characters).
+6. Click **Add relationship**.
+
+mmap refuses:
+
+- a relationship from a node to itself;
+- a relationship that already exists with the same type and direction. For undirected types this
+  includes the reversed pair: if "A related to B" exists, "B related to A" is refused.
+
+Two nodes can still have several relationships of different types.
+
+### Reading relationships
+
+Each relationship is shown as a sentence. The node you are looking at is shown as **this node**;
+the other node is a link you can click to open it. Directed relationships show `— type →`,
+undirected ones `— type —`.
+
+### Changing and deleting
+
+- **Reverse** (directed relationships only) swaps source and target. It is refused if the reversed
+  relationship already exists.
+- The **type** menu on each relationship changes its type. If you change an undirected
+  relationship to a directed type, check the arrow afterwards and use **Reverse** if needed.
+- The **bin** button deletes the relationship after confirmation. Both nodes stay.
+
+The explanation you typed when adding a relationship is shown under it. It cannot be edited
+afterwards yet; delete and re-add the relationship to change it.
+
+### Relationship types
+
+Click **Types** in the Relationships section to manage types:
+
+- **Create** a type: enter a name (up to 60 characters) and choose **→ directed** or
+  **— undirected**. Names are unique regardless of capital letters.
+- **Rename** a type (the pencil). Every relationship keeps it.
+- **Archive** a type (the box). Existing relationships keep it and still show it, but it is no
+  longer offered for new relationships. **Restore** brings it back. Types are never deleted.
+- **Direction** can be changed only while no relationship uses the type. Once a type is in use, the
+  direction control is locked; create a new type with the other direction instead. mmap does this
+  so that existing relationships never change meaning.
+
+Each type shows how many relationships use it.
+
+## Search
+
+Use the **search box** at the top of the window, or press **Ctrl+K** to jump to it from anywhere.
+Results appear as you type, and Enter searches immediately.
+
+### What is searched
+
+Node titles, summaries and note text, including the text of links in notes. Attached files are
+not searched, except for their names where they appear in a note.
+
+### How matching works
+
+- **Every word must match.** `light interference` finds nodes that contain both words.
+- **The last word can be the start of a word.** `entro` finds "Entropy" while you are still
+  typing. Earlier words must be whole words.
+- **Capital letters do not matter.**
+- **Accents on Latin letters are ignored.** `cafe` finds "Café".
+- **Title matches come first.** Matches in the title count most, then matches in the summary,
+  then matches in the note text.
+- Punctuation and symbols are ignored, and words such as `OR`, `NOT` or `title:` are searched as
+  ordinary words.
+
+Each result shows the node's title and a short piece of the matching text with the matching words
+highlighted. Click a result to open the node. **Load more** shows the next 20 results; the count
+above the list says how many nodes match.
+
+### Filtering by tags
+
+Click tags in the **Filter** row above the results to keep only nodes that carry all selected
+tags. **Clear filters** removes them.
+
+### Known limitations
+
+- **Hebrew vowel points must match.** A word written with vowel points (niqqud) is found only
+  when you type it with the same points, and an unpointed search does not find the pointed
+  spelling. Unpointed Hebrew and Arabic text is found normally.
+- If you change nodes while browsing results, **Load more** can occasionally show a result twice
+  or skip one. Search again to refresh the list.
+- When you pick a node for a link or a relationship, the list matches titles more strictly than
+  search: accents must match, and capital letters are ignored only for the letters A–Z.
 
 ## Tags
 
@@ -289,13 +461,19 @@ The only automatic copy mmap makes today is a safety copy of the database before
 of mmap upgrades a workspace's storage format. It is placed in the workspace's `recovery` folder.
 This is not a general backup.
 
+The first time this version opens a workspace created by the previous version, it makes such a
+copy and upgrades the workspace so that notes can contain links to nodes. After that, the
+previous version of mmap can no longer open the workspace; it reports that the workspace was
+created by a newer version and changes nothing.
+
 ## Not available yet
 
 These features are planned for later versions:
 
-- **Search** (the search box is visible but disabled), relationships between nodes, and
-  `[[wikilinks]]` with backlinks.
 - **Mind maps** and the **knowledge graph**.
+- **Editing a relationship's explanation** after it was added, and creating relationships from
+  the graph.
+- **Choosing a different text for a node link** than the node's title.
 - **Timeline**: mmap already records when you create nodes and edit notes, but there is no view
   for it yet, and you cannot yet mark a node as reviewed.
 - **Export, import and backups** inside the app. Until then, quit mmap and copy the workspace

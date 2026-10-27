@@ -5,7 +5,8 @@
 
 import { Clock3, Library, Network, Settings, Workflow, type LucideIcon } from 'lucide-react';
 
-export type ViewId = 'library' | 'maps' | 'graph' | 'timeline' | 'settings';
+/** `search` is reached from the search box, not from the sidebar. */
+export type ViewId = 'library' | 'maps' | 'graph' | 'timeline' | 'settings' | 'search';
 
 export interface NavigationItem {
   readonly id: ViewId;

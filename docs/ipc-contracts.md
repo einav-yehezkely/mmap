@@ -7,16 +7,17 @@ add a channel, and lists every channel that exists. For the end-to-end path of a
 
 ## The contract catalogue
 
-| File                                     | Contents                                                                                        |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `packages/contracts/src/channels.ts`     | `IPC_CHANNELS`: the allow-list of channel names. No dependencies, so the preload can import it. |
-| `packages/contracts/src/app-info.ts`     | `app:*` schemas (diagnostics, external links).                                                  |
-| `packages/contracts/src/workspace.ts`    | `workspace:*` schemas and `WORKSPACE_ERROR_CODES`.                                              |
-| `packages/contracts/src/nodes.ts`        | `nodes:*` and `tags:*` schemas.                                                                 |
-| `packages/contracts/src/attachments.ts`  | `attachments:*` and `preferences:*` schemas, the preview URL scheme.                            |
-| `packages/contracts/src/catalogue.ts`    | `IPC_CATALOGUE`: pairs each channel with `{ request, response }` schemas.                       |
-| `packages/contracts/src/envelope.ts`     | `IpcResult<Data>`, `ipcErrorSchema`, the combined list of error codes.                          |
-| `packages/contracts/src/renderer-api.ts` | `MmapRendererApi`: the type of `window.mmap`.                                                   |
+| File                                      | Contents                                                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/channels.ts`      | `IPC_CHANNELS`: the allow-list of channel names. No dependencies, so the preload can import it. |
+| `packages/contracts/src/app-info.ts`      | `app:*` schemas (diagnostics, external links).                                                  |
+| `packages/contracts/src/workspace.ts`     | `workspace:*` schemas and `WORKSPACE_ERROR_CODES`.                                              |
+| `packages/contracts/src/nodes.ts`         | `nodes:*`, `search:*` and `tags:*` schemas.                                                     |
+| `packages/contracts/src/relationships.ts` | `relationship-types:*` and `relationships:*` schemas.                                           |
+| `packages/contracts/src/attachments.ts`   | `attachments:*` and `preferences:*` schemas, the preview URL scheme.                            |
+| `packages/contracts/src/catalogue.ts`     | `IPC_CATALOGUE`: pairs each channel with `{ request, response }` schemas.                       |
+| `packages/contracts/src/envelope.ts`      | `IpcResult<Data>`, `ipcErrorSchema`, the combined list of error codes.                          |
+| `packages/contracts/src/renderer-api.ts`  | `MmapRendererApi`: the type of `window.mmap`.                                                   |
 
 Rules the code relies on:
 
@@ -59,6 +60,15 @@ or written. It rejects unknown node types and marks, unsafe link schemes, protot
 oversized documents with `VALIDATION_FAILED`. Duplicating that recursive schema in zod would create
 two rule sets that could drift apart (PRD §10.1). The response side uses a loose `z.custom` check
 for `note` for the same reason; stored notes are parsed again by the domain when they are read.
+Wikilinks are part of the note JSON (note schema version 2), so they are validated by the same
+parser: a canonical UUID `targetNodeId` and a 1–300 character `label`, unknown attributes dropped.
+
+### Search text is never query syntax
+
+`search:query` and `nodes:lookup` take the user's text as a plain string. The storage adapter turns
+it into quoted FTS5 terms or an escaped `LIKE` pattern; operators such as `OR`, `NEAR(...)`,
+`title:` or `*` typed by the user are matched as literal words. See
+[architecture.md](architecture.md#search).
 
 The transport limits on titles (1,000 characters) and summaries (10,000) are deliberately
 generous. The domain applies the real limits (300 and 2,000,
@@ -93,13 +103,13 @@ from `packages/contracts/src/envelope.ts` and are produced by the IPC handler it
 
 | Code                             | Source    | Meaning                                                                                                        |
 | -------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
-| `VALIDATION_FAILED`              | Domain    | Input failed a domain rule: empty or too long title, invalid tag name, invalid note document.                  |
+| `VALIDATION_FAILED`              | Domain    | Input failed a domain rule: empty or too long title, invalid label, invalid note, archived type, bad cursor.   |
 | `NOT_FOUND`                      | Domain    | The record does not exist in the open workspace. IDs from another workspace also produce this.                 |
 | `REVISION_CONFLICT`              | Domain    | `expectedRevision` is not the stored revision; a newer version was saved first. Nothing was changed.           |
-| `DUPLICATE`                      | Domain    | A uniqueness rule was violated, for example creating or renaming a tag to an existing name.                    |
-| `INVARIANT_VIOLATION`            | Domain    | A business invariant was violated, for example a self-link. No Phase 1 channel produces it yet.                |
-| `WORKSPACE_MISMATCH`             | Domain    | A record from another workspace was referenced. No Phase 1 channel produces it (services answer `NOT_FOUND`).  |
-| `WORKSPACE_MISSING`              | Workspace | The folder or drive is gone, or no workspace is open when a node, tag or attachment call arrives.              |
+| `DUPLICATE`                      | Domain    | A uniqueness rule was violated: a tag or relationship type name, or a relationship that already exists.        |
+| `INVARIANT_VIOLATION`            | Domain    | A business invariant was violated: a self-link, or changing the direction of a relationship type in use.       |
+| `WORKSPACE_MISMATCH`             | Domain    | A record from another workspace was referenced. No channel produces it yet (services answer `NOT_FOUND`).      |
+| `WORKSPACE_MISSING`              | Workspace | The folder or drive is gone, or no workspace is open when a workspace-data call arrives.                       |
 | `WORKSPACE_INVALID`              | Workspace | The folder is not an mmap workspace, its manifest is damaged, or the open workspace was asked to be forgotten. |
 | `WORKSPACE_TOO_NEW`              | Workspace | The manifest or database was written by a newer mmap version.                                                  |
 | `WORKSPACE_LOCKED`               | Workspace | Another live process on this computer, or another computer, holds the workspace lock.                          |
@@ -171,11 +181,12 @@ that needs it and document it here.
 
 ## Channel reference
 
-There are 29 channels. The renderer method is `window.mmap.<group>.<method>`; for example
-`nodes:preview-delete` is `window.mmap.nodes.previewDelete`. Every channel can also fail with
+There are 44 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+`nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
+is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
-the other codes. Node, tag and attachment channels return `WORKSPACE_MISSING` when no workspace is
-open.
+the other codes. Node, search, tag, relationship and attachment channels return
+`WORKSPACE_MISSING` when no workspace is open.
 
 ### App
 
@@ -227,26 +238,111 @@ state. Errors: `create`, `open-folder` and `open-recent` can return any workspac
 Service: `apps/desktop/src/main/services/node-ipc-services.ts`, which calls the domain
 `KnowledgeNodeService` and `TagService`.
 
-| Channel                | Purpose                                                    | Request                                                              | Response                                                          |
-| ---------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `nodes:list`           | One page of the Library.                                   | `{ sort, limit (1–200), cursor?, tagIds? (≤ 20) }`                   | `{ items: NodeSummary[], nextCursor, totalCount }`                |
-| `nodes:get`            | Load a node for the detail panel.                          | `{ nodeId }`                                                         | `NodeView`                                                        |
-| `nodes:create`         | Create a node (revision 1, empty note).                    | `{ title, summary? }`                                                | `NodeView`                                                        |
-| `nodes:update`         | Autosave: change title, summary and/or note.               | `{ nodeId, expectedRevision, changes: { title?, summary?, note? } }` | `NodeView` with the new revision                                  |
-| `nodes:duplicate`      | Copy title (as `<title> (copy)`), summary, note and tags.  | `{ nodeId }`                                                         | `NodeView` of the copy                                            |
-| `nodes:preview-delete` | Count what deleting a node would affect.                   | `{ nodeId }`                                                         | `{ relationships, referencingNotes, mapPlacements, attachments }` |
-| `nodes:delete`         | Delete a node and its managed attachment files.            | `{ nodeId, expectedRevision }`                                       | `{ deleted: true }`                                               |
-| `nodes:add-tag`        | Assign a tag by label, creating it if needed (idempotent). | `{ nodeId, label }`                                                  | `{ tags: TagSummary[] }`                                          |
-| `nodes:remove-tag`     | Remove a tag from a node (idempotent).                     | `{ nodeId, tagId }`                                                  | `{ tags: TagSummary[] }`                                          |
+| Channel                | Purpose                                                    | Request                                                              | Response                                                                  |
+| ---------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `nodes:list`           | One page of the Library.                                   | `{ sort, limit (1–200), cursor?, tagIds? (≤ 20) }`                   | `{ items: NodeSummary[], nextCursor, totalCount }`                        |
+| `nodes:get`            | Load a node for the detail panel.                          | `{ nodeId }`                                                         | `NodeView`                                                                |
+| `nodes:create`         | Create a node (revision 1, empty note).                    | `{ title, summary? }`                                                | `NodeView`                                                                |
+| `nodes:update`         | Autosave: change title, summary and/or note.               | `{ nodeId, expectedRevision, changes: { title?, summary?, note? } }` | `NodeView` with the new revision                                          |
+| `nodes:duplicate`      | Copy title (as `<title> (copy)`), summary, note and tags.  | `{ nodeId }`                                                         | `NodeView` of the copy                                                    |
+| `nodes:preview-delete` | Count what deleting a node would affect.                   | `{ nodeId }`                                                         | `{ relationships, referencingNotes, mapPlacements, attachments }`         |
+| `nodes:delete`         | Delete a node and its managed attachment files.            | `{ nodeId, expectedRevision }`                                       | `{ deleted: true }`                                                       |
+| `nodes:lookup`         | Title lookup for node pickers.                             | `{ text (≤ 200), limit? (1–50, default 8), excludeNodeIds? (≤ 50) }` | `{ items: { id, title }[] }`                                              |
+| `nodes:backlinks`      | Notes that link to this node ("Linked from").              | `{ nodeId }`                                                         | `{ items: { sourceNodeId, sourceTitle, label, excerpt, occurrences }[] }` |
+| `nodes:resolve-links`  | Current titles of wikilink targets that still exist.       | `{ nodeIds (≤ 1,000) }`                                              | `{ items: { id, title }[] }`                                              |
+| `nodes:add-tag`        | Assign a tag by label, creating it if needed (idempotent). | `{ nodeId, label }`                                                  | `{ tags: TagSummary[] }`                                                  |
+| `nodes:remove-tag`     | Remove a tag from a node (idempotent).                     | `{ nodeId, tagId }`                                                  | `{ tags: TagSummary[] }`                                                  |
 
 `sort` is `updated-desc`, `created-desc` or `title-asc`. `cursor` is the opaque `nextCursor` of the
 previous page (keyset pagination). `tagIds` keeps only nodes that carry all the given tags, and
 `totalCount` reflects the filter. `NodeSummary` has `id`, `title`, `createdAt`, `updatedAt` and
 `tags`. `NodeView` adds `summary`, `note` (a validated note document) and `revision`.
 
-Errors: `NOT_FOUND` for unknown nodes; `VALIDATION_FAILED` for invalid titles, summaries, notes or
-tag labels; `REVISION_CONFLICT` for `update` and `delete` with an outdated `expectedRevision`.
-Tag changes do not bump the node revision.
+`nodes:lookup` returns titles that start with the text first, then titles that contain it
+elsewhere; ties are ordered by title length, title and ID. Matching is case-insensitive for ASCII
+letters only, and `%`, `_` and `\` match literally. Empty or whitespace-only text returns no items.
+`excludeNodeIds` removes nodes already chosen (for example the current node in the relationship
+form).
+
+`nodes:backlinks` returns one item per source note, ordered by source title, with the label and
+excerpt of the first link in that note and the number of links (`occurrences`). A note that links
+to itself is not listed. `nodes:resolve-links` returns only the IDs that exist in the open
+workspace; an ID missing from the answer is a deleted (or foreign) target that the editor shows as
+an unresolved link. It never fails with `NOT_FOUND`.
+
+Errors: `NOT_FOUND` for unknown nodes (including `backlinks`); `VALIDATION_FAILED` for invalid
+titles, summaries, notes or tag labels; `REVISION_CONFLICT` for `update` and `delete` with an
+outdated `expectedRevision`. Tag changes do not bump the node revision.
+
+### Search
+
+Service: `apps/desktop/src/main/services/node-ipc-services.ts`, which calls `SqliteSearchIndex`
+(`packages/storage-sqlite/src/search/sqlite-search-index.ts`) through the domain `SearchIndex`
+port.
+
+| Channel        | Purpose                                                   | Request                                                      | Response                                                          |
+| -------------- | --------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `search:query` | Ranked full-text search over titles, summaries and notes. | `{ text (≤ 1,000), tagIds? (≤ 20), limit (1–100), cursor? }` | `{ items: { nodeId, title, snippet }[], nextCursor, totalCount }` |
+
+`snippet` is an array of `{ text, isMatch }` segments, never HTML; the renderer wraps matched
+segments in `<mark>` elements as text. `tagIds` keeps only nodes that carry all the given tags, and
+`totalCount` reflects the filter. Text without any letter or digit returns an empty page, not an
+error. `cursor` is the opaque `nextCursor` of the previous page; unlike `nodes:list` it encodes a
+result offset, because a BM25 score cannot serve as a stable keyset (see
+[architecture.md](architecture.md#search)). A cursor that was not produced by the service returns
+`VALIDATION_FAILED`.
+
+### Relationship types
+
+Service: `apps/desktop/src/main/services/relationship-ipc-services.ts`, which calls the domain
+`RelationshipService` (`packages/domain/src/application/relationship-service.ts`).
+
+| Channel                                 | Purpose                                        | Request                      | Response                            |
+| --------------------------------------- | ---------------------------------------------- | ---------------------------- | ----------------------------------- |
+| `relationship-types:list`               | All types of the workspace, with usage counts. | none                         | `{ items: RelationshipTypeView[] }` |
+| `relationship-types:create`             | Create a custom type.                          | `{ label, directionality }`  | `RelationshipTypeView`              |
+| `relationship-types:rename`             | Rename a type; relationships keep it.          | `{ typeId, label }`          | `RelationshipTypeView`              |
+| `relationship-types:set-archived`       | Archive or restore a type.                     | `{ typeId, archived }`       | `RelationshipTypeView`              |
+| `relationship-types:set-directionality` | Change direction; allowed only while unused.   | `{ typeId, directionality }` | `RelationshipTypeView`              |
+
+`RelationshipTypeView` has `id`, `label`, `directionality` (`directed` or `undirected`),
+`isArchived`, `isBuiltin` and `usageCount`. Labels follow the tag label rules (trimmed, collapsed
+whitespace, at most 60 characters, unique by their NFKC lower-cased form). Types are listed by
+normalized label. There is no delete channel: a type is archived instead.
+
+Errors: `DUPLICATE` when `create` or `rename` clashes with another type's name;
+`VALIDATION_FAILED` for an empty, too long or control-character label; `NOT_FOUND` for unknown
+types; `INVARIANT_VIOLATION` from `set-directionality` when the type is used by at least one
+relationship (the message tells the user to create a new type instead). Setting the same
+direction again succeeds.
+
+### Relationships
+
+Service: `apps/desktop/src/main/services/relationship-ipc-services.ts`.
+
+| Channel                       | Purpose                                                   | Request                                                                     | Response                        |
+| ----------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------- |
+| `relationships:list-for-node` | Every relationship in which the node is source or target. | `{ nodeId }`                                                                | `{ items: RelationshipView[] }` |
+| `relationships:create`        | Create a relationship (explicit user action only).        | `{ sourceNodeId, targetNodeId, typeId, description? }`                      | `RelationshipView`              |
+| `relationships:update`        | Change type or description, or reverse a directed one.    | `{ relationshipId, changes: { typeId?, description?, reverseDirection? } }` | `RelationshipView`              |
+| `relationships:delete`        | Delete a relationship. Both nodes stay.                   | `{ relationshipId }`                                                        | `{ deleted: true }`             |
+
+`RelationshipView` has `id`, `typeId`, `typeLabel`, `directionality`, `description`,
+`source: { id, title }`, `target: { id, title }` and `createdAt`. For an undirected type, `source`
+and `target` are the stored canonical order (lower ID first), not the order the request used.
+`list-for-node` is ordered by type label, then by the other node's title. `reverseDirection` is
+ignored for undirected types. An empty description is stored as `null`; the domain limit is 1,000
+characters (the transport allows 10,000).
+
+Errors:
+
+- `DUPLICATE`: a relationship with the same stored endpoints and type already exists. This covers
+  an exact repeat, the reversed copy of an undirected relationship, and an `update` (type change
+  or reversal) that would collide with another relationship.
+- `INVARIANT_VIOLATION`: source and target are the same node.
+- `VALIDATION_FAILED`: the chosen type is archived (on `create`, or when `update` switches to an
+  archived type; keeping the current archived type is allowed), or the description is too long.
+- `NOT_FOUND`: unknown relationship, type or node, including IDs from another workspace.
 
 ### Tags
 

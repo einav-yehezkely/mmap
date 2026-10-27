@@ -155,3 +155,25 @@ describe('extractPlainText', () => {
     expect(extractPlainText(note)).toBe('שלום \u200fעולם\nemoji 👩\u200d💻 and e\u0301');
   });
 });
+
+describe('extractPlainText: wikilinks', () => {
+  it('contributes the label, so search finds what the reader sees', () => {
+    expect(
+      extractPlainText({
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'See ' },
+              {
+                type: 'wikilink',
+                attrs: { targetNodeId: '3f2c9a4e-1b7d-4c2e-9f00-0123456789ab', label: 'Entropy' },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe('See Entropy');
+  });
+});

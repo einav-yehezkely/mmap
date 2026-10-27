@@ -40,8 +40,14 @@ export interface MmapRendererApi {
     readonly duplicate: BridgeCall<'nodes:duplicate'>;
     readonly previewDelete: BridgeCall<'nodes:preview-delete'>;
     readonly delete: BridgeCall<'nodes:delete'>;
+    readonly lookup: BridgeCall<'nodes:lookup'>;
+    readonly backlinks: BridgeCall<'nodes:backlinks'>;
+    readonly resolveLinks: BridgeCall<'nodes:resolve-links'>;
     readonly addTag: BridgeCall<'nodes:add-tag'>;
     readonly removeTag: BridgeCall<'nodes:remove-tag'>;
+  };
+  readonly search: {
+    readonly query: BridgeCall<'search:query'>;
   };
   readonly tags: {
     readonly list: BridgeCall<'tags:list'>;
@@ -58,5 +64,18 @@ export interface MmapRendererApi {
   readonly preferences: {
     readonly get: BridgeCall<'preferences:get'>;
     readonly update: BridgeCall<'preferences:update'>;
+  };
+  readonly relationshipTypes: {
+    readonly list: BridgeCall<'relationship-types:list'>;
+    readonly create: BridgeCall<'relationship-types:create'>;
+    readonly rename: BridgeCall<'relationship-types:rename'>;
+    readonly setArchived: BridgeCall<'relationship-types:set-archived'>;
+    readonly setDirectionality: BridgeCall<'relationship-types:set-directionality'>;
+  };
+  readonly relationships: {
+    readonly listForNode: BridgeCall<'relationships:list-for-node'>;
+    readonly create: BridgeCall<'relationships:create'>;
+    readonly update: BridgeCall<'relationships:update'>;
+    readonly delete: BridgeCall<'relationships:delete'>;
   };
 }
