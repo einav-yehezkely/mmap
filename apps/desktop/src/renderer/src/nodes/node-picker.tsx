@@ -1,6 +1,6 @@
 /**
  * Node picker: an accessible combobox (WAI-ARIA 1.2 pattern) backed by the deterministic title
- * lookup (PRD §5.8). Used to choose relationship endpoints and, later, wikilink targets.
+ * lookup (PRD §5.8). Used to choose relationship endpoints and wikilink targets.
  *
  * Keyboard: type to search, ArrowDown/ArrowUp to move, Enter to choose, Escape to clear.
  * Lookups are debounced and stale responses are ignored, so fast typing never shows results

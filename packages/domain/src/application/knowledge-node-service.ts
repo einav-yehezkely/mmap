@@ -282,8 +282,9 @@ export function createKnowledgeNodeService(
     duplicate: (nodeId) =>
       transactions.runInTransaction(async () => {
         const source = await toView(await requireNode(nodeId));
-        // Copies content and tags. Relationships, map placements and references are not
-        // duplicated: they describe the original node's identity and position (PRD §4).
+        // Copies content, tags and the note's outgoing links (the copy's references are derived
+        // from its note like any other). Relationships and map placements are not duplicated:
+        // they describe the original node's identity and position (PRD §4).
         const copy = await insertNode({
           title: duplicateTitle(source.title),
           summary: source.summary,

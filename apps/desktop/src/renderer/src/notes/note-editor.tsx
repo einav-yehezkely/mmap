@@ -229,13 +229,9 @@ export function NoteEditor({
             setWikilinkDialog(null);
             editor.commands.focus();
           }}
-          onChoose={(target) => {
+          onChoose={(target, label) => {
             if (wikilinkDialog.mode === 'insert') {
-              editor
-                .chain()
-                .focus()
-                .insertWikilink({ targetNodeId: target.id, label: target.title })
-                .run();
+              editor.chain().focus().insertWikilink({ targetNodeId: target.id, label }).run();
             } else {
               editor.chain().focus().retargetWikilink(wikilinkDialog.position, target.id).run();
             }
@@ -644,16 +640,23 @@ function WikilinkDialog({
 }: {
   mode: 'insert' | 'repair';
   onClose: () => void;
-  onChoose: (target: PickedNode) => void;
+  /** Called with the chosen node and the link text (the node title unless the user typed one). */
+  onChoose: (target: PickedNode, label: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [linkText, setLinkText] = useState('');
+  const linkTextId = useId();
+  /** PRD §5.4 "[[target|label]]": a custom text, or the node title when left empty. */
+  const labelFor = (target: PickedNode) =>
+    linkText.trim() === '' ? target.title : linkText.trim();
 
   const createAndChoose = async (title: string) => {
     setError(null);
     try {
       const created = await unwrap(window.mmap.nodes.create({ title }));
       notifyNodesChanged();
-      onChoose({ id: created.id, title: created.title });
+      const picked = { id: created.id, title: created.title };
+      onChoose(picked, labelFor(picked));
     } catch (caught) {
       setError(errorMessage(caught));
     }
@@ -670,16 +673,29 @@ function WikilinkDialog({
           <DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">
             {mode === 'insert'
               ? 'Choose the node to link to, or create a new one. Links do not create relationships.'
-              : 'The node this link pointed to no longer exists. Choose another node; the link text stays the same.'}
+              : 'The node this link pointed to no longer exists. Choose another node or create one; the link text stays the same.'}
           </DialogPrimitive.Description>
+          {mode === 'insert' && (
+            <div className="mt-4 space-y-1">
+              <label htmlFor={linkTextId} className="text-sm">
+                Link text (optional)
+              </label>
+              <Input
+                id={linkTextId}
+                dir="auto"
+                value={linkText}
+                maxLength={300}
+                placeholder="Defaults to the node title"
+                onChange={(event) => setLinkText(event.target.value)}
+              />
+            </div>
+          )}
           <div className="mt-4">
             <NodePicker
               label="Node to link to"
               autoFocus
-              onPick={onChoose}
-              {...(mode === 'insert'
-                ? { onCreateNew: (title: string) => void createAndChoose(title) }
-                : {})}
+              onPick={(target) => onChoose(target, labelFor(target))}
+              onCreateNew={(title: string) => void createAndChoose(title)}
             />
           </div>
           {error && (

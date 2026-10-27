@@ -144,6 +144,16 @@ export function NodeRelationships({ nodeId, onOpenNode }: NodeRelationshipsProps
                 )
               }
               onDelete={() => setConfirmDelete(item)}
+              onSaveDescription={(description) =>
+                run(() =>
+                  unwrap(
+                    window.mmap.relationships.update({
+                      relationshipId: item.id,
+                      changes: { description },
+                    }),
+                  ),
+                )
+              }
             />
           ))}
         </ul>
@@ -191,6 +201,7 @@ function RelationshipRow({
   onOpenNode,
   onReverse,
   onChangeType,
+  onSaveDescription,
   onDelete,
 }: {
   item: RelationshipViewDto;
@@ -199,9 +210,13 @@ function RelationshipRow({
   onOpenNode: (nodeId: string) => void;
   onReverse: () => void;
   onChangeType: (typeId: string) => void;
+  onSaveDescription: (description: string | null) => Promise<void>;
   onDelete: () => void;
 }) {
   const typeSelectId = useId();
+  const descriptionFieldId = useId();
+  /** The description being edited, or null when not editing. */
+  const [descriptionDraft, setDescriptionDraft] = useState<string | null>(null);
   const directed = item.directionality === 'directed';
   const end = (node: { id: string; title: string }) =>
     node.id === currentNodeId ? (
@@ -229,10 +244,41 @@ function RelationshipRow({
         {end(item.target)}
         <span className="sr-only">{directed ? '(directed)' : '(undirected, no direction)'}</span>
       </p>
-      {item.description && (
-        <p dir="auto" className="text-xs text-muted-foreground">
-          {item.description}
-        </p>
+      {descriptionDraft === null ? (
+        item.description && (
+          <p dir="auto" className="text-xs text-muted-foreground">
+            {item.description}
+          </p>
+        )
+      ) : (
+        <form
+          className="flex items-center gap-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onSaveDescription(descriptionDraft.trim() || null).then(() =>
+              setDescriptionDraft(null),
+            );
+          }}
+        >
+          <label htmlFor={descriptionFieldId} className="sr-only">
+            Why are they related?
+          </label>
+          <Input
+            id={descriptionFieldId}
+            dir="auto"
+            autoFocus
+            value={descriptionDraft}
+            maxLength={1_000}
+            onChange={(event) => setDescriptionDraft(event.target.value)}
+            className="h-7 text-xs"
+          />
+          <Button type="submit" size="sm">
+            Save
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setDescriptionDraft(null)}>
+            Cancel
+          </Button>
+        </form>
       )}
       <div className="flex items-center gap-1">
         <label htmlFor={typeSelectId} className="sr-only">
@@ -251,6 +297,15 @@ function RelationshipRow({
             </option>
           ))}
         </select>
+        {descriptionDraft === null && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDescriptionDraft(item.description ?? '')}
+          >
+            {item.description ? 'Edit note' : 'Add note'}
+          </Button>
+        )}
         {directed && (
           <Button variant="ghost" size="sm" onClick={onReverse} title="Swap source and target">
             <ArrowLeftRight aria-hidden="true" />

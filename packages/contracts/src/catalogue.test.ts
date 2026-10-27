@@ -44,3 +44,22 @@ describe('ipcErrorSchema', () => {
     expect(ipcErrorSchema.safeParse({ code, message: 'No.' }).success).toBe(expected);
   });
 });
+
+describe('hostile request payloads (PRD §11 security tests)', () => {
+  // Every channel must reject payloads that are not its request shape: raw strings (e.g. SQL),
+  // arrays, objects carrying unexpected properties such as paths, null and numbers.
+  const hostilePayloads: readonly unknown[] = [
+    'SELECT * FROM knowledge_nodes',
+    ['C:/Windows/System32'],
+    { path: 'C:/Windows/System32', unexpected: true },
+    null,
+    42,
+  ];
+
+  it.each(Object.keys(IPC_CATALOGUE))('%s rejects hostile payloads', (channel) => {
+    const { request } = IPC_CATALOGUE[channel as keyof typeof IPC_CATALOGUE];
+    for (const payload of hostilePayloads) {
+      expect(request.safeParse(payload).success).toBe(false);
+    }
+  });
+});

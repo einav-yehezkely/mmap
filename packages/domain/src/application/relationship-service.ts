@@ -302,8 +302,8 @@ export function createRelationshipService(
         };
         await assertNotDuplicate(record, type.label);
         await relationships.insert(record);
-        // PRD §5.9: relationship creation is recorded learning activity, attributed to the node
-        // the user started from.
+        // PRD §5.9: relationship creation is recorded learning activity, attributed to the
+        // relationship's source node (for undirected types, the canonical first endpoint).
         await timeline.insert({
           id: ids.newId() as TimelineEventId,
           workspaceId,

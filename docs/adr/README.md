@@ -55,6 +55,7 @@ Each serious alternative and the reason it was not chosen.
 | [0005](0005-workspace-location-and-supported-filesystems.md) | Workspace location and supported filesystems | Accepted | 2026-10-26 |
 | [0006](0006-backup-policy.md)                                | Backup policy                                | Accepted | 2026-10-26 |
 | [0007](0007-database-migrations-strategy.md)                 | Database migrations strategy                 | Accepted | 2026-10-26 |
+| [0008](0008-wikilinks-and-note-schema-v2.md)                 | Wikilinks and note schema version 2          | Accepted | 2026-10-27 |
 
 Assumption: ADR-0002 and ADR-0007 are written separately; the file names above are the expected
 names and should be corrected here if the final files differ.

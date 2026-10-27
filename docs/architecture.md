@@ -1,28 +1,32 @@
 # Architecture overview
 
 This page explains how the code is organized, how a request travels from the UI to the storage
-engine, how the Phase 1 features (workspaces, nodes, notes, tags, attachments) work, and how the
-security baseline from [ADR-0003](adr/0003-electron-version-and-security-baseline.md) is
-implemented. It describes the code on branch `phase-1-knowledge-base`; later phases are listed
-separately at the end. It is a reviewer-level overview: follow the file references for details.
+engine, how the Phase 1 features (workspaces, nodes, notes, tags, attachments) and the Phase 2
+features (relationships, wikilinks and backlinks, search) work, and how the security baseline from
+[ADR-0003](adr/0003-electron-version-and-security-baseline.md) is implemented. It describes the
+code on branch `phase-2-connections`; later phases are listed separately at the end. It is a
+reviewer-level overview: follow the file references for details.
 
 ## Packages and dependency rules
 
 The repository is an npm-workspaces monorepo
 ([ADR-0001](adr/0001-monorepo-and-module-boundaries.md)).
 
-| Package                   | Responsibility                                                                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents and link policy, labels, attachment file-type policy, timeline sessions, application services |
-| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                           |
-| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories                                                            |
-| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                |
+| Package                   | Responsibility                                                                                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, labels, attachment file-type policy, timeline sessions, application services |
+| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                    |
+| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories, FTS5 search index                                                                                  |
+| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                         |
 
 Application services live in `packages/domain/src/application/` (`workspace-service.ts`,
-`knowledge-node-service.ts`, `tag-service.ts`, `attachment-service.ts`). They depend only on ports
-(`packages/domain/src/ports/`), so the same services run against SQLite today and could run
-against another adapter later. The SQLite implementations of those ports are in
-`packages/storage-sqlite/src/repositories/`.
+`knowledge-node-service.ts`, `tag-service.ts`, `attachment-service.ts`,
+`relationship-service.ts`). They depend only on ports (`packages/domain/src/ports/`), so the same
+services run against SQLite today and could run against another adapter later. The SQLite
+implementations of those ports are in `packages/storage-sqlite/src/repositories/`, and the search
+port (`ports/search.ts`) is implemented in `packages/storage-sqlite/src/search/`. All of them are
+wired per open workspace in `createWorkspaceServices`
+(`apps/desktop/src/main/workspaces/open-workspace.ts`).
 
 Allowed dependency directions (arrows point at what a package may import):
 
@@ -102,7 +106,7 @@ Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 On quit, `before-quit` is delayed until `WorkspaceManager.close()` has flushed queued writes,
 checkpointed the WAL and released the workspace lock.
 
-### Current scope (Phase 1)
+### Current scope (Phases 1 and 2)
 
 The renderer (`apps/desktop/src/renderer/src/App.tsx`) shows a workspace gate: while no workspace
 is open, `WorkspaceSetupView` explains why and offers create, open and recent workspaces. Once a
@@ -110,20 +114,27 @@ workspace is open, the `Workbench` shows the five navigation areas from PRD §6
 (`src/renderer/src/navigation.ts`). The `Workbench` is rendered with `key={workspace.id}`, so
 switching workspaces discards all view state of the previous one.
 
-- **Library** (`nodes/library-view.tsx`): every node with three sort orders, tag filters,
-  "Load more" paging and totals.
-- **Node detail panel** (`nodes/node-detail-panel.tsx`): title, summary, tags, rich note,
-  attachments, save status, recovery and conflict banners, duplicate and delete.
+- **Library** (`nodes/library-view.tsx`): every node with three sort orders, tag filters
+  (`nodes/tag-filter-bar.tsx`, shared with search), "Load more" paging and totals.
+- **Search** (`nodes/search-view.tsx`): reached from the search box in the header, not from the
+  sidebar (`ViewId` `search`). Typing switches to it; the query runs 250 ms after the last
+  keystroke or at once on Enter. Ctrl+K (Cmd+K) focuses the box from anywhere.
+- **Node detail panel** (`nodes/node-detail-panel.tsx`): title, summary, tags, relationships
+  (`relationships/node-relationships.tsx`), rich note with wikilinks, attachments, backlinks
+  (`nodes/node-backlinks.tsx`), save status, recovery and conflict banners, duplicate and delete.
 - **Settings** (`views/settings-view.tsx`): workspace name, location and switching, attachment
   size limit, diagnostics.
-- Mind Maps, Knowledge Graph and Timeline show an empty state naming their phase. The search box
-  is visible but disabled until Phase 2.
+- Mind Maps, Knowledge Graph and Timeline show an empty state naming their phase.
+
+Views that show data owned by other nodes (relationships, backlinks, search results) reload when
+`notifyNodesChanged` fires (`nodes/node-events.ts`), for example after a node is renamed, created
+from the wikilink picker, or deleted.
 
 The renderer's top level is wrapped in an error boundary (`components/error-boundary.tsx`).
 
 ## Request flow: one IPC call end to end
 
-This is the full path of `app:get-info`, the pattern every channel follows. The other 28 channels
+This is the full path of `app:get-info`, the pattern every channel follows. The other 43 channels
 are listed in [ipc-contracts.md](ipc-contracts.md#channel-reference).
 
 1. **Renderer.** `SettingsView` (`src/renderer/src/views/settings-view.tsx`) calls
@@ -336,8 +347,9 @@ PRD §5.3 and §8.
 1. **Editor.** `NoteEditor` (`apps/desktop/src/renderer/src/notes/note-editor.tsx`) uses Tiptap
    with the extensions in `notes/editor-extensions.ts`: StarterKit (headings, bold, italic,
    underline, strike, code, lists, quotes, code blocks, undo), task lists, tables, inline and
-   block math, and the attachment node (`notes/attachment-node.ts`). Each paragraph gets
-   `dir="auto"` for bidirectional text.
+   block math, the attachment node (`notes/attachment-node.ts`) and the wikilink node
+   (`notes/wikilink-node.ts`, see [Wikilinks and backlinks](#wikilinks-and-backlinks)). Each
+   paragraph gets `dir="auto"` for bidirectional text.
 2. **Normalization in the renderer.** On every change, the editor JSON is passed through
    `parseNoteDocument` before it reaches the autosave state machine. The draft is therefore
    identical to what will be stored, so autosave settles, and invalid content (for example a note
@@ -351,17 +363,257 @@ PRD §5.3 and §8.
    policy. Error messages never echo note content.
 4. **Plain text.** In the same transaction, `extractPlainText` (`notes/plain-text.ts`) derives
    `note_plain_text`: block nodes on their own lines, table cells separated by tabs, math as its
-   LaTeX source, attachments as their display name.
-5. **Storage and index.** `note_json`, `note_schema_version` (1) and `note_plain_text` are written
-   together. The FTS5 triggers update `knowledge_nodes_fts`. Nothing queries the index until the
-   Phase 2 search UI.
-6. **Reading.** Stored notes are parsed again when read, as a guard against a tampered database
+   LaTeX source, attachments as their display name, wikilinks as their label.
+5. **References.** Still in the same transaction, the wikilinks of the note are extracted and the
+   node's `note_references` rows are replaced (see
+   [Wikilinks and backlinks](#wikilinks-and-backlinks)).
+6. **Storage and index.** `note_json`, `note_schema_version` (2) and `note_plain_text` are written
+   together. The FTS5 triggers update `knowledge_nodes_fts`, which [search](#search) queries.
+7. **Reading.** Stored notes are parsed again when read, as a guard against a tampered database
    file.
 
 Rendering is always from the ProseMirror schema, never from HTML strings. KaTeX runs with
 `trust: false` (no `\href`, `\url`, `\htmlClass` and similar), `maxSize: 50` and `maxExpand: 500`,
 so a hostile formula cannot produce links or raw HTML or hang the renderer. All editor and KaTeX
 assets, including fonts, are bundled.
+
+## Relationships
+
+PRD §4.2 and §5.5. Code: `packages/domain/src/application/relationship-service.ts`,
+`packages/domain/src/knowledge/relationship-rules.ts`,
+`packages/storage-sqlite/src/repositories/sqlite-relationship-repository.ts` and
+`sqlite-relationship-type-repository.ts`, UI in `apps/desktop/src/renderer/src/relationships/`.
+
+### Rules
+
+`RelationshipService` checks these inside the write transaction, before anything is written. The
+schema repeats the structural ones as a second line of defense ([data-model.md](data-model.md#relationships-relationship)).
+
+- **Two distinct nodes of the open workspace.** A self-link is `INVARIANT_VIOLATION`; a node or
+  type from another workspace is `NOT_FOUND`.
+- **Directed types keep the user's direction.** A → B and B → A are different relationships and
+  may both exist.
+- **Undirected types use canonical ordering.** `toStoredEndpoints` swaps the endpoints so the
+  lower node ID (canonical lowercase UUID text, compared the way SQLite's `BINARY` collation
+  does) is always the source. A–B and B–A are therefore stored identically.
+- **No duplicates.** Before writing, the service looks up a relationship with the same stored
+  endpoints and type and answers `DUPLICATE`. With canonical ordering this also rejects a
+  reversed undirected duplicate. Different types between the same two nodes are allowed.
+- **Updates go through the same rules.** Changing the type recomputes the stored order (an
+  undirected target type reorders canonically); `reverseDirection` swaps the endpoints of a
+  directed relationship and is ignored for undirected ones. Both are checked for duplicates,
+  ignoring the relationship being edited.
+- **Descriptions** are NFC-normalized and trimmed, empty becomes `null`, and at most 1,000
+  characters are allowed.
+- **Timeline.** Creating a relationship writes a `relationship_created` timeline event in the
+  same transaction, attributed to the request's source node.
+
+Nothing else creates relationships. Wikilinks never do, and map structure will not either
+(PRD §4.3, §4.4).
+
+### Directionality copy and type changes
+
+Each relationship row stores a copy of its type's `directionality`, and its foreign key
+`(workspace_id, type_id, directionality)` points at the matching `UNIQUE` columns of
+`relationship_types`. A relationship can therefore never disagree with its type, and the database
+itself refuses to change the direction of a type that is in use.
+
+PRD §4.2 allows either an explicit migration flow or requiring a new type. mmap requires a new
+type: `changeTypeDirectionality` counts the relationships using the type and answers
+`INVARIANT_VIOLATION` ("Create a new relationship type instead") when there are any. Unused types
+can change freely. A migration flow would have to reinterpret existing statements (which end of an
+undirected pair becomes the source?) and was not worth that risk. In the types dialog
+(`manage-relationship-types-dialog.tsx`) the direction control is disabled with an explanation
+while the type is in use.
+
+### Archive instead of delete
+
+Types are never deleted; there is no delete channel, and the foreign key has no `ON DELETE`
+action. Archiving sets `is_archived`: existing relationships keep the type and still display it,
+but `create` and a type change in `update` refuse it with `VALIDATION_FAILED`. The relationship
+form offers only active types; the type selector of an existing relationship also shows its own
+archived type. Renaming keeps every relationship, because they reference the type by ID. Labels
+use the tag label rules and are unique per workspace regardless of case.
+
+### Display
+
+`listForNode` loads each relationship with its type label and both node titles in one query,
+ordered by type label and the other node's title. The panel shows directed relationships as
+"source — type → target" and undirected ones as "A — type — B", marks the current node as
+"this node", and adds screen-reader text "(directed)" or "(undirected, no direction)", so meaning
+never depends on the arrow alone (PRD §4.2, acceptance criterion 4).
+
+## Wikilinks and backlinks
+
+PRD §4.3 and §5.4. The decision is recorded in
+[ADR-0008](adr/0008-wikilinks-and-note-schema-v2.md).
+
+### Note schema version 2
+
+`NOTE_SCHEMA_VERSION` is 2 (`packages/domain/src/notes/note-document.ts`). Version 2 adds one
+inline leaf node:
+
+```json
+{ "type": "wikilink", "attrs": { "targetNodeId": "<canonical uuid>", "label": "Entropy" } }
+```
+
+Identity is `targetNodeId`, never the label. The label is what the author sees and keeps its text
+when the target is renamed. The parser requires a canonical lowercase UUID and a label of 1 to 300
+characters without control characters, and drops any other attribute (such as a cached title).
+Every version-1 document is a valid version-2 document, so old notes are read without conversion.
+
+### Migration 2: a compatibility marker
+
+`packages/storage-sqlite/src/migrations/0002-note-schema-v2-marker.ts` runs `SELECT 1;`. It
+changes no table: wikilinks live in the note JSON and references use the `note_references` table
+from migration 1. Its only purpose is to raise the database version to 2. A Phase 1 build knows
+only migration 1, so it refuses the whole workspace with `WORKSPACE_TOO_NEW` ("created by a newer
+version of mmap") instead of opening it and then failing on the first note that contains a
+wikilink. Like every migration, it runs after a verified pre-migration backup of an existing
+workspace.
+
+### Inserting a link
+
+1. Typing `[[` triggers the node's input rule: the brackets are deleted and the editor asks
+   `NoteEditor` to open `WikilinkDialog`. The toolbar button "Link to a node ([[)" opens the same
+   dialog.
+2. The dialog shows `NodePicker` (`nodes/node-picker.tsx`), an ARIA combobox backed by
+   `nodes:lookup` (debounced 150 ms, stale answers ignored). Its last option is
+   "Create a new node “text”", so creating a node is always an explicit choice; the new node is
+   created with `nodes:create` and then linked.
+3. The chosen node is inserted as `{ targetNodeId, label: <current title> }` followed by a space.
+   The node is an atom: its label cannot be edited in place.
+
+There is no free-text `[[Title]]` parsing. A link is always created by choosing one node in the
+picker, so a title shared by several nodes is never resolved by guessing.
+
+### Reconciliation in the save transaction
+
+References are derived data (PRD §14 "Editor/reference divergence"). Whenever a note is written
+(`create`, `duplicate`, and `update` when the note changed), `KnowledgeNodeService` calls
+`extractNoteReferences` (`packages/domain/src/notes/note-references.ts`) and
+`NoteReferenceRepository.replaceForSource` in the same transaction as the node row:
+
+- Every wikilink occurrence becomes one reference with its `ordinal` (position among the links of
+  the note), `targetNodeId`, `label` and an excerpt of about 160 characters of the surrounding
+  text block (paragraph, heading, list item, table cell), cut at word boundaries with ellipses.
+- The repository deletes all rows of the source node and inserts the new ones with
+  `INSERT … SELECT … WHERE EXISTS`, so only references whose target exists in this workspace are
+  stored. Links to deleted or foreign nodes stay in the note JSON only.
+- A removed link therefore disappears from the target's backlinks with the save that removed it.
+  A title or summary change without a note change leaves the references alone.
+
+Wikilinks never create relationships. The dialog says so, and the tests check that the
+`relationships` table stays empty.
+
+### Backlinks
+
+`nodes:backlinks` groups the target's references by source note: one item per source, with the
+label and excerpt of the first occurrence and the number of occurrences, ordered by source title
+(`COLLATE NOCASE`). A note linking to itself is excluded. Source titles are joined live, so a
+renamed source shows its new title. The node panel shows the list under **Linked from**
+(`nodes/node-backlinks.tsx`) and reloads it on every node change event.
+
+### Resolution and unresolved links
+
+The editor never stores titles, so it asks which targets still exist. `NoteEditor` collects the
+distinct target IDs (`collectWikilinkTargets`) when the editor is created and 300 ms after each
+change, calls `nodes:resolve-links`, stores the answer in the wikilink extension's storage and
+dispatches a transaction with `RESOLUTION_META`. A ProseMirror decoration plugin then marks each
+link: resolved links get a tooltip with the target's current title; unresolved ones get the class
+`wikilink-unresolved` (dashed outline and strike-through, not only colour) and an
+"Unresolved link" label. Until the first answer arrives nothing is marked.
+
+A click on a resolved link opens the target. A click on an unresolved link opens the same dialog
+in repair mode: the chosen node replaces `targetNodeId` (`retargetWikilink`) and the label stays.
+Both modes can also create a new node explicitly. Insert mode has an optional "Link text" field
+(the `[[target|label]]` behaviour of PRD §5.4); left empty, the link text is the node title. The
+repaired note is saved by autosave, which recreates the reference row.
+
+Deleting a node removes, by cascade, the reference rows that point at it and those of its own
+note. The links in the source notes stay in their JSON, readable and repairable (acceptance
+criterion 8). The delete preview counts the notes that link to the node.
+
+## Search
+
+PRD §5.8. Code: `packages/storage-sqlite/src/search/` (`sqlite-search-index.ts`, `fts-query.ts`,
+`snippet-segments.ts`), port `packages/domain/src/ports/search.ts`, UI
+`apps/desktop/src/renderer/src/nodes/search-view.tsx`.
+
+### Index
+
+`knowledge_nodes_fts` is an FTS5 table with external content (`content = 'knowledge_nodes'`,
+`content_rowid = 'row_key'`) over `title`, `summary` and `note_plain_text`, kept in sync by the
+triggers of migration 1 in the same transaction as every node write. The tokenizer is
+`unicode61 remove_diacritics 2`. The index has no `workspace_id`, so every query joins
+`knowledge_nodes` on `row_key` and filters by workspace; a match in another workspace is never
+counted, ranked or returned.
+
+### Query building: user text never becomes FTS syntax
+
+`buildFtsMatchExpression` (`fts-query.ts`) extracts words (runs of Unicode letters, combining
+marks and digits; a word must contain a letter or digit), keeps at most 16 words of at most 64
+code points each, and wraps each word in an FTS5 double-quoted string, inside which everything is
+literal. The only syntax mmap emits is those quotes, the spaces between words (implicit AND) and a
+`*` after the last word when it has at least two characters. So:
+
+- every word must occur somewhere in the node;
+- the last word also matches as a prefix (`entro` finds `Entropy`), earlier words only as whole
+  words;
+- `OR`, `NOT`, `NEAR(...)`, `title:x`, `^`, `*`, parentheses and unbalanced quotes are separators
+  or literal words, never operators; and
+- text with no searchable word returns an empty page without querying.
+
+Tag filters (`tagIds`, "has all tags") and the workspace ID are bound parameters.
+
+### Ranking and snippets
+
+Results are ordered by `bm25(knowledge_nodes_fts, 10.0, 4.0, 1.0)` (title, summary, note text),
+then by node ID for a stable order among equal scores. A title hit weighs ten times a note hit and
+a summary hit four times, so title matches rank first while note text still counts. There is no
+semantic or learned ranking.
+
+Snippets come from FTS5 `snippet()` over the best-matching column (about 12 tokens, `…` where text
+is cut), with two private-use characters (U+E000, U+E001) as match markers instead of HTML tags.
+`parseSnippetSegments` splits on them into `{ text, isMatch }` segments, merges neighbours and
+drops stray or unbalanced markers, so stored text such as `<script>` reaches the renderer only as
+text. The renderer wraps matched segments in `<mark>`.
+
+### Paging: an offset cursor
+
+`search:query` returns `totalCount` (same `FROM`/`WHERE` as the page) and an opaque cursor that
+encodes an offset. Node lists use keyset cursors, but a BM25 score changes whenever any matching
+document changes, so it cannot be a stable key. The consequence: if nodes are edited between
+"Load more" requests, an item can move across a page boundary and be shown twice or skipped.
+Cursors are accepted only in the exact form the service produces (re-encoded and compared), with
+an offset of at most 1,000,000; anything else is `VALIDATION_FAILED`. Page size is clamped to 1–200
+by the domain and 1–100 by the contract.
+
+### Title lookup for pickers
+
+`lookupTitles` serves `nodes:lookup` without FTS: `title LIKE '%text%'` with `%`, `_` and `\`
+escaped, ordered by "title starts with the text" first, then title length, title
+(`COLLATE NOCASE`) and ID, so the same text always gives the same order. Excluded IDs travel as one
+JSON array parameter expanded with `json_each`. The text is trimmed and cut to 200 code points;
+the limit is clamped to 1–50.
+
+### Text matching limits
+
+- **Case.** Full-text search folds case through the tokenizer. Title lookup relies on SQLite's
+  `LIKE`, which folds ASCII letters only: `entropy` finds `Entropy`, but `émile` does not find
+  `Émile`. Full Unicode folding would need ICU, which `node:sqlite` does not include.
+- **Accents.** Full-text search ignores diacritics on Latin letters (`cafe` finds `Café`). Title
+  lookup does not.
+- **Hebrew points.** `remove_diacritics` does not remove Hebrew niqqud, and the query builder
+  keeps combining marks inside a word. Pointed and unpointed spellings of a Hebrew word therefore
+  do not match each other; a search finds pointed text only with the same pointing. Unpointed
+  Hebrew and Arabic text is found normally.
+
+### Performance
+
+`search.benchmark.test.ts` measures search and title lookup on the PRD §9 dataset; results and
+caveats are in [testing.md](testing.md#search-benchmark). All search work runs synchronously on
+the main process thread, like the rest of the database work.
 
 ## Attachments
 
@@ -464,10 +716,11 @@ This maps each part of the baseline in ADR-0003 and PRD §8 to the code that imp
 | Trusted origins               | `src/main/security/trusted-origins.ts`: production trusts only `app://mmap`. The dev server is trusted only when unpackaged and on a loopback `http` URL.                                                                                                                                                                                                                                                                                                                                           |
 | IPC sender and payload        | `src/main/ipc/ipc-handler.ts`: main-frame and origin check, zod validation of the request and of the response, result envelope.                                                                                                                                                                                                                                                                                                                                                                     |
 | Narrow bridge, no paths       | `src/preload/index.ts` exposes one named method per operation. `ipcRenderer`, filesystem, shell and SQL are never exposed. No request carries a filesystem path; folders and files are chosen in native dialogs in the main process.                                                                                                                                                                                                                                                                |
-| Untrusted notes               | `parseNoteDocument` validates and rebuilds every note in the main process; links restricted to safe schemes; KaTeX `trust: false`; rendering from the schema, never from HTML. See [Notes pipeline](#notes-pipeline).                                                                                                                                                                                                                                                                               |
+| Untrusted notes               | `parseNoteDocument` validates and rebuilds every note in the main process; links restricted to safe schemes; wikilinks limited to a canonical target ID and a bounded label; KaTeX `trust: false`; rendering from the schema, never from HTML. See [Notes pipeline](#notes-pipeline).                                                                                                                                                                                                               |
+| Search input and output       | User text is reduced to quoted FTS5 words or an escaped `LIKE` pattern, so it can never act as query syntax; word count and length are bounded; cursors are accepted only in the exact form the service issued. Snippets cross the bridge as plain-text segments and are rendered as text. See [Search](#search).                                                                                                                                                                                   |
 | Attachments                   | Executables refused by extension and content; generated storage names; traversal and junction checks on every stored path; re-check before opening; previews limited to raster images of the open workspace. See [Attachments](#attachments).                                                                                                                                                                                                                                                       |
 | External links                | Re-validated in the main process before `shell.openExternal`; only after a user gesture. See [External links](#external-links).                                                                                                                                                                                                                                                                                                                                                                     |
-| Workspace isolation           | One open workspace at a time; every repository query is scoped by `workspace_id`; composite foreign keys reject cross-workspace links; the renderer workbench and recovery copies are keyed by workspace ID.                                                                                                                                                                                                                                                                                        |
+| Workspace isolation           | One open workspace at a time; every repository query is scoped by `workspace_id`, including search, which joins the workspace-less FTS index back to `knowledge_nodes`; composite foreign keys reject cross-workspace relationships, references and tags; the renderer workbench and recovery copies are keyed by workspace ID.                                                                                                                                                                     |
 | Redacted logging              | `src/main/logging.ts` logs only the operation, the error class name and its code. Error messages are dropped because lower layers can embed titles or paths; stack traces appear only in unpackaged builds. IPC payloads are never logged.                                                                                                                                                                                                                                                          |
 | Database file hardening       | `packages/storage-sqlite/src/connection.ts`: extension loading off, `trusted_schema = OFF`, double-quoted string literals off, foreign keys on and verified.                                                                                                                                                                                                                                                                                                                                        |
 | Packaged binary               | Electron fuses in `apps/desktop/electron-builder.yml`. See the [packaging runbook](runbooks/packaging.md#electron-fuses).                                                                                                                                                                                                                                                                                                                                                                           |
@@ -478,17 +731,19 @@ archives (Phase 5).
 
 ## Where future phases plug in
 
-- **Search.** `packages/domain/src/ports/search.ts` defines the port; the FTS5 index is already
-  maintained by triggers. Phase 2 adds the SQLite implementation and the search UI.
-- **Relationships and note references.** The tables exist and the built-in relationship types are
-  seeded, but no service writes `relationships` or `note_references` yet. Phase 2 rebuilds
-  references in the note-save transaction (PRD §14). The delete preview already counts both.
+- **Graph.** `relationships:list-for-node` answers one node's neighbourhood; the Phase 4 graph
+  will need bounded multi-node loading and relationship-type filters. Note references can feed
+  its optional reference layer (PRD §4.3).
 - **Maps.** `nodes:delete` already promotes child placements before deleting a node; map services
-  arrive in Phase 3.
+  arrive in Phase 3. `NodePicker` is reusable for placing nodes on a map.
+- **Import (Phase 5).** Imported raw or Markdown text with `[[Title]]` links will need its own
+  resolution step that asks the user when a title is ambiguous (PRD §5.4); the editor never
+  resolves links by title.
 - **Timeline display.** Events are recorded (see [data-model.md](data-model.md)); the Timeline
   view arrives in Phase 4.
-- **Heavy work off the main thread.** Database work currently runs on the main process thread.
-  Archives, layouts and large queries in later phases should move to a worker; the
+- **Heavy work off the main thread.** Database work, including search, currently runs on the
+  main process thread. Archives, layouts and large queries in later phases should move to a
+  worker; the
   `TransactionRunner` port is asynchronous so the coordinator can move with them.
 - **New IPC channels.** Each feature adds channels through the contract catalogue
   ([ipc-contracts.md](ipc-contracts.md)). Long-running operations will additionally need progress,
