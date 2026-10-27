@@ -4,9 +4,30 @@ This page explains the SQLite schema created by migration 1,
 `packages/storage-sqlite/src/migrations/0001-initial-schema.ts`. It maps each table to the logical
 entities in PRD §7.3 and explains the constraints that are not obvious from the SQL.
 
-Phase 0 creates the complete schema for the whole logical model, but no feature reads or writes
-it yet; repositories arrive with the phases that need them. The schema is verified by the tests
-in `packages/storage-sqlite/src/migrations/initial-schema.test.ts`.
+Migration 1 creates the complete schema for the whole logical model. Phase 1 services use part of
+it; the rest waits for the phases that need it (see [Table usage](#table-usage-in-phase-1)). The
+schema is verified by the tests in `packages/storage-sqlite/src/migrations/initial-schema.test.ts`.
+
+## Table usage in Phase 1
+
+Repositories are in `packages/storage-sqlite/src/repositories/`; the services that call them are
+in `packages/domain/src/application/`. Every repository method takes the workspace ID and filters
+by it, so a record from another workspace behaves as not found.
+
+| Table                                            | Status       | Written by                                                                                               |
+| ------------------------------------------------ | ------------ | -------------------------------------------------------------------------------------------------------- |
+| `workspaces`                                     | Used         | `WorkspaceService.initialize` (create), `rename`; read on every open to check the manifest ID            |
+| `knowledge_nodes`                                | Used         | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders |
+| `knowledge_nodes_fts`                            | Maintained   | Kept in sync by triggers on every node write; not queried until the Phase 2 search UI                    |
+| `relationship_types`                             | Seeded only  | `WorkspaceService.initialize` inserts the five built-in types; nothing else reads or writes them yet     |
+| `tags`, `node_tags`                              | Used         | `TagService`; `KnowledgeNodeService.duplicate` copies assignments                                        |
+| `timeline_events`                                | Used (write) | `node_created` on create and duplicate; `note_updated` grouped by editing session. No UI reads them yet  |
+| `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                        |
+| `relationships`                                  | Not used yet | Phase 2. Only counted by the node delete preview                                                         |
+| `note_references`                                | Not used yet | Phase 2. Only counted by the node delete preview                                                         |
+| `mind_maps`, `map_placements`, `map_connections` | Not used yet | Phase 3. Node deletion already promotes child placements (see below)                                     |
+| `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                  |
+| `schema_migrations`                              | Used         | Migration runner                                                                                         |
 
 ## Three kinds of connection
 
@@ -68,8 +89,12 @@ display), timestamps. Deleting a workspace row cascades to everything in it.
 
 The PRD lists a schema version on Workspace. It is not a column: the schema version of the whole
 database file is `PRAGMA user_version` plus the `schema_migrations` table (see
-[Migrations](#migrations)). Phase 1 adds the workspace folder manifest `mmap-workspace.json`
-([ADR-0005](adr/0005-workspace-location-and-supported-filesystems.md)).
+[Migrations](#migrations)). Outside the database, the workspace folder manifest
+`mmap-workspace.json` records the same workspace ID; opening fails with `WORKSPACE_DAMAGED` if the
+database has no row for it ([architecture](architecture.md#workspace-lifecycle),
+[ADR-0005](adr/0005-workspace-location-and-supported-filesystems.md)). The row is created in the
+same transaction as the built-in relationship types. `timezone` is set from the operating system
+when the workspace is created and is used to display dates.
 
 ### `knowledge_nodes` (KnowledgeNode)
 
@@ -83,6 +108,16 @@ search only), `revision` (starts at 1, used for optimistic concurrency), timesta
   rowids and silently break the link between a node and its index entry.
 - Indexes: `(workspace_id, title COLLATE NOCASE)` for pickers, and `(workspace_id, updated_at)`
   and `(workspace_id, created_at)` for lists and the timeline.
+- Phase 1 behaviour: titles are NFC-normalized, single-line, 1 to 300 characters; summaries are
+  optional, up to 2,000 characters (`packages/domain/src/knowledge/node-fields.ts`). `note_json`,
+  `note_schema_version` (currently 1) and `note_plain_text` are always written together from the
+  same validated document. Every update increments `revision`; an update or delete with an outdated
+  revision fails with `REVISION_CONFLICT` and changes nothing. Tag changes do not touch the
+  revision.
+- Deleting a node first moves the children of its map placements up to the deleted placement's
+  parent (the hierarchy foreign key refuses to orphan them), then deletes the row; relationships,
+  placements, references from this node, tag assignments and attachment rows cascade.
+  `timeline_events.node_id` becomes `NULL`.
 
 ### `knowledge_nodes_fts` (search index, PRD §5.8)
 
@@ -101,9 +136,14 @@ An FTS5 virtual table over `title`, `summary` and `note_plain_text`.
 ### `relationship_types` (RelationshipType)
 
 `label` (display form), `normalized_label` (case-folded, unique per workspace), `directionality`
-(`directed` or `undirected`), `is_archived`, `is_builtin`. No types are seeded yet; the PRD's
-default types arrive with relationships in Phase 2. Archiving keeps a type usable by existing
-edges while hiding it from new-edge choices.
+(`directed` or `undirected`), `is_archived`, `is_builtin`. Archiving keeps a type usable by
+existing edges while hiding it from new-edge choices.
+
+Every new workspace is seeded with the five built-in types from PRD §4.2
+(`packages/domain/src/knowledge/builtin-relationship-types.ts`): `related to` (undirected),
+`depends on`, `part of`, `example of` (directed) and `contradicts` (undirected), with
+`is_builtin = 1`. Seeding happens in the same transaction as the `workspaces` row. Nothing else uses
+the table until relationships arrive in Phase 2.
 
 ### `relationships` (Relationship)
 
@@ -148,6 +188,13 @@ so tags are unique per workspace regardless of case while keeping the user's spe
 `node_tags` is the assignment table with primary key `(node_id, tag_id)`. Both of its foreign keys
 are composite with `workspace_id`, so a tag can only be applied to a node in the same workspace.
 Deleting a tag removes its assignments, never the nodes.
+
+Phase 1 behaviour (`packages/domain/src/application/tag-service.ts`,
+`packages/domain/src/text/labels.ts`): the display label is NFC-normalized, trimmed, with
+whitespace runs collapsed, and at most 60 characters. `normalized_label` is the NFKC, lower-cased
+form, so `Physics` and `PHYSICS` are one tag. Assigning by label finds or creates the tag and is
+idempotent. Renaming changes only the labels, so every assignment is kept. Library filtering
+returns nodes that carry all selected tags.
 
 ### `mind_maps` (MindMap)
 
@@ -199,18 +246,58 @@ Recorded learning activity: `event_type` (`node_created`, `note_updated`,
 - `CHECK (is_imported = 1 OR import_origin IS NULL)`: only imported events carry an origin, so
   imported history is always recognisable and never counts as new learning.
 
+#### What Phase 1 records
+
+`KnowledgeNodeService` (`packages/domain/src/application/knowledge-node-service.ts`) writes two
+event types, always in the same transaction as the node change. No UI shows them yet (Phase 4).
+
+- **`node_created`**: one event when a node is created, including by duplication, with the title
+  as `node_title_snapshot`.
+- **`note_updated`**: recorded only when a save changes the stored note JSON. Saves that change
+  only the title or summary, or that send an identical note, record nothing.
+
+**Editing-session grouping** (`packages/domain/src/timeline/editing-session.ts`, PRD §5.9). Autosave
+writes roughly once per second of idle typing, so recording every save would flood the timeline.
+On a note change, the service looks up the node's latest `note_updated` event. If less than
+30 minutes have passed since its `last_activity_at`, the same event is extended: `last_activity_at`
+moves to the new save time and `node_title_snapshot` is refreshed. Otherwise (a gap of exactly 30
+minutes or more, or a clock that moved backwards) a new event starts with
+`occurred_at = last_activity_at = save time`. `relationship_created` and `reviewed` are not
+written yet.
+
 ### `attachments` (Attachment)
 
-Metadata for files copied into the workspace's managed attachments folder: `relative_path`,
-`original_name`, `mime_type`, `byte_size`, `sha256`, `state` (`staged` or `committed`).
+Metadata for files copied into the workspace's managed attachments folder: `node_id`,
+`relative_path`, `original_name`, `mime_type`, `byte_size`, `sha256`, `state` (`staged` or
+`committed`).
 
 - `relative_path` is generated by the attachment store and never derived from the user's file
   name. A `CHECK` rejects, as defense in depth against path traversal: empty paths, a leading
   `/`, any `:` (drive letters), backslashes, NUL characters, and `..` segments at the start,
-  middle or end. It is also `UNIQUE`.
+  middle or end. It is also `UNIQUE`. The store validates the path again, including symlink and
+  junction escapes, every time it reads or deletes a file.
 - `sha256` must be 64 lowercase hex characters.
-- `staged` rows are not yet visible; startup reconciliation (Phase 1) removes stale staged rows
-  and their files.
+- `original_name` holds the sanitized display name; `mime_type` is decided by
+  `classifyAttachment` (raster image types only when the bytes match).
+
+#### Attachment lifecycle
+
+Staging happens on disk, not in the table. In Phase 1 rows are only ever inserted with
+`state = 'committed'`; the `staged` value is reserved and no code writes it (listing filters on
+`committed`).
+
+1. **Staged file.** The bytes are copied to `attachments/.staging/<id>.tmp`, fsynced and
+   checksum-verified. No row exists yet.
+2. **Stored file.** The staged file is renamed to `attachments/<shard>/<uuid>.<ext>`. Still no row.
+3. **Committed row.** `AttachmentService.register` inserts the row in a write transaction. If the
+   insert fails, the stored file is deleted at once.
+4. **Removal.** `attachments:remove` deletes the row, then the file. `nodes:delete` deletes the
+   node (rows cascade), then the files.
+5. **Reconciliation.** On every workspace open, files in `.staging` and stored files without a row
+   (a crash between steps 2 and 3, or a failed file deletion in step 4) are deleted. Rows whose
+   file is missing are reported and kept, never deleted automatically.
+
+See [architecture.md](architecture.md#attachments) for the file-type policy and preview rules.
 
 ### `transfer_jobs` (TransferJob)
 
@@ -244,9 +331,11 @@ installed build cannot be missing one. The strategy and its reasons are recorded
   `MigrationFailedError` reports the version that failed; the database stays at the last fully
   applied version.
 - **Backup hook.** `beforeApply` runs once before the first pending migration. If it throws,
-  nothing is applied. The desktop app will take its pre-migration backup here from Phase 1
-  ([ADR-0006](adr/0006-backup-policy.md)); Phase 0 does not open workspace databases, so no
-  backup is taken yet.
+  nothing is applied. `openWorkspaceDatabase`
+  (`packages/storage-sqlite/src/workspace-database.ts`) uses it to write a verified online backup
+  of an existing database to the workspace's `recovery/` folder as
+  `pre-migration-v<from>-to-v<to>-<timestamp>.sqlite` ([ADR-0006](adr/0006-backup-policy.md)). A
+  brand-new database (version 0) is not backed up.
 - Migration SQL must not contain statements that are invalid inside a transaction, such as
   `VACUUM` or `PRAGMA journal_mode`.
 
@@ -273,3 +362,7 @@ connection:
 | Busy timeout 5000 ms            | A competing lock produces a bounded wait and then a visible error, not an endless hang.                                                                   |
 | Double-quoted strings disabled  | `"x"` is always an identifier, turning silent SQL typos into errors.                                                                                      |
 | Extension loading disabled      | A database file can never load native code.                                                                                                               |
+
+An open workspace uses two connections from this factory: a writer, and a read-only reader that
+only verifies the journal mode instead of setting it. All writes go through the single write
+coordinator described in [architecture.md](architecture.md#write-coordinator).

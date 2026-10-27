@@ -14,7 +14,8 @@ const PRODUCTION_DIRECTIVES: Readonly<Record<string, string>> = {
   'default-src': "'none'",
   'script-src': "'self'",
   'style-src': "'self' 'unsafe-inline'",
-  'img-src': "'self' data: blob:",
+  // mmap-attachment: serves previews of image attachments only (see attachment-preview.ts).
+  'img-src': "'self' data: blob: mmap-attachment:",
   'font-src': "'self' data:",
   'connect-src': "'self'",
   'worker-src': "'self' blob:",

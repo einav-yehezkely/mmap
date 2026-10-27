@@ -4,7 +4,7 @@ How to produce a packaged Windows build of mmap, check it, and what is still mis
 public release. The decisions behind this are in
 [ADR-0004](../adr/0004-installer-signing-and-updates.md).
 
-> **Phase 0 builds are unsigned and for internal testing only. Do not distribute them.**
+> **Current builds are unsigned and for internal testing only. Do not distribute them.**
 
 ## Prerequisites
 
@@ -40,7 +40,9 @@ All commands run from the repository root.
    ```
 
    This runs `release/win-unpacked/mmap.exe --smoke-test` hidden, with network traffic sent to a
-   dead proxy, and must end with `Packaged smoke test passed.` The six checks are described in
+   dead proxy and a temporary profile (your real workspaces are never touched), and must end with
+   `Packaged smoke test passed.` The eight checks, including first-run workspace creation and node
+   operations through the bridge, are described in
    [testing.md](../testing.md#packaged-smoke-test).
 
 4. **Check the fuses** (after changing `electron-builder.yml` or upgrading Electron or
@@ -57,9 +59,16 @@ All commands run from the repository root.
      build is unsigned; choose "More info", then "Run anyway".
    - The installer is assisted (not one-click), installs per user, and lets you change the
      directory. It creates Start menu and desktop shortcuts.
-   - Disconnect from the network and start mmap. Open Settings: the version should have no
-     "(development)" suffix, and "Full-text search (FTS5)" should read "Available".
+   - Disconnect from the network and start mmap. On a machine without an earlier profile, the
+     Library of a new `My Knowledge` workspace opens. Open Settings: the workspace location should
+     be under `%APPDATA%\mmap\workspaces`, the version should have no "(development)" suffix, and
+     "Full-text search (FTS5)" should read "Available".
+   - Create a node with some note text, a tag and an attached image, quit, start again and
+     confirm everything is still there.
    - Uninstall from Windows Settings, Apps. Confirm the data folders below still exist.
+
+   Note that an installed build and `npm run dev` share the same profile and workspaces
+   ([setup.md](../setup.md#development-data-is-your-real-profile)).
 
 ## Output locations
 
@@ -113,12 +122,14 @@ know its name; this is expected and not a configuration error.
 - The installer never owns user data. The NSIS uninstaller is configured with
   `deleteAppDataOnUninstall: false`, so uninstall and reinstall leave application data in place
   (PRD §5.1, acceptance criterion 17).
-- Phase 0 creates no workspaces. The only per-user data is Electron's profile (Chromium cache and
-  single-instance lock) in `%APPDATA%\mmap`. The folder name comes from `productName` in
-  `apps/desktop/package.json`.
-- From Phase 1, workspaces will live in `%APPDATA%\mmap\workspaces\<name>` or a folder the user
-  chooses ([ADR-0005](../adr/0005-workspace-location-and-supported-filesystems.md)). These are
-  outside the install directory and are also preserved by uninstall.
+- Per-user data lives in Electron's profile, `%APPDATA%\mmap` (the folder name comes from
+  `productName` in `apps/desktop/package.json`): `settings.json` (recent workspaces, attachment
+  size limit), Chromium storage including unsaved-draft recovery copies, cache and the
+  single-instance lock.
+- Workspaces live in `%APPDATA%\mmap\workspaces\<name>` (the first one is `My Knowledge`) or in a
+  folder the user chose ([ADR-0005](../adr/0005-workspace-location-and-supported-filesystems.md)).
+  Each is a self-contained folder with its manifest, database, attachments and recovery folder.
+  These are outside the install directory and are also preserved by uninstall.
 - Deleting the app does not erase backups or exports stored elsewhere; this must be stated in the
   user guide when those features exist (PRD §8).
 

@@ -1,17 +1,20 @@
 /**
- * Settings › About. In Phase 0 this shows runtime diagnostics fetched through the preload bridge,
- * which also proves end to end that IPC, validation and the storage engine work.
+ * Settings: the open workspace (name, location, switching) and runtime diagnostics fetched
+ * through the preload bridge.
  */
 
-import type { AppInfo, IpcError } from '@mmap/contracts';
+import type { AppInfo, IpcError, WorkspaceSummary } from '@mmap/contracts';
 import { useEffect, useState } from 'react';
+
+import { WorkspaceSettings } from '../workspace/workspace-settings';
+import { AttachmentPreferences } from './attachment-preferences';
 
 type LoadState =
   | { readonly status: 'loading' }
   | { readonly status: 'loaded'; readonly info: AppInfo }
   | { readonly status: 'failed'; readonly error: IpcError };
 
-export function SettingsView() {
+export function SettingsView({ workspace }: { workspace: WorkspaceSummary }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -43,7 +46,15 @@ export function SettingsView() {
       <h1 id="settings-title" className="text-2xl font-semibold tracking-tight">
         Settings
       </h1>
-      <h2 className="mt-6 text-lg font-medium">About this installation</h2>
+      <h2 className="mt-6 text-lg font-medium">Workspace</h2>
+      <div className="mt-3">
+        <WorkspaceSettings key={workspace.id} workspace={workspace} />
+      </div>
+      <h2 className="mt-10 text-lg font-medium">Attachments</h2>
+      <div className="mt-3">
+        <AttachmentPreferences />
+      </div>
+      <h2 className="mt-10 text-lg font-medium">About this installation</h2>
       <div aria-live="polite" className="mt-3">
         {state.status === 'loading' && <p className="text-muted-foreground">Loading…</p>}
         {state.status === 'failed' && (

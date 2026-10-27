@@ -23,6 +23,7 @@ import {
 import { isDomainError } from '@mmap/domain';
 
 import { isTrustedUrl } from '../security/trusted-origins';
+import { isWorkspaceError } from '../workspaces/workspace-errors';
 
 /** The parts of Electron's `IpcMainInvokeEvent` the handler needs; keeps this module testable. */
 export interface IpcSenderInfo {
@@ -82,8 +83,8 @@ export function createIpcHandler<Channel extends IpcChannel>(
       }
       return { ok: true, data: parsedResponse.data as IpcResponse<Channel> };
     } catch (error) {
-      if (isDomainError(error)) {
-        // Domain error messages are written to be safe for display (see DomainError).
+      if (isDomainError(error) || isWorkspaceError(error)) {
+        // Domain and workspace error messages are written for display (see their classes).
         return failure(error.code, error.message);
       }
       dependencies.logFailure(channel, error);

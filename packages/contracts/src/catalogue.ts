@@ -9,8 +9,11 @@
 
 import type { z } from 'zod';
 
-import { appInfoRequestSchema, appInfoSchema } from './app-info';
+import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
+import { attachmentContracts, preferenceContracts } from './attachments';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
+import { nodeContracts, tagContracts } from './nodes';
+import { workspaceContracts } from './workspace';
 
 export interface IpcContract<
   RequestSchema extends z.ZodType = z.ZodType,
@@ -22,6 +25,36 @@ export interface IpcContract<
 
 export const IPC_CATALOGUE = {
   [IPC_CHANNELS.appGetInfo]: { request: appInfoRequestSchema, response: appInfoSchema },
+  [IPC_CHANNELS.appOpenExternalLink]: openExternalLinkContract,
+  [IPC_CHANNELS.workspaceGetState]: workspaceContracts.getState,
+  [IPC_CHANNELS.workspaceListRecent]: workspaceContracts.listRecent,
+  [IPC_CHANNELS.workspaceCreate]: workspaceContracts.create,
+  [IPC_CHANNELS.workspaceOpenFolder]: workspaceContracts.openFolder,
+  [IPC_CHANNELS.workspaceOpenRecent]: workspaceContracts.openRecent,
+  [IPC_CHANNELS.workspaceForgetRecent]: workspaceContracts.forgetRecent,
+  [IPC_CHANNELS.workspaceRename]: workspaceContracts.rename,
+  [IPC_CHANNELS.workspaceRevealFolder]: workspaceContracts.revealFolder,
+  [IPC_CHANNELS.workspaceMove]: workspaceContracts.move,
+  [IPC_CHANNELS.workspaceDelete]: workspaceContracts.delete,
+  [IPC_CHANNELS.nodesList]: nodeContracts.list,
+  [IPC_CHANNELS.nodesGet]: nodeContracts.get,
+  [IPC_CHANNELS.nodesCreate]: nodeContracts.create,
+  [IPC_CHANNELS.nodesUpdate]: nodeContracts.update,
+  [IPC_CHANNELS.nodesDuplicate]: nodeContracts.duplicate,
+  [IPC_CHANNELS.nodesPreviewDelete]: nodeContracts.previewDelete,
+  [IPC_CHANNELS.nodesDelete]: nodeContracts.delete,
+  [IPC_CHANNELS.nodesAddTag]: nodeContracts.addTag,
+  [IPC_CHANNELS.nodesRemoveTag]: nodeContracts.removeTag,
+  [IPC_CHANNELS.tagsList]: tagContracts.list,
+  [IPC_CHANNELS.tagsCreate]: tagContracts.create,
+  [IPC_CHANNELS.tagsRename]: tagContracts.rename,
+  [IPC_CHANNELS.tagsDelete]: tagContracts.delete,
+  [IPC_CHANNELS.attachmentsAdd]: attachmentContracts.add,
+  [IPC_CHANNELS.attachmentsList]: attachmentContracts.list,
+  [IPC_CHANNELS.attachmentsOpen]: attachmentContracts.open,
+  [IPC_CHANNELS.attachmentsRemove]: attachmentContracts.remove,
+  [IPC_CHANNELS.preferencesGet]: preferenceContracts.get,
+  [IPC_CHANNELS.preferencesUpdate]: preferenceContracts.update,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

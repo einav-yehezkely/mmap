@@ -9,6 +9,8 @@
 import { DOMAIN_ERROR_CODES } from '@mmap/domain';
 import { z } from 'zod';
 
+import { WORKSPACE_ERROR_CODES } from './workspace';
+
 /** Error codes produced by the transport layer itself, in addition to domain error codes. */
 export const TRANSPORT_ERROR_CODES = [
   /** The request payload did not match the channel's schema. */
@@ -19,7 +21,11 @@ export const TRANSPORT_ERROR_CODES = [
   'INTERNAL_ERROR',
 ] as const;
 
-export const IPC_ERROR_CODES = [...DOMAIN_ERROR_CODES, ...TRANSPORT_ERROR_CODES] as const;
+export const IPC_ERROR_CODES = [
+  ...DOMAIN_ERROR_CODES,
+  ...WORKSPACE_ERROR_CODES,
+  ...TRANSPORT_ERROR_CODES,
+] as const;
 export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];
 
 export const ipcErrorSchema = z.strictObject({
