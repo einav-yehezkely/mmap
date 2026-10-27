@@ -49,6 +49,24 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
     }
   };
 
+  const exportMarkdown = async () => {
+    setStatus({ kind: 'busy', text: 'Exporting…' });
+    try {
+      const result = await unwrap(window.mmap.transfer.exportMarkdown({}));
+      if (result.status === 'cancelled') {
+        setStatus({ kind: 'idle' });
+        return;
+      }
+      setStatus({
+        kind: 'done',
+        text: `Exported ${plural(result.nodes, 'note')} and ${plural(result.attachments, 'attachment')} as Markdown to ${result.fileName}.`,
+        warnings: result.warnings,
+      });
+    } catch (caught) {
+      setStatus({ kind: 'error', text: errorMessage(caught) });
+    }
+  };
+
   const chooseArchive = async () => {
     setStatus({ kind: 'busy', text: 'Checking the archive…' });
     try {
@@ -94,9 +112,17 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
         timeline and attachment files. Import it here or on another computer to restore everything.
         Importing always adds copies; it never changes what is already here.
       </p>
+      <p className="text-muted-foreground">
+        The Markdown export is for reading notes in other tools: one file per note, with links, math
+        and attachments. It cannot be imported back; use the ZIP export to move or restore a
+        workspace.
+      </p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={busy} onClick={() => void exportZip()}>
           Export workspace (ZIP)…
+        </Button>
+        <Button variant="outline" disabled={busy} onClick={() => void exportMarkdown()}>
+          Export as Markdown…
         </Button>
         <Button variant="outline" disabled={busy} onClick={() => void chooseArchive()}>
           Import from an export…

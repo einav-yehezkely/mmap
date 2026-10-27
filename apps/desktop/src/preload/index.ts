@@ -96,6 +96,7 @@ const api: MmapRendererApi = {
   },
   transfer: {
     exportZip: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferExportZip, request),
+    exportMarkdown: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferExportMarkdown, request),
     previewImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferPreviewImport, request),
     applyImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferApplyImport, request),
     discardImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferDiscardImport, request),

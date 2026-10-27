@@ -95,6 +95,7 @@ export interface MmapRendererApi {
   };
   readonly transfer: {
     readonly exportZip: BridgeCall<'transfer:export-zip'>;
+    readonly exportMarkdown: BridgeCall<'transfer:export-markdown'>;
     readonly previewImport: BridgeCall<'transfer:preview-import'>;
     readonly applyImport: BridgeCall<'transfer:apply-import'>;
     readonly discardImport: BridgeCall<'transfer:discard-import'>;

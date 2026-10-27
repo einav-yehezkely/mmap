@@ -82,6 +82,7 @@ export const IPC_CHANNELS = {
   timelineUpdateEntry: 'timeline:update-entry',
   timelineDeleteEntry: 'timeline:delete-entry',
   transferExportZip: 'transfer:export-zip',
+  transferExportMarkdown: 'transfer:export-markdown',
   transferPreviewImport: 'transfer:preview-import',
   transferApplyImport: 'transfer:apply-import',
   transferDiscardImport: 'transfer:discard-import',

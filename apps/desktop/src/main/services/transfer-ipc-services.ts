@@ -14,6 +14,7 @@ import { basename } from 'node:path';
 import { DomainError, type IdGenerator } from '@mmap/domain';
 
 import type { IpcServices } from '../ipc/register-ipc-handlers';
+import { exportWorkspaceMarkdown } from '../portability/export-markdown';
 import { exportWorkspaceArchive } from '../portability/export-workspace';
 import { applyImport, prepareImport, type PreparedImport } from '../portability/import-workspace';
 import { TransferError } from '../portability/transfer-errors';
@@ -102,6 +103,17 @@ export function createTransferIpcServices(
         counts: result.counts,
         warnings: result.warnings,
       };
+    },
+
+    'transfer:export-markdown': async () => {
+      const workspace = requireWorkspace();
+      const date = now().toISOString().slice(0, 10);
+      const destination = await dependencies.native.chooseExportDestination(
+        `${safeFileName(await workspaceName(workspace))} ${date} Markdown.zip`,
+      );
+      if (destination === null) return { status: 'cancelled' as const };
+      const result = await exportWorkspaceMarkdown(workspace, destination, now);
+      return { status: 'exported' as const, fileName: basename(destination), ...result };
     },
 
     'transfer:preview-import': async () => {

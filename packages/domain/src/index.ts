@@ -32,6 +32,7 @@ export * from './notes/plain-text';
 export * from './portability/archive-format';
 export * from './portability/export-archive';
 export * from './portability/import-plan';
+export * from './portability/markdown-export';
 export * from './ports/attachment-store';
 export * from './ports/graph';
 export * from './ports/map-repository';

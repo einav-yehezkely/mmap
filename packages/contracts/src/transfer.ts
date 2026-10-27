@@ -73,6 +73,20 @@ export const transferContracts = {
       }),
     ]),
   },
+  /** Asks where to save, then writes the readable Markdown export (a ZIP of .md files). */
+  exportMarkdown: {
+    request: noRequest,
+    response: z.discriminatedUnion('status', [
+      cancelled,
+      z.strictObject({
+        status: z.literal('exported'),
+        fileName: z.string(),
+        nodes: z.number().int().nonnegative(),
+        attachments: z.number().int().nonnegative(),
+        warnings: z.array(z.string()).readonly(),
+      }),
+    ]),
+  },
   /** Asks for an archive, validates all of it and describes the import without changing data. */
   previewImport: {
     request: noRequest,

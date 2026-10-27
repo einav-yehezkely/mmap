@@ -101,6 +101,7 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.timelineUpdateEntry]: timelineContracts.updateEntry,
   [IPC_CHANNELS.timelineDeleteEntry]: timelineContracts.deleteEntry,
   [IPC_CHANNELS.transferExportZip]: transferContracts.exportZip,
+  [IPC_CHANNELS.transferExportMarkdown]: transferContracts.exportMarkdown,
   [IPC_CHANNELS.transferPreviewImport]: transferContracts.previewImport,
   [IPC_CHANNELS.transferApplyImport]: transferContracts.applyImport,
   [IPC_CHANNELS.transferDiscardImport]: transferContracts.discardImport,
