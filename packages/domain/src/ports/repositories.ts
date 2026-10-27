@@ -176,6 +176,34 @@ export interface TimelineEventRepository {
     lastActivityAt: UtcTimestamp,
     nodeTitleSnapshot: string,
   ): Promise<void>;
+  /** Events newest first (by `occurredAt`, then ID), filtered, with keyset paging. */
+  list(workspaceId: WorkspaceId, query: TimelineListQuery): Promise<Page<TimelineEntryRecord>>;
+  findById(workspaceId: WorkspaceId, eventId: TimelineEventId): Promise<TimelineEventRecord | null>;
+  updateReflection(
+    workspaceId: WorkspaceId,
+    eventId: TimelineEventId,
+    reflection: string | null,
+  ): Promise<void>;
+  delete(workspaceId: WorkspaceId, eventId: TimelineEventId): Promise<void>;
+}
+
+export interface TimelineListQuery {
+  /** Inclusive lower bound on `occurredAt`, or null. */
+  readonly fromUtc: UtcTimestamp | null;
+  /** Exclusive upper bound on `occurredAt`, or null. */
+  readonly toUtcExclusive: UtcTimestamp | null;
+  /** Only these event types; empty means all. */
+  readonly eventTypes: readonly TimelineEventType[];
+  /** Only events of nodes that currently carry all of these tags. */
+  readonly tagIds: readonly TagId[];
+  /** Only events of this node. */
+  readonly nodeId: NodeId | null;
+  readonly page: PageRequest;
+}
+
+export interface TimelineEntryRecord extends TimelineEventRecord {
+  /** The node's current title, or null when the node has been deleted. */
+  readonly currentNodeTitle: string | null;
 }
 
 export interface WorkspaceRecord {
@@ -191,6 +219,7 @@ export interface WorkspaceRepository {
   findById(workspaceId: WorkspaceId): Promise<WorkspaceRecord | null>;
   insert(record: WorkspaceRecord): Promise<void>;
   rename(workspaceId: WorkspaceId, name: string, updatedAt: UtcTimestamp): Promise<void>;
+  setTimezone(workspaceId: WorkspaceId, timezone: string, updatedAt: UtcTimestamp): Promise<void>;
 }
 
 export interface RelationshipTypeRecord {

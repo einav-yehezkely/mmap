@@ -30,6 +30,7 @@ const api: MmapRendererApi = {
     revealFolder: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceRevealFolder),
     move: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceMove),
     delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceDelete, request),
+    setTimezone: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceSetTimezone, request),
   },
   nodes: {
     list: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesList, request),
@@ -78,6 +79,19 @@ const api: MmapRendererApi = {
     create: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsCreate, request),
     update: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsUpdate, request),
     delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.relationshipsDelete, request),
+  },
+  graph: {
+    overview: (request) => ipcRenderer.invoke(IPC_CHANNELS.graphOverview, request),
+    neighborhood: (request) => ipcRenderer.invoke(IPC_CHANNELS.graphNeighborhood, request),
+    getPositions: (request) => ipcRenderer.invoke(IPC_CHANNELS.graphGetPositions, request),
+    savePositions: (request) => ipcRenderer.invoke(IPC_CHANNELS.graphSavePositions, request),
+  },
+  timeline: {
+    list: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineList, request),
+    markReviewed: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineMarkReviewed, request),
+    updateReflection: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.timelineUpdateReflection, request),
+    deleteReviewed: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineDeleteReviewed, request),
   },
   maps: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),

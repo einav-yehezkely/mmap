@@ -7,10 +7,12 @@
  */
 
 export * from './application/attachment-service';
+export * from './application/graph-service';
 export * from './application/knowledge-node-service';
 export * from './application/map-service';
 export * from './application/relationship-service';
 export * from './application/tag-service';
+export * from './application/timeline-service';
 export * from './application/workspace-service';
 export * from './clock';
 export * from './errors';
@@ -27,6 +29,7 @@ export * from './notes/note-document';
 export * from './notes/note-references';
 export * from './notes/plain-text';
 export * from './ports/attachment-store';
+export * from './ports/graph';
 export * from './ports/map-repository';
 export * from './ports/pagination';
 export * from './ports/repositories';
@@ -34,4 +37,5 @@ export * from './ports/search';
 export * from './ports/transaction';
 export * from './text/labels';
 export * from './timeline/editing-session';
+export * from './timeline/time-zone';
 export * from './workspace/workspace-name';

@@ -17,6 +17,7 @@ import type {
 } from '../ports/repositories';
 import type { TransactionRunner } from '../ports/transaction';
 import { toNormalizedLabel } from '../text/labels';
+import { validateTimeZone } from '../timeline/time-zone';
 import { normalizeWorkspaceName } from '../workspace/workspace-name';
 
 export interface WorkspaceServiceDependencies {
@@ -35,6 +36,8 @@ export interface WorkspaceService {
   initialize(workspaceId: WorkspaceId, rawName: string, timezone: string): Promise<WorkspaceRecord>;
   get(workspaceId: WorkspaceId): Promise<WorkspaceRecord>;
   rename(workspaceId: WorkspaceId, rawName: string): Promise<WorkspaceRecord>;
+  /** Sets the timezone used to display dates (PRD §5.9); stored timestamps stay UTC. */
+  setTimezone(workspaceId: WorkspaceId, timezone: string): Promise<WorkspaceRecord>;
 }
 
 export function createWorkspaceService(
@@ -86,6 +89,14 @@ export function createWorkspaceService(
         const now = clock.now();
         await get(workspaceId);
         await workspaces.rename(workspaceId, name, now);
+        return get(workspaceId);
+      }),
+
+    setTimezone: (workspaceId, timezone) =>
+      transactions.runInTransaction(async () => {
+        const valid = validateTimeZone(timezone);
+        await get(workspaceId);
+        await workspaces.setTimezone(workspaceId, valid, clock.now());
         return get(workspaceId);
       }),
   };

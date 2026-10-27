@@ -2,10 +2,10 @@
 
 This page explains how the code is organized, how a request travels from the UI to the storage
 engine, how the Phase 1 features (workspaces, nodes, notes, tags, attachments), the Phase 2
-features (relationships, wikilinks and backlinks, search) and the Phase 3 features (mind maps)
-work, and how the security baseline from
+features (relationships, wikilinks and backlinks, search), the Phase 3 features (mind maps) and
+the Phase 4 features (knowledge graph, learning timeline) work, and how the security baseline from
 [ADR-0003](adr/0003-electron-version-and-security-baseline.md) is implemented. It describes the
-code on branch `phase-3-mind-maps`; later phases are listed separately at the end. It is a
+code on branch `phase-4-graph-timeline`; later phases are listed separately at the end. It is a
 reviewer-level overview: follow the file references for details.
 
 ## Packages and dependency rules
@@ -13,19 +13,21 @@ reviewer-level overview: follow the file references for details.
 The repository is an npm-workspaces monorepo
 ([ADR-0001](adr/0001-monorepo-and-module-boundaries.md)).
 
-| Package                   | Responsibility                                                                                                                                                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, map hierarchy and tree layout, labels, attachment file-type policy, timeline sessions, application services |
-| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                                                   |
-| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories, FTS5 search index                                                                                                                 |
-| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                                                        |
+| Package                   | Responsibility                                                                                                                                                                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, map hierarchy and tree layout, labels, attachment file-type policy, timeline sessions and timezone conversion, graph limits, application services |
+| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                                                                                         |
+| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories, FTS5 search index, graph query and graph positions                                                                                                                      |
+| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                                                                                              |
 
 Application services live in `packages/domain/src/application/` (`workspace-service.ts`,
 `knowledge-node-service.ts`, `tag-service.ts`, `attachment-service.ts`,
-`relationship-service.ts`, `map-service.ts`). They depend only on ports (`packages/domain/src/ports/`), so the same
+`relationship-service.ts`, `map-service.ts`, `graph-service.ts`, `timeline-service.ts`). They
+depend only on ports (`packages/domain/src/ports/`), so the same
 services run against SQLite today and could run against another adapter later. The SQLite
-implementations of those ports are in `packages/storage-sqlite/src/repositories/`, and the search
-port (`ports/search.ts`) is implemented in `packages/storage-sqlite/src/search/`. All of them are
+implementations of those ports are in `packages/storage-sqlite/src/repositories/`, the search
+port (`ports/search.ts`) is implemented in `packages/storage-sqlite/src/search/`, and the graph
+port (`ports/graph.ts`) in `packages/storage-sqlite/src/graph/`. All of them are
 wired per open workspace in `createWorkspaceServices`
 (`apps/desktop/src/main/workspaces/open-workspace.ts`).
 
@@ -57,7 +59,9 @@ The renderer imports a few pure functions from `@mmap/domain` (`parseNoteDocumen
 `isSafeLinkHref`) so that the editor applies exactly the same rules as the main process. These
 are checks for a fast, accurate UI; the main process repeats them and remains the authority. The
 map editor also imports the pure hierarchy helpers and `layoutTree` (see [Mind maps](#mind-maps)),
-so the tree layout is computed by domain code in the renderer instead of being stored.
+so the tree layout is computed by domain code in the renderer instead of being stored. The
+timeline groups entries by day with the domain's `localDateOf`, the same timezone code the main
+process uses for date filters (see [Learning timeline](#learning-timeline)).
 
 The rules are written once in `tooling/architecture-rules.mjs` and enforced twice:
 
@@ -88,7 +92,7 @@ mmap follows Electron's standard three-part model, with the renderer treated as 
 | -------- | --------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Main     | `apps/desktop/src/main`     | Node (ESM bundle `out/main/index.js`)         | Composition root, window, security policy, `app://` and `mmap-attachment://` protocols, workspaces, storage, IPC handlers |
 | Preload  | `apps/desktop/src/preload`  | Sandboxed, context-isolated (CJS `index.cjs`) | Exposes `window.mmap` with named, typed methods only                                                                      |
-| Renderer | `apps/desktop/src/renderer` | Chromium, sandboxed, origin `app://mmap`      | React UI (Tailwind, shadcn/ui, Tiptap, KaTeX, React Flow); no Node or Electron APIs                                       |
+| Renderer | `apps/desktop/src/renderer` | Chromium, sandboxed, origin `app://mmap`      | React UI (Tailwind, shadcn/ui, Tiptap, KaTeX, React Flow, Cytoscape); no Node or Electron APIs                            |
 
 Build configuration is in `apps/desktop/electron.vite.config.ts`. Every library and every
 `@mmap/*` package is bundled, so the packaged app contains no `node_modules`. The preload script is
@@ -109,7 +113,7 @@ Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 On quit, `before-quit` is delayed until `WorkspaceManager.close()` has flushed queued writes,
 checkpointed the WAL and released the workspace lock.
 
-### Current scope (Phases 1 to 3)
+### Current scope (Phases 1 to 4)
 
 The renderer (`apps/desktop/src/renderer/src/App.tsx`) shows a workspace gate: while no workspace
 is open, `WorkspaceSetupView` explains why and offers create, open and recent workspaces. Once a
@@ -128,11 +132,18 @@ switching workspaces discards all view state of the previous one.
 - **Mind Maps** (`maps/maps-view.tsx`, `maps/map-editor.tsx`): the list of maps and the editor
   for one map, with the canvas, the outline and the dialogs (see [Mind maps](#mind-maps)).
   Opening an item opens its node in the same detail panel as everywhere else.
-- **Settings** (`views/settings-view.tsx`): workspace name, location and switching, attachment
-  size limit, diagnostics.
-- Knowledge Graph and Timeline show an empty state naming their phase.
+- **Knowledge Graph** (`graph/graph-view.tsx`, `graph/graph-canvas.tsx`): toolbar and filters
+  (including mind maps), the Cytoscape canvas with saved positions, a completeness statement, the
+  side panel for the selected node, Focus mode and the List tab (see
+  [Knowledge graph](#knowledge-graph)). "Open mind map" switches to Mind Maps with that map open.
+- **Timeline** (`timeline/timeline-view.tsx`): recorded activity and reviews grouped by day in the
+  workspace timezone (see [Learning timeline](#learning-timeline)). The node panel's "Mark as
+  reviewed…" button opens `timeline/review-dialog.tsx`.
+- **Settings** (`views/settings-view.tsx`): workspace name, location and switching, timezone
+  (`views/timezone-setting.tsx`), attachment size limit, diagnostics.
 
-Views that show data owned by other nodes (relationships, backlinks, search results, open maps) reload when
+Views that show data owned by other nodes (relationships, backlinks, search results, open maps,
+the graph, the timeline) reload when
 `notifyNodesChanged` fires (`nodes/node-events.ts`), for example after a node is renamed, created
 from the wikilink picker, or deleted.
 
@@ -783,6 +794,266 @@ scripts remain forbidden, which is what protects against injected content. React
 attribution link is hidden because the canvas never navigates to the web. The packaged smoke test
 renders the real editor with 200 items under the production CSP.
 
+## Knowledge graph
+
+PRD §5.7. The main decisions are recorded in [ADR-0010](adr/0010-graph-and-timeline.md).
+
+The graph shows canonical nodes and semantic relationships of the open workspace, with note
+references (wikilinks) as an optional, separately drawn layer, and mind map membership on the
+nodes themselves. It is a read-only view of knowledge: nothing in it writes nodes, relationships
+or maps. The only thing it stores is where nodes sit on the graph canvas (`graph_node_positions`),
+which is visual state of this view, kept apart from every mind map's placements.
+
+Three kinds of connection stay distinct everywhere: relationships are edges (with an arrow when
+directed), note links are a dashed layer, and map membership is a property of the node (badges,
+tooltip, side panel, List). Sharing a map never creates an edge (PRD §4.4).
+
+### Layers
+
+| Layer        | Code                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Port         | `packages/domain/src/ports/graph.ts`: `GraphQuery`, `GraphFilters`, `GraphSlice` (with `GraphNode.mapIds` and `GraphMap`), `GraphLayoutRepository`, and the limits `MAX_GRAPH_NODES` (1,000), `MAX_GRAPH_EDGES` (3,000), `MAX_GRAPH_NEIGHBORS` (200)                                                                                                                                                  |
+| Service      | `packages/domain/src/application/graph-service.ts`: normalizes filters (text trimmed, at most 500 characters; duplicate IDs removed), clamps every limit to the caps above, and validates positions (at most 5,000 per call, coordinates within ±1,000,000)                                                                                                                                           |
+| Storage      | `packages/storage-sqlite/src/graph/sqlite-graph-query.ts` (`SqliteGraphQuery`) and `sqlite-graph-layout-repository.ts` (`SqliteGraphLayoutRepository`, table `graph_node_positions` from migration 3)                                                                                                                                                                                                 |
+| Contracts    | `packages/contracts/src/graph-timeline.ts`: `graph:overview`, `graph:neighborhood`, `graph:get-positions`, `graph:save-positions` ([ipc-contracts.md](ipc-contracts.md#knowledge-graph))                                                                                                                                                                                                              |
+| Main process | `apps/desktop/src/main/services/graph-timeline-ipc-services.ts` maps slices field by field to DTOs                                                                                                                                                                                                                                                                                                    |
+| Renderer     | `apps/desktop/src/renderer/src/graph/`: screen (`graph-view.tsx`: toolbar, filters, status line, List, legend), Cytoscape canvas (`graph-canvas.tsx`), stable placement (`graph-layout.ts`), pure model (`graph-model.ts`: merging, completeness text, elements and map badges, emphasis, Focus set, list rows, find), side panel (`graph-node-panel.tsx`), map multi-select (`graph-map-filter.tsx`) |
+
+### Bounded slices with explicit totals
+
+A large workspace is never loaded whole. The graph is built from **slices**:
+
+- `overview` returns the best-connected nodes that match the filters, at most 1,000, with the
+  relationships among them (at most 3,000) and, when requested, the note references among them
+  (at most 3,000). Nodes are ranked by **degree** (number of relationships within the type
+  filter, across the whole workspace), then title (ASCII case folded, like SQLite `NOCASE`), then
+  ID, so the same data and filters always give the same slice.
+- `neighborhood` returns one node and its direct neighbors through relationships (and through
+  note references, when the layer is on), at most 200, ranked the same way, with every
+  relationship and reference among the returned nodes. The expanded node itself is always shown;
+  its neighbors follow the filters.
+
+Every node carries `mapIds` (the mind maps that place it, from `map_placements`), and every slice
+lists all mind maps of the workspace in `maps` (`id`, `title`, `nodeCount`, ordered by title), so
+the view can name memberships and offer the map filter even for maps with no node in the slice.
+
+Every slice states `totalNodes` (matching nodes in the workspace, or neighbors for an expansion)
+and whether edges or references were left out (`edgesTruncated`, `referencesTruncated`). The view
+never has to guess: `describeCompleteness` turns these into sentences shown in a `role="status"`
+line above the canvas, in amber while the view is partial ("Partial view: showing 1,000 of 10,000 matching nodes, the most connected
+first…", "Neighbors of “X”: showing 200 of 340."). An expansion is merged into the view by
+`mergeNeighborhood`, which keeps what is shown and records each expansion's own counts. PRD §5.7:
+"never silently imply that a partial view contains all nodes".
+
+Filters:
+
+- **Text**: the same escaped FTS5 match as search (`buildFtsMatchExpression`), over title,
+  summary and note text. Text with no searchable word matches nothing.
+- **Tags**: nodes that carry all selected tags (the library's rule).
+- **Relationship types**: only relationships of the selected types, and only nodes that take part
+  in at least one of them. Degrees are counted within the filter.
+- **Mind maps** (`mapIds`): only nodes placed on at least one of the selected maps (their union).
+  Without a map filter, nodes on no map are shown too. The filter only selects nodes; it never adds
+  edges between members.
+- **Note links** (`includeReferences`): adds one line per (source note, target node) pair, with
+  the number of links; a note linking to its own node is left out.
+
+### Simple scans, ranking in TypeScript
+
+`SqliteGraphQuery` runs one simple, indexed query per table, with every filter as a bound
+parameter: the candidate nodes (`knowledge_nodes`, with the tag and text conditions), all
+relationships of the workspace within the type filter, all map placements (for memberships and
+the map filter), the workspace's maps with their node counts, and, if requested, the grouped note
+references. Degrees, ranking, the cut to the limit and the selection of edges among the shown
+nodes happen in TypeScript. On the PRD dataset (10,000 nodes, 30,000 relationships) this is
+linear and its cost does not depend on SQLite's plan choices.
+
+Earlier versions pushed the work into SQL and were slow for reasons that only showed on the full
+dataset: ID lists expanded with `json_each` were re-evaluated per row (about 600 ms for the edges
+among 1,000 nodes), and correlated per-node counts with a type filter made SQLite choose the type
+index and took minutes. Those numbers were timed during development with temporary
+instrumentation and are recorded only in the header comment of `sqlite-graph-query.ts`; the
+committed benchmark (`search.benchmark.test.ts`) measures only the current design
+([testing.md](testing.md#search-benchmark)).
+
+### Rendering
+
+`graph-canvas.tsx` creates one Cytoscape 3.34.3 instance and synchronizes its elements
+incrementally: removed elements are removed, new ones are added at the position the view chose,
+and existing ones only get new data and classes. A data change, a selection or a filter change
+never moves a node that is already on screen.
+
+#### Stable positions
+
+Positions are visual state of the graph only. They are stored per workspace in
+`graph_node_positions` (migration 3), never in `map_placements`, so moving a node on the graph
+never moves it on a map, and the reverse. They never change knowledge.
+
+1. After loading a slice, `graph-view.tsx` reads the saved positions of its nodes
+   (`graph:get-positions`) and keeps every position it already knows in memory (including drags),
+   so a reload never moves anything.
+2. `placeNodes` (`graph-layout.ts`) places only nodes without a position: next to the average of
+   their already placed neighbors, in the nearest free cell of a 190 × 90 grid, or, for nodes with
+   no placed neighbor, in rows below the existing drawing. It works in ranking order (best
+   connected first), is deterministic and avoids overlaps; 1,000 nodes take well under a second
+   (`graph-layout.test.ts`). Newly placed nodes are saved (`graph:save-positions`, in batches of
+   up to 5,000).
+3. Dragging a node saves its position after 500 ms (debounced).
+4. The whole graph is laid out only by **Rearrange**: Cytoscape's `cose` layout on the visible
+   nodes, with settings measured on a sample graph in the app (ideal edge length 70, node
+   repulsion 4,000, gravity 3, labels counted as part of the nodes). It animates only from the old
+   to the final positions (`animate: 'end'`), for fewer than 400 nodes and never with reduced
+   motion, then fits and saves every visible node's position. It replaces manual positions.
+5. On opening the screen, the same layout runs automatically when nothing is saved yet or most
+   shown nodes have no saved position, for graphs of up to 300 nodes. Larger graphs keep the
+   stable placement, so the first view appears quickly.
+
+#### Fitting
+
+The graph always opens fitted to view; the viewport is not stored (migration 4 dropped the
+`graph_view_state` table that migration 3 had created for it). It fits again after a filter change,
+after entering, changing or leaving Focus mode, after Rearrange and on **Fit**, but not after a
+reload caused by an edit elsewhere. Automatic fitting never zooms in beyond 1.2, so a single node
+or a small graph keeps a normal size, and uses a margin of 8% of the canvas's shorter side (at
+most 50 px). Cytoscape caches its container size; a `ResizeObserver` resizes it when the filter
+panel, the side panel or the window changes the canvas size, and refits until the user pans or
+zooms (dragging the background, the wheel, a pinch, the zoom buttons or centering a found node).
+
+#### Visual rules (PRD §5.7, §6, §14)
+
+- Directed relationships end in an arrow; undirected ones have none. Direction is shown by shape,
+  never by color alone.
+- Relationship type labels appear on hover, for the edges of the selected node, and on every edge
+  with **All labels**.
+- Note links are dashed and thinner, without an arrow, so they are never mistaken for
+  relationships; their direction is written out in the List. A footer legend explains arrows,
+  undirected lines and dashed note links.
+- Node size grows with degree. Labels sit below the node, are cut with an ellipsis at 130 px and
+  hidden when zoomed far out; hovering a node shows a tooltip with the full title and its maps.
+- With **Show Maps**, nodes on maps are drawn as pies with one slice per map in the map's color
+  (`MAP_COLORS`, eight colors by the map's position in the title-ordered list, so colors repeat
+  after eight maps); a node on more than six maps gets six colored slices and one neutral slice.
+  The legend then lists the first eight maps with their colors. Membership is always named in the
+  tooltip, side panel and List, so it never depends on color.
+- Colors come from the theme's CSS variables, so the graph follows light and dark mode. The theme
+  uses `oklch()`, which Cytoscape cannot parse, so `themeColor` converts each variable to `rgb()`
+  by painting one pixel on a canvas.
+
+#### Selection, highlighting and Focus mode
+
+`computeEmphasis` (`graph-model.ts`) decides what stays at full strength; everything else is
+dimmed by a class, never removed:
+
+- a selected node with its immediate neighbors and the edges between it and them;
+- otherwise, a highlighted map's members and the relationships among them.
+
+Focus mode (`focusNodeIds`) hides everything except the focused node and its immediate
+neighbors; **Expand neighbors** inside Focus mode adds that node's neighbors to the focus set.
+The status line names the focused node and the highlighted map, with buttons to leave either.
+
+Click selects a node and opens the side panel (`graph-node-panel.tsx`): title, summary, tags, mind
+maps (each with "highlight on the graph" and "open mind map"), relationships in words with
+direction, and **Open note**, **Focus** and **Expand neighbors**. Double-click opens the node in
+the node panel. **Open mind map** switches to the Mind Maps view with that map open in its own
+layout (`App.tsx` passes `initialMapId` to `maps-view.tsx`). **Find in graph** suggests up to
+eight loaded nodes whose title contains the text, then selects and centers the chosen one.
+
+The view reloads on `notifyNodesChanged`, so a node renamed, deleted or connected elsewhere is not
+shown stale. Expanded neighborhoods are remembered and re-applied after every reload and filter
+change while the expanded node is still in the overview. Cytoscape is bundled like every other
+renderer dependency, and the packaged smoke check renders a 1,000-node graph under the production
+CSP.
+
+#### Map regions and collapsing
+
+Mind map membership overlaps, so maps are never turned into an exclusive hierarchy (Cytoscape
+compound nodes would force every node into one parent). `graph-regions.ts` (pure, unit-tested)
+computes two things the canvas draws:
+
+- **Regions** (toolbar **Regions**): for each shown map, a soft padded convex hull around its
+  visible members, labeled with the map title, drawn on an SVG layer behind the graph and redrawn
+  on every Cytoscape render. Regions may overlap; a shared node lies inside each region of its
+  maps and is still one canonical node. At most 12 regions are drawn at once (the status line says
+  when more exist); selecting maps in the filter chooses which. The layer is built with DOM APIs,
+  never markup, because map titles are user content.
+- **Collapsing** (collapse button per map in the filter panel): a collapsed map becomes one summary
+  node, "Title · N nodes", in the map's color, placed at the center of the members it hides. A
+  member is hidden only when every map it is on is collapsed; a member also on an expanded map stays
+  visible as itself, and nodes on no map are never hidden. Relationships and note links to hidden
+  members are aggregated onto the summaries as one line per pair with a count ("3 connections"), so
+  connections between collapsed maps and the rest of the graph stay visible. Clicking a summary
+  expands its map; **Expand all** in the status line expands every map. Summaries are not knowledge
+  nodes: their positions are derived and never saved.
+
+Not implemented: creating relationships from the graph.
+
+### List: the accessible alternative
+
+The canvas is not keyboard-operable and has `role="img"` with a label that points to the List
+tab. The **List** tab (`buildGraphList`) shows the same nodes, sorted by title, each with its mind
+maps and its relationships and note links written out in words with direction ("depends on → Beta",
+"← depends on Alpha", "related to — Gamma", "note links to Delta"), and **Open**, **Focus** and
+**Expand** buttons. It shows exactly what the canvas shows (only the focus set in Focus mode), so
+the completeness statement applies to both (PRD §6, acceptance criterion 14).
+
+## Learning timeline
+
+PRD §5.9. Code: `packages/domain/src/application/timeline-service.ts`,
+`packages/domain/src/timeline/` (`editing-session.ts`, `time-zone.ts`),
+`packages/storage-sqlite/src/repositories/sqlite-timeline-event-repository.ts`, channels in
+`packages/contracts/src/graph-timeline.ts`, UI in `apps/desktop/src/renderer/src/timeline/`.
+
+### What the timeline is
+
+A record of what happened, newest first: node creation, editing sessions of notes (30 minutes of
+inactivity end a session; see [data-model.md](data-model.md#what-is-recorded)), relationship
+creation, and reviews the user adds. It does not infer, score or rate understanding; there is no
+progress measure anywhere in the code.
+
+### Recorded activity is immutable; reviews belong to the user
+
+`node_created`, `note_updated` and `relationship_created` are written by the node and
+relationship services in the same transaction as the change they describe. They are facts about
+the past, so no user action can edit or delete them (the only change ever made is the node
+service extending a still-open editing session): `TimelineService` checks the event type and refuses
+any change to a non-`reviewed` event with `INVARIANT_VIOLATION`. This keeps the timeline
+trustworthy and keeps a future import honest: imported history must arrive marked as imported
+and never be rewritten into new learning events (PRD §5.9).
+
+A `reviewed` event is the user's own statement ("I went over this node"), so it is theirs to
+manage: `markReviewed` records it with an optional reflection, `updateReflection` changes the
+reflection, and `deleteReviewed` removes it. A reflection is trimmed, normalized to NFC, may hold
+line breaks and tabs, and is refused if longer than 2,000 characters or containing other control
+characters. Each of these runs in one write transaction.
+
+### Timezones
+
+Timestamps are stored as fixed-width UTC strings and never change. The workspace has one display
+timezone (`workspaces.timezone`, an IANA name), chosen in Settings and validated by
+`validateTimeZone` (names the runtime's `Intl` knows; offsets such as `+02:00` are refused).
+
+- **Date filters are local calendar dates.** The renderer sends `fromDate` and `toDate` as
+  `YYYY-MM-DD`. `localDateRangeToUtc` turns them into a half-open UTC range: the start of the
+  first day up to the start of the day after the last. So "27 March" means the user's 27 March,
+  including on a 23- or 25-hour day.
+- **Days without a midnight.** Where clocks jump at midnight (for example `America/Santiago`),
+  `startOfLocalDayUtc` starts the day at the transition instant; where midnight occurs twice, at
+  the earlier one. The conversion uses `Intl` only, so the domain needs no timezone library and
+  follows the runtime's timezone database.
+- **Grouping by day.** The renderer groups entries with `localDateOf` (same domain code) and
+  formats the heading at noon UTC, so no timezone can move it to another date. An editing session
+  belongs to the day it started.
+- **Changing the timezone** changes only how dates are shown and how filters are read.
+
+### Listing and paging
+
+`SqliteTimelineEventRepository.list` orders by `occurred_at DESC, id DESC` and pages with a keyset
+cursor (the last row's time and ID, base64url JSON), so new events recorded meanwhile never
+repeat or skip rows. A malformed cursor is `VALIDATION_FAILED`. Filters (event types, node, tags
+that the node carries now, the UTC range) are bound parameters. Each entry carries the node's
+current title through a `LEFT JOIN`, or the recorded title snapshot when the node was deleted; the
+main process sends one `nodeTitle` to the renderer.
+
 ## Attachments
 
 PRD §5.10. Code: `apps/desktop/src/main/services/attachment-ipc-services.ts`,
@@ -899,20 +1170,22 @@ archives (Phase 5).
 
 ## Where future phases plug in
 
-- **Graph.** `relationships:list-for-node` answers one node's neighbourhood; the Phase 4 graph
-  will need bounded multi-node loading and relationship-type filters. Note references can feed
-  its optional reference layer (PRD §4.3).
+- **Graph actions.** Creating a relationship from the graph (PRD §5.5) can reuse the node panel's
+  relationship form; the graph view only needs to reload afterwards, which `notifyNodesChanged`
+  already does.
 - **Maps in export and import (Phase 5).** Placements, hierarchy, connectors and viewports must be
   exported and re-mapped to new IDs on import. Hierarchical layouts need no export because they
   are computed.
 - **Import (Phase 5).** Imported raw or Markdown text with `[[Title]]` links will need its own
   resolution step that asks the user when a title is ambiguous (PRD §5.4); the editor never
   resolves links by title.
-- **Timeline display.** Events are recorded (see [data-model.md](data-model.md)); the Timeline
-  view arrives in Phase 4.
-- **Heavy work off the main thread.** Database work, including search and maps, currently runs on
-  the main process thread, and the hierarchical map layout runs in the renderer. Archives, graph
-  layouts and large queries in later phases should move to a worker; the `TransactionRunner` port
+- **Timeline in export and import (Phase 5).** Timeline records must be exported; imported events
+  must be written with `is_imported = 1` and an `import_origin`, never as new activity (PRD §5.9).
+  The timeline view already shows an "Imported" badge for them.
+- **Heavy work off the main thread.** Database work, including search, maps and graph queries,
+  currently runs on the main process thread, and the hierarchical map layout and the Cytoscape
+  graph layout run in the renderer. Archives and large queries in later phases should move to a
+  worker; the `TransactionRunner` port
   is asynchronous so the coordinator can move with them.
 - **New IPC channels.** Each feature adds channels through the contract catalogue
   ([ipc-contracts.md](ipc-contracts.md)). Long-running operations will additionally need progress,

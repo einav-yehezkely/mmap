@@ -1,7 +1,9 @@
 /**
  * Search performance benchmark on the PRD §9 validation dataset: 10,000 nodes and 30,000
  * relationships, plus ~200 tags. Targets: search p95 below 500 ms (PRD §9) and picker title
- * lookup p95 below 100 ms (interactive typing budget).
+ * lookup p95 below 100 ms (interactive typing budget). The knowledge graph queries are measured
+ * on the same dataset: the initial graph (1,000 nodes / 3,000 edges, PRD §9: rendered within 3
+ * seconds of data availability) must load well within that budget, here below 1 second.
  *
  * Skipped in normal test runs because building the dataset takes several seconds. Run with:
  *   MMAP_BENCHMARK=1 npx vitest run --project storage-sqlite search.benchmark --silent=false
@@ -18,7 +20,11 @@ import { performance } from 'node:perf_hooks';
 
 import {
   createWorkspaceService,
+  MAX_GRAPH_EDGES,
+  MAX_GRAPH_NEIGHBORS,
+  MAX_GRAPH_NODES,
   type NodeId,
+  type RelationshipTypeId,
   type TagId,
   type UtcTimestamp,
   type WorkspaceId,
@@ -29,6 +35,7 @@ import { SqliteRelationshipTypeRepository } from '../repositories/sqlite-relatio
 import { SqliteWorkspaceRepository } from '../repositories/sqlite-workspace-repository';
 import type { SqliteConnections } from '../sqlite-connections';
 import { openWorkspaceDatabase } from '../workspace-database';
+import { SqliteGraphQuery } from '../graph/sqlite-graph-query';
 import { SqliteSearchIndex } from './sqlite-search-index';
 
 const NODE_COUNT = 10_000;
@@ -415,6 +422,67 @@ describe.skipIf(process.env.MMAP_BENCHMARK !== '1')('search benchmark (PRD §9 d
       expect(lookupStats.count).toBeGreaterThanOrEqual(200);
       expect(searchStats.p95).toBeLessThan(500);
       expect(lookupStats.p95).toBeLessThan(100);
+    },
+    SETUP_TIMEOUT_MS,
+  );
+
+  it(
+    'loads the bounded knowledge graph within budget',
+    async () => {
+      const graph = new SqliteGraphQuery(connections);
+      const typeIds = connections
+        .forRead()
+        .prepare('SELECT id FROM relationship_types WHERE workspace_id = ? ORDER BY id')
+        .all(WORKSPACE_ID)
+        .map((row) => String(row.id) as RelationshipTypeId);
+      const noFilters = {
+        tagIds: [],
+        relationshipTypeIds: [],
+        mapIds: [],
+        text: null,
+        includeReferences: true,
+      };
+      const limits = { maxNodes: MAX_GRAPH_NODES, maxEdges: MAX_GRAPH_EDGES };
+      const filterSets = [
+        noFilters,
+        { ...noFilters, tagIds: dataset.tagIds.slice(0, 1) },
+        { ...noFilters, relationshipTypeIds: typeIds.slice(0, 2) },
+        { ...noFilters, text: dataset.vocabulary[0] ?? 'a' },
+      ];
+      const overviewDurations: number[] = [];
+      let hub: NodeId | null = null;
+      for (let round = 0; round < 5; round += 1) {
+        for (const filters of filterSets) {
+          overviewDurations.push(
+            await measure(async () => {
+              const slice = await graph.overview(WORKSPACE_ID, filters, limits);
+              hub ??= slice.nodes[0]?.id ?? null;
+              if (filters === noFilters) {
+                expect(slice.nodes).toHaveLength(MAX_GRAPH_NODES);
+                expect(slice.totalNodes).toBe(NODE_COUNT);
+              }
+            }),
+          );
+        }
+      }
+      const neighborhoodDurations: number[] = [];
+      for (const nodeId of [hub, ...dataset.nodeIds.slice(0, 49)]) {
+        if (nodeId === null) continue;
+        neighborhoodDurations.push(
+          await measure(() =>
+            graph.neighborhood(WORKSPACE_ID, nodeId, noFilters, {
+              maxNeighbors: MAX_GRAPH_NEIGHBORS,
+              maxEdges: MAX_GRAPH_EDGES,
+            }),
+          ),
+        );
+      }
+      const overviewStats = summarize(overviewDurations);
+      const neighborhoodStats = summarize(neighborhoodDurations);
+      report(formatRow('graph overview', overviewStats));
+      report(formatRow('graph neighborhood', neighborhoodStats));
+      expect(overviewStats.p95).toBeLessThan(1_000);
+      expect(neighborhoodStats.p95).toBeLessThan(300);
     },
     SETUP_TIMEOUT_MS,
   );

@@ -21,6 +21,7 @@ export const IPC_CHANNELS = {
   workspaceRevealFolder: 'workspace:reveal-folder',
   workspaceMove: 'workspace:move',
   workspaceDelete: 'workspace:delete',
+  workspaceSetTimezone: 'workspace:set-timezone',
   nodesList: 'nodes:list',
   nodesGet: 'nodes:get',
   nodesCreate: 'nodes:create',
@@ -70,6 +71,14 @@ export const IPC_CHANNELS = {
   mapsRemoveConnection: 'maps:remove-connection',
   mapsProposeHierarchy: 'maps:propose-hierarchy',
   mapsSwitchMode: 'maps:switch-mode',
+  graphOverview: 'graph:overview',
+  graphNeighborhood: 'graph:neighborhood',
+  graphGetPositions: 'graph:get-positions',
+  graphSavePositions: 'graph:save-positions',
+  timelineList: 'timeline:list',
+  timelineMarkReviewed: 'timeline:mark-reviewed',
+  timelineUpdateReflection: 'timeline:update-reflection',
+  timelineDeleteReviewed: 'timeline:delete-reviewed',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

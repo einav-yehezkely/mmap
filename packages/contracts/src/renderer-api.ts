@@ -31,6 +31,7 @@ export interface MmapRendererApi {
     readonly revealFolder: BridgeCall<'workspace:reveal-folder'>;
     readonly move: BridgeCall<'workspace:move'>;
     readonly delete: BridgeCall<'workspace:delete'>;
+    readonly setTimezone: BridgeCall<'workspace:set-timezone'>;
   };
   readonly nodes: {
     readonly list: BridgeCall<'nodes:list'>;
@@ -77,6 +78,18 @@ export interface MmapRendererApi {
     readonly create: BridgeCall<'relationships:create'>;
     readonly update: BridgeCall<'relationships:update'>;
     readonly delete: BridgeCall<'relationships:delete'>;
+  };
+  readonly graph: {
+    readonly overview: BridgeCall<'graph:overview'>;
+    readonly neighborhood: BridgeCall<'graph:neighborhood'>;
+    readonly getPositions: BridgeCall<'graph:get-positions'>;
+    readonly savePositions: BridgeCall<'graph:save-positions'>;
+  };
+  readonly timeline: {
+    readonly list: BridgeCall<'timeline:list'>;
+    readonly markReviewed: BridgeCall<'timeline:mark-reviewed'>;
+    readonly updateReflection: BridgeCall<'timeline:update-reflection'>;
+    readonly deleteReviewed: BridgeCall<'timeline:delete-reviewed'>;
   };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;

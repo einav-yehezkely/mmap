@@ -1,0 +1,194 @@
+/**
+ * Side panel for the node selected in the knowledge graph: title, summary, tags, mind map
+ * memberships (with "highlight on graph" and "open mind map"), relationships in words with
+ * direction, and actions (open the full note, Focus mode, expand neighbors).
+ *
+ * Membership and relationships are listed separately: being on the same map is not a
+ * relationship (PRD §4.4).
+ */
+
+import type { NodeView, RelationshipViewDto } from '@mmap/contracts';
+import { ExternalLink, Eye, Focus, Network, Workflow, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+import { Button } from '../components/ui/button';
+import { errorMessage, unwrap } from '../lib/ipc';
+import type { SliceMap } from './graph-model';
+
+export interface GraphNodePanelProps {
+  readonly nodeId: string;
+  readonly maps: readonly SliceMap[];
+  readonly memberships: readonly string[];
+  readonly mapColors: ReadonlyMap<string, string>;
+  readonly highlightedMapId: string | null;
+  readonly isFocused: boolean;
+  readonly onClose: () => void;
+  readonly onOpenNote: () => void;
+  readonly onFocus: () => void;
+  readonly onExpand: () => void;
+  readonly onHighlightMap: (mapId: string | null) => void;
+  readonly onOpenMap: (mapId: string) => void;
+}
+
+interface Details {
+  readonly node: NodeView;
+  readonly relationships: readonly RelationshipViewDto[];
+}
+
+export function GraphNodePanel({
+  nodeId,
+  maps,
+  memberships,
+  mapColors,
+  highlightedMapId,
+  isFocused,
+  onClose,
+  onOpenNote,
+  onFocus,
+  onExpand,
+  onHighlightMap,
+  onOpenMap,
+}: GraphNodePanelProps) {
+  const [details, setDetails] = useState<Details | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      unwrap(window.mmap.nodes.get({ nodeId })),
+      unwrap(window.mmap.relationships.listForNode({ nodeId })),
+    ]).then(
+      ([node, relationships]) => {
+        if (!cancelled) setDetails({ node, relationships: relationships.items });
+      },
+      (caught: unknown) => {
+        if (!cancelled) setError(errorMessage(caught));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeId]);
+
+  const nodeMaps = maps.filter((map) => memberships.includes(map.id));
+
+  return (
+    <aside
+      aria-label="Selected node"
+      className="flex w-80 shrink-0 flex-col gap-3 overflow-auto rounded-md border bg-background p-3 text-sm"
+    >
+      <div className="flex items-start gap-2">
+        <h2 className="min-w-0 flex-1 break-words text-base font-semibold" dir="auto">
+          {details?.node.title ?? 'Loading…'}
+        </h2>
+        <Button size="icon" variant="ghost" aria-label="Close node details" onClick={onClose}>
+          <X aria-hidden="true" />
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
+      {details?.node.summary && (
+        <p className="text-muted-foreground" dir="auto">
+          {details.node.summary}
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-1.5">
+        <Button size="sm" onClick={onOpenNote}>
+          <ExternalLink aria-hidden="true" />
+          Open note
+        </Button>
+        <Button size="sm" variant="outline" aria-pressed={isFocused} onClick={onFocus}>
+          <Focus aria-hidden="true" />
+          {isFocused ? 'Focused' : 'Focus'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onExpand}>
+          <Network aria-hidden="true" />
+          Expand neighbors
+        </Button>
+      </div>
+
+      {details !== null && details.node.tags.length > 0 && (
+        <section aria-label="Tags">
+          <h3 className="mb-1 text-xs font-medium uppercase text-muted-foreground">Tags</h3>
+          <ul className="flex flex-wrap gap-1">
+            {details.node.tags.map((tag) => (
+              <li key={tag.id} className="rounded-full border px-2 py-0.5 text-xs" dir="auto">
+                {tag.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section aria-label="Mind maps">
+        <h3 className="mb-1 text-xs font-medium uppercase text-muted-foreground">Mind maps</h3>
+        {nodeMaps.length === 0 ? (
+          <p className="text-muted-foreground">Not on any mind map.</p>
+        ) : (
+          <ul className="space-y-1">
+            {nodeMaps.map((map) => (
+              <li key={map.id} className="flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: mapColors.get(map.id) }}
+                />
+                <span className="min-w-0 flex-1 truncate" dir="auto" title={map.title}>
+                  {map.title}
+                </span>
+                <Button
+                  size="icon"
+                  variant={highlightedMapId === map.id ? 'outline' : 'ghost'}
+                  aria-pressed={highlightedMapId === map.id}
+                  aria-label={`Highlight ${map.title} on the graph`}
+                  title="Highlight on the graph"
+                  onClick={() => onHighlightMap(highlightedMapId === map.id ? null : map.id)}
+                >
+                  <Eye aria-hidden="true" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`Open mind map ${map.title}`}
+                  title="Open mind map"
+                  onClick={() => onOpenMap(map.id)}
+                >
+                  <Workflow aria-hidden="true" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-label="Relationships">
+        <h3 className="mb-1 text-xs font-medium uppercase text-muted-foreground">Relationships</h3>
+        {details === null ? null : details.relationships.length === 0 ? (
+          <p className="text-muted-foreground">No relationships.</p>
+        ) : (
+          <ul className="space-y-1">
+            {details.relationships.map((relationship) => {
+              const outgoing = relationship.source.id === nodeId;
+              const other = outgoing ? relationship.target : relationship.source;
+              const text =
+                relationship.directionality === 'undirected'
+                  ? `${relationship.typeLabel} — ${other.title}`
+                  : outgoing
+                    ? `${relationship.typeLabel} → ${other.title}`
+                    : `← ${relationship.typeLabel} ${other.title}`;
+              return (
+                <li key={relationship.id} dir="auto">
+                  {text}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </aside>
+  );
+}

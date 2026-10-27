@@ -55,6 +55,7 @@ export function createWorkspaceIpcServices(
     }),
 
     'workspace:rename': ({ name }) => manager.rename(name),
+    'workspace:set-timezone': ({ timezone }) => manager.setTimezone(timezone),
 
     'workspace:reveal-folder': async () => {
       const folder = manager.current?.paths.folder;

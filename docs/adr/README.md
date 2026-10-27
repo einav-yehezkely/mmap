@@ -57,6 +57,7 @@ Each serious alternative and the reason it was not chosen.
 | [0007](0007-database-migrations-strategy.md)                 | Database migrations strategy                 | Accepted | 2026-10-26 |
 | [0008](0008-wikilinks-and-note-schema-v2.md)                 | Wikilinks and note schema version 2          | Accepted | 2026-10-27 |
 | [0009](0009-mind-map-editing.md)                             | Mind map editing                             | Accepted | 2026-10-27 |
+| [0010](0010-graph-and-timeline.md)                           | Knowledge graph and learning timeline        | Accepted | 2026-10-27 |
 
 Assumption: ADR-0002 and ADR-0007 are written separately; the file names above are the expected
 names and should be corrected here if the final files differ.
