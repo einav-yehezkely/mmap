@@ -19,6 +19,8 @@ export const IPC_CHANNELS = {
   workspaceForgetRecent: 'workspace:forget-recent',
   workspaceRename: 'workspace:rename',
   workspaceRevealFolder: 'workspace:reveal-folder',
+  workspaceMove: 'workspace:move',
+  workspaceDelete: 'workspace:delete',
   nodesList: 'nodes:list',
   nodesGet: 'nodes:get',
   nodesCreate: 'nodes:create',

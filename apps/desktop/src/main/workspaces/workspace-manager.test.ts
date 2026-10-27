@@ -2,7 +2,15 @@
  * Workspace lifecycle tests against real folders and SQLite files in a temporary directory.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,9 +25,30 @@ import { DEFAULT_WORKSPACE_NAME, WorkspaceManager } from './workspace-manager';
 let sandbox: string;
 let userData: string;
 let idCounter = 0;
+
+/**
+ * Stand-in for the Recycle Bin: moves folders into `<sandbox>/recycle-bin` so tests can check
+ * that nothing was permanently deleted. Set `failNext` to simulate a refusal (e.g. a file in use).
+ */
+const trash = {
+  failNext: false,
+  trashed: [] as string[],
+  async move(folderPath: string): Promise<void> {
+    if (trash.failNext) {
+      trash.failNext = false;
+      throw new Error('Folder is in use.');
+    }
+    const target = join(sandbox, 'recycle-bin', String(trash.trashed.length));
+    mkdirSync(join(sandbox, 'recycle-bin'), { recursive: true });
+    renameSync(folderPath, target);
+    trash.trashed.push(folderPath);
+  },
+};
 const managers: WorkspaceManager[] = [];
 
 beforeEach(() => {
+  trash.failNext = false;
+  trash.trashed = [];
   sandbox = mkdtempSync(join(tmpdir(), 'mmap-manager-'));
   userData = join(sandbox, 'userData');
   mkdirSync(userData);
@@ -52,6 +81,7 @@ function createManager(lock: LockEnvironment = lockEnvironment()): WorkspaceMana
     clock: { now: () => '2026-10-26T12:00:00.000Z' as UtcTimestamp },
     ids: { newId: () => crypto.randomUUID() },
     lockEnvironment: lock,
+    trashFolder: (folderPath) => trash.move(folderPath),
   });
   managers.push(manager);
   return manager;
@@ -326,5 +356,177 @@ describe('settings resilience', () => {
     writeFileSync(join(userData, 'settings.json'), '{ not json');
 
     expect(expectOpen(await createManager().startup()).name).toBe(DEFAULT_WORKSPACE_NAME);
+  });
+});
+
+describe('moving a workspace (PRD §5.1)', () => {
+  async function workspaceWithContent(manager: WorkspaceManager) {
+    const workspace = expectOpen(await manager.startup());
+    const node = await manager.current!.services.nodes.create({ title: 'Survives the move' });
+    // A real, recorded attachment: an unrecorded file would be removed by reconciliation.
+    const sourcePath = join(sandbox, 'notes.txt');
+    writeFileSync(sourcePath, 'attachment bytes');
+    const stored = await manager.current!.attachmentStore.importFile(sourcePath, 'txt', 1_000);
+    const attachment = await manager.current!.services.attachments.register(node.id, {
+      relativePath: stored.relativePath,
+      displayName: 'notes.txt',
+      mimeType: 'text/plain',
+      byteSize: stored.byteSize,
+      sha256: stored.sha256,
+    });
+    return { workspace, node, attachment };
+  }
+
+  it('copies, verifies, opens the copy, then sends the original to the Recycle Bin', async () => {
+    const manager = createManager();
+    const { workspace, node, attachment } = await workspaceWithContent(manager);
+    const target = join(sandbox, 'Documents');
+    mkdirSync(target);
+
+    const result = await manager.move(target);
+
+    const moved = expectOpen(result.state);
+    expect(moved.id).toBe(workspace.id);
+    expect(moved.folderPath).toBe(join(target, DEFAULT_WORKSPACE_NAME));
+    expect(result).toMatchObject({ originalRemoved: true, originalFolder: workspace.folderPath });
+    expect(trash.trashed).toEqual([workspace.folderPath]);
+    expect(existsSync(workspace.folderPath)).toBe(false);
+    await expect(manager.current!.services.nodes.get(node.id)).resolves.toMatchObject({
+      title: 'Survives the move',
+    });
+    const storedFile = await manager.current!.services.attachments.getStoredFile(attachment.id);
+    const storedPath = await manager.current!.attachmentStore.resolveExisting(
+      storedFile.relativePath,
+    );
+    expect(storedPath?.startsWith(moved.folderPath)).toBe(true);
+    expect(readFileSync(storedPath!, 'utf8')).toBe('attachment bytes');
+    // The lock moved with the open workspace; no stale lock was copied.
+    expect(existsSync(join(moved.folderPath, LOCK_FILE_NAME))).toBe(true);
+    const recent = await manager.listRecent();
+    expect(recent.map((entry) => entry.folderPath)).toEqual([moved.folderPath]);
+  });
+
+  it('reopens the next launch at the new location', async () => {
+    const first = createManager();
+    await first.startup();
+    const target = join(sandbox, 'elsewhere');
+    mkdirSync(target);
+    const moved = expectOpen((await first.move(target)).state);
+    await first.close();
+
+    expect(expectOpen(await createManager().startup()).folderPath).toBe(moved.folderPath);
+  });
+
+  it('keeps the original open and unchanged when the destination is inside the workspace', async () => {
+    const manager = createManager();
+    const { workspace } = await workspaceWithContent(manager);
+
+    await expect(manager.move(join(workspace.folderPath, 'attachments'))).rejects.toMatchObject({
+      code: 'WORKSPACE_MOVE_FAILED',
+    });
+
+    expect(expectOpen(manager.getState()).folderPath).toBe(workspace.folderPath);
+    expect(trash.trashed).toEqual([]);
+  });
+
+  it('keeps the original when the copy fails, and leaves no partial copy behind', async () => {
+    const manager = createManager();
+    const { workspace, node } = await workspaceWithContent(manager);
+    const missingParent = join(sandbox, 'does-not-exist');
+
+    await expect(manager.move(missingParent)).rejects.toMatchObject({
+      code: 'WORKSPACE_MOVE_FAILED',
+    });
+
+    expect(expectOpen(manager.getState()).folderPath).toBe(workspace.folderPath);
+    expect(existsSync(missingParent)).toBe(false);
+    await expect(manager.current!.services.nodes.get(node.id)).resolves.toBeDefined();
+  });
+
+  it('reports when the original could not be moved to the Recycle Bin', async () => {
+    const manager = createManager();
+    const { workspace } = await workspaceWithContent(manager);
+    const target = join(sandbox, 'target');
+    mkdirSync(target);
+    trash.failNext = true;
+
+    const result = await manager.move(target);
+
+    expect(result.originalRemoved).toBe(false);
+    expect(existsSync(workspace.folderPath)).toBe(true);
+    expect(expectOpen(result.state).folderPath).toBe(join(target, DEFAULT_WORKSPACE_NAME));
+  });
+
+  it('rejects network destinations', async () => {
+    const manager = createManager();
+    await manager.startup();
+
+    await expect(manager.move('\\\\server\\share')).rejects.toMatchObject({
+      code: 'WORKSPACE_UNSUPPORTED_LOCATION',
+    });
+  });
+});
+
+describe('deleting a workspace (PRD §5.1)', () => {
+  it('requires the exact workspace name and then sends the folder to the Recycle Bin', async () => {
+    const manager = createManager();
+    const workspace = expectOpen(await manager.startup());
+
+    await expect(manager.deleteCurrent('my knowledge')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+    expect(expectOpen(manager.getState()).id).toBe(workspace.id);
+
+    const state = await manager.deleteCurrent(DEFAULT_WORKSPACE_NAME);
+
+    expect(state).toEqual({ status: 'none' });
+    expect(trash.trashed).toEqual([workspace.folderPath]);
+    await expect(manager.listRecent()).resolves.toEqual([]);
+  });
+
+  it('does not recreate the deleted default workspace on the next launch', async () => {
+    const first = createManager();
+    await first.startup();
+    await first.create('Kept', null);
+    await first.openRecent(
+      (await first.listRecent()).find((entry) => entry.name === DEFAULT_WORKSPACE_NAME)!
+        .workspaceId,
+    );
+    await first.deleteCurrent(DEFAULT_WORKSPACE_NAME);
+    await first.close();
+
+    const next = await createManager().startup();
+
+    // The last workspace is gone, so the user chooses; nothing is created behind their back.
+    expect(next.status).toBe('none');
+  });
+
+  it('reopens the workspace and deletes nothing when the Recycle Bin refuses', async () => {
+    const manager = createManager();
+    const workspace = expectOpen(await manager.startup());
+    trash.failNext = true;
+
+    await expect(manager.deleteCurrent(DEFAULT_WORKSPACE_NAME)).rejects.toMatchObject({
+      code: 'WORKSPACE_DELETE_FAILED',
+    });
+
+    expect(expectOpen(manager.getState()).id).toBe(workspace.id);
+    expect(existsSync(workspace.folderPath)).toBe(true);
+  });
+
+  it('refuses when the folder now belongs to a different workspace', async () => {
+    const manager = createManager();
+    const workspace = expectOpen(await manager.startup());
+    const manifestPath = join(workspace.folderPath, MANIFEST_FILE_NAME);
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ ...manifest, workspaceId: '00000000-0000-4000-8000-000000000999' }),
+    );
+
+    await expect(manager.deleteCurrent(DEFAULT_WORKSPACE_NAME)).rejects.toMatchObject({
+      code: 'WORKSPACE_DELETE_FAILED',
+    });
+    expect(trash.trashed).toEqual([]);
   });
 });

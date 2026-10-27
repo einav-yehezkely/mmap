@@ -13,10 +13,11 @@
  */
 
 import { access, rm } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 import type { RecentWorkspace, WorkspaceState } from '@mmap/contracts';
 import {
+  DomainError,
   normalizeWorkspaceName,
   toWorkspaceFolderName,
   type WorkspaceId,
@@ -38,9 +39,13 @@ import {
   type ServiceDependencies,
 } from './open-workspace';
 import { isWorkspaceError, WorkspaceError } from './workspace-errors';
+import { copyDirectoryVerified, WorkspaceCopyError } from './workspace-copy';
 import {
+  ATTACHMENTS_DIRECTORY_NAME,
   createWorkspaceFolder,
+  DATABASE_FILE_NAME,
   directoryExists,
+  LOCK_FILE_NAME,
   MANIFEST_FORMAT,
   MANIFEST_FORMAT_VERSION,
   readManifest,
@@ -61,6 +66,34 @@ export interface WorkspaceManagerDependencies extends ServiceDependencies {
   readonly timezone: () => string;
   /** Receives redacted background failures (e.g. attachment cleanup). */
   readonly logFailure?: (operation: string, error: unknown) => void;
+  /**
+   * Moves a folder to the operating system's Recycle Bin (Electron `shell.trashItem`). Used for
+   * deleting and for removing the original after a move; workspace data is never deleted
+   * permanently by mmap, so a mistake stays recoverable.
+   */
+  readonly trashFolder: (folderPath: string) => Promise<void>;
+}
+
+export interface MoveResult {
+  readonly state: WorkspaceState;
+  /** False when the original could not be moved to the Recycle Bin and is still in place. */
+  readonly originalRemoved: boolean;
+  readonly originalFolder: string;
+}
+
+/**
+ * Entries never copied when moving: the lock (owned by the running process), SQLite side files
+ * (empty after the checkpoint done on close) and staging leftovers of interrupted attachment
+ * imports.
+ */
+function isTransientWorkspaceEntry(relativePath: string): boolean {
+  return (
+    relativePath === LOCK_FILE_NAME ||
+    relativePath === `${DATABASE_FILE_NAME}-wal` ||
+    relativePath === `${DATABASE_FILE_NAME}-shm` ||
+    relativePath === `${ATTACHMENTS_DIRECTORY_NAME}/.staging` ||
+    relativePath.startsWith(`${ATTACHMENTS_DIRECTORY_NAME}/.staging/`)
+  );
 }
 
 interface OpenedState {
@@ -182,6 +215,115 @@ export class WorkspaceManager {
       const settings = await this.dependencies.settings.load();
       await this.dependencies.settings.save(forgetWorkspace(settings, workspaceId));
       return this.readRecent();
+    });
+  }
+
+  /**
+   * Moves the open workspace into `targetParent` (PRD §5.1: "Move only a closed, checkpointed
+   * workspace through a verified copy. Preserve the original until the destination opens
+   * successfully.").
+   *
+   * 1. Close the workspace: queued writes are committed, the WAL is checkpointed into the database
+   *    file and the lock is released.
+   * 2. Lock the original folder again so no other process opens it while it is being copied.
+   * 3. Copy the folder and verify every file's size and SHA-256 (`copyDirectoryVerified`).
+   * 4. Open the copy like any workspace (manifest, lock, migrations, identity check).
+   * 5. Only then move the original folder to the Recycle Bin.
+   * If any of steps 2–4 fails, the copy is removed, the original is opened again unchanged and a
+   * `WORKSPACE_MOVE_FAILED` error explains what happened.
+   */
+  public move(targetParent: string): Promise<MoveResult> {
+    return this.serialize(async () => {
+      const opened = this.requireOpen();
+      const source = opened.workspace.paths.folder;
+      const parent = resolve(targetParent);
+      if (assessWorkspaceLocation(parent).kind === 'unsupported-network') {
+        throw new WorkspaceError(
+          'WORKSPACE_UNSUPPORTED_LOCATION',
+          'Workspaces on network shares are not supported. Choose a folder on a local drive.',
+        );
+      }
+      const destination = await chooseUnusedFolder(parent, basename(source));
+
+      this.opened = null;
+      await opened.workspace.close();
+
+      try {
+        const lock = await acquireWorkspaceLock(
+          workspacePaths(source).lock,
+          this.dependencies.lockEnvironment,
+        );
+        try {
+          await copyDirectoryVerified(source, destination, {
+            exclude: (relativePath) => isTransientWorkspaceEntry(relativePath),
+          });
+        } finally {
+          await lock.release();
+        }
+        await this.switchTo(destination);
+      } catch (error) {
+        await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+        await this.switchTo(source);
+        throw new WorkspaceError('WORKSPACE_MOVE_FAILED', describeMoveFailure(error), {
+          cause: error,
+        });
+      }
+
+      try {
+        await this.dependencies.trashFolder(source);
+        return { state: this.getState(), originalRemoved: true, originalFolder: source };
+      } catch (error) {
+        // The workspace already works from its new location; the old folder is just a leftover
+        // copy the user can delete by hand. Not removing it is the safe failure.
+        this.dependencies.logFailure?.('move: trash original', error);
+        return { state: this.getState(), originalRemoved: false, originalFolder: source };
+      }
+    });
+  }
+
+  /**
+   * Deletes the open workspace by moving its folder to the Recycle Bin (PRD §5.1: "Workspace
+   * deletion requires confirmation identifying the folder and backup implications"). The user
+   * must type the workspace name. The folder's manifest must still belong to this workspace, so a
+   * folder that was swapped on disk is never deleted. On failure nothing is deleted and the
+   * workspace is opened again.
+   */
+  public deleteCurrent(confirmName: string): Promise<WorkspaceState> {
+    return this.serialize(async () => {
+      const opened = this.requireOpen();
+      if (confirmName.trim() !== opened.record.name) {
+        throw new DomainError(
+          'VALIDATION_FAILED',
+          'Type the workspace name exactly as shown to confirm deletion.',
+        );
+      }
+      const folder = opened.workspace.paths.folder;
+      const manifest = await readManifest(folder);
+      if (manifest.workspaceId !== opened.workspace.id) {
+        throw new WorkspaceError(
+          'WORKSPACE_DELETE_FAILED',
+          'The folder no longer belongs to this workspace. Nothing was deleted.',
+        );
+      }
+
+      this.opened = null;
+      await opened.workspace.close();
+      try {
+        await this.dependencies.trashFolder(folder);
+      } catch (error) {
+        await this.switchTo(folder);
+        throw new WorkspaceError(
+          'WORKSPACE_DELETE_FAILED',
+          'The folder could not be moved to the Recycle Bin, so nothing was deleted. Close ' +
+            'programs that use files in it and try again.',
+          { cause: error },
+        );
+      }
+
+      const settings = await this.dependencies.settings.load();
+      await this.dependencies.settings.save(forgetWorkspace(settings, opened.workspace.id));
+      this.unavailable = null;
+      return this.getState();
     });
   }
 
@@ -432,4 +574,31 @@ async function fileExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** User-facing explanation of why a move failed; the original is always intact at this point. */
+function describeMoveFailure(error: unknown): string {
+  const prefix = 'The workspace was not moved and is still in its original folder.';
+  if (error instanceof WorkspaceCopyError) {
+    switch (error.code) {
+      case 'DESTINATION_INSIDE_SOURCE':
+        return `${prefix} The destination cannot be inside the workspace itself.`;
+      case 'DISK_FULL':
+        return `${prefix} There is not enough free space at the destination.`;
+      case 'PERMISSION_DENIED':
+        return `${prefix} mmap is not allowed to write to the destination folder.`;
+      case 'SOURCE_HAS_LINKS':
+        return `${prefix} The workspace folder contains links, which cannot be moved safely.`;
+      case 'VERIFICATION_FAILED':
+        return `${prefix} The copy did not match the original, so it was discarded.`;
+      case 'DESTINATION_EXISTS':
+        return `${prefix} A folder with the same name appeared at the destination. Try again.`;
+      case 'IO_ERROR':
+        return `${prefix} The files could not be copied.`;
+    }
+  }
+  if (isWorkspaceError(error)) {
+    return `${prefix} ${error.message}`;
+  }
+  return prefix;
 }

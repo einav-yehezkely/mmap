@@ -78,6 +78,7 @@ beforeEach(async () => {
       now: () => new Date(),
       isProcessAlive: () => true,
     },
+    trashFolder: () => Promise.reject(new Error('Not used in this test.')),
   });
   await manager.startup();
   chosenFiles = null;

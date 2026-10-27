@@ -15,6 +15,7 @@ import { Input } from '../components/ui/input';
 import { errorMessage, unwrap } from '../lib/ipc';
 import { useWorkspace } from './workspace-context';
 import { CloudSyncWarning } from './cloud-sync-warning';
+import { WorkspaceMoveDelete } from './workspace-move-delete';
 import { WorkspaceSwitcher } from './workspace-switcher';
 
 export function WorkspaceSettings({ workspace }: { workspace: WorkspaceSummary }) {
@@ -83,6 +84,8 @@ export function WorkspaceSettings({ workspace }: { workspace: WorkspaceSummary }
           {message.text}
         </p>
       )}
+
+      <WorkspaceMoveDelete workspace={workspace} />
 
       <details className="rounded-md border p-4">
         <summary className="cursor-pointer text-sm font-medium">Switch or create workspace</summary>

@@ -34,6 +34,8 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.workspaceForgetRecent]: workspaceContracts.forgetRecent,
   [IPC_CHANNELS.workspaceRename]: workspaceContracts.rename,
   [IPC_CHANNELS.workspaceRevealFolder]: workspaceContracts.revealFolder,
+  [IPC_CHANNELS.workspaceMove]: workspaceContracts.move,
+  [IPC_CHANNELS.workspaceDelete]: workspaceContracts.delete,
   [IPC_CHANNELS.nodesList]: nodeContracts.list,
   [IPC_CHANNELS.nodesGet]: nodeContracts.get,
   [IPC_CHANNELS.nodesCreate]: nodeContracts.create,

@@ -103,31 +103,27 @@ The app accepts two command-line flags, used only by the packaged smoke test: `-
 - Tests create temporary SQLite files and folders under the OS temp directory and delete them
   afterwards. The packaged smoke test uses its own temporary profile.
 
-### Development data is your real profile
+### Development builds use their own profile
 
-`npm run dev` uses the **real** user profile, not a separate development one: `%APPDATA%\mmap`,
-named after `productName` in `apps/desktop/package.json`. Development builds and installed
-(packaged) builds share it. It contains:
+`npm run dev` (any unpackaged build) uses a separate profile, `%APPDATA%\mmap-dev`, while
+installed builds use `%APPDATA%\mmap` (named after `productName` in
+`apps/desktop/package.json`). This is set in `apps/desktop/src/main/index.ts`. As a result:
 
-| Path under `%APPDATA%\mmap` | Contents                                                                                        |
-| --------------------------- | ----------------------------------------------------------------------------------------------- |
-| `workspaces\My Knowledge`   | The default workspace created on first launch; other workspaces in the default location as well |
-| `settings.json`             | Last and recent workspaces, attachment size limit                                               |
-| `Local Storage\`            | Chromium storage, including unsaved-draft recovery copies                                       |
-| other folders               | Chromium cache and Electron's single-instance lock                                              |
+- Notes written while developing go to development workspaces (`%APPDATA%\mmap-dev\workspaces`),
+  never to the workspaces of an installed build.
+- A development build can never hold the lock on, or run an unreleased schema migration
+  against, the user's real workspaces.
+- Both can run at the same time.
 
-Consequences:
+| Path under the profile folder | Contents                                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `workspaces\My Knowledge`     | The default workspace created on first launch; other workspaces in the default location as well |
+| `settings.json`               | Last and recent workspaces, attachment size limit                                               |
+| `Local Storage\`              | Chromium storage, including unsaved-draft recovery copies                                       |
+| other folders                 | Chromium cache and Electron's single-instance lock                                              |
 
-- Notes you write while developing land in the same workspace an installed build opens.
-- Only one of them can use a workspace at a time: the second one either focuses the first
-  window or reports the workspace as in use.
-- A schema migration in a development build upgrades your real workspace (a verified backup is
-  written to the workspace's `recovery` folder first). An older installed build will then refuse
-  it as "created by a newer version".
-
-To experiment safely, create a separate workspace (Settings, Workspace, "Switch or create
-workspace") and switch back afterwards, or copy the closed workspace folder before testing.
-Workspace folders survive uninstalling the app
+To try a development build against a real workspace, copy the closed workspace folder and open
+the copy with "Open existing workspace folder". Workspace folders survive uninstalling the app
 ([ADR-0005](adr/0005-workspace-location-and-supported-filesystems.md)).
 
 ## Troubleshooting

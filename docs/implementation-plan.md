@@ -154,10 +154,6 @@ Implemented on branch `phase-1-knowledge-base` in five slices (`git log --onelin
 
 PRD §5.1 and §5.2 items that are **not** implemented:
 
-- **Moving a workspace** through a verified copy (PRD §5.1). The only way to move one is to close
-  mmap, copy the folder by hand and open the copy with "Open existing workspace folder".
-- **Deleting a workspace** with a confirmation that names the folder and backup implications
-  (PRD §5.1). "Remove from list" only forgets the recent entry; it never deletes files.
 - **Multiple app windows** (PRD §5.1). The app has a single window. Revision checks are in place
   and reject stale writes, so a second window can be added on top of the same services.
 - **Timeline UI.** Events are recorded; the Timeline view is Phase 4.
@@ -170,16 +166,10 @@ Other gaps found while checking the code:
 - **Worker thread for heavy database work** (carried from Phase 0). Not done: all SQLite and file
   work runs on the main process thread. Phase 1 workloads are small; revisit before imports,
   exports and layouts.
-- **Missing attachment files are not shown in the UI.** Reconciliation detects rows whose file is
-  missing and keeps them, but the report is only computed, not displayed. Opening such a file
-  shows "This file could not be opened." Double-clicking a file chip in a note gives no message
-  when opening fails.
 - **Delete preview counts for relationships and referencing notes are always 0** until Phase 2
   writes those tables.
-- **UI text mentions features that do not exist yet:** the cloud-sync warning in Settings advises
-  "use backups or export", and the node delete dialog says "Backups and exports you made earlier
-  are not affected". Backups and exports arrive in Phase 5.
-- **Attachments in the packaged smoke test.** Adding files needs a native dialog, so attachments
-  are covered by Node-level tests only. No test drives the real UI.
+- **No test drives the real UI with clicks.** The packaged smoke test exercises the bridge, the
+  attachment store, the preview protocol and the CSP inside the real app, but not the React
+  components or native dialogs.
 - **Accessibility pass** (PRD §6, §11): components use labels, roles and keyboard-reachable
   controls, but no structured accessibility check has been run (Phase 5).

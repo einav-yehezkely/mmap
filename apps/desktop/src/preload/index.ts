@@ -28,6 +28,8 @@ const api: MmapRendererApi = {
     forgetRecent: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceForgetRecent, request),
     rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceRename, request),
     revealFolder: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceRevealFolder),
+    move: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceMove),
+    delete: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceDelete, request),
   },
   nodes: {
     list: (request) => ipcRenderer.invoke(IPC_CHANNELS.nodesList, request),

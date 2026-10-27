@@ -54,9 +54,10 @@ folder on disk keeps its name.
 - Use a folder on a local drive.
 - **Network shares are not supported.** mmap refuses to create or open a workspace on a network
   path (`\\server\share\...`) because the database can be damaged there.
-- **Cloud-sync folders** (OneDrive, Dropbox, Google Drive, iCloud Drive, Box) are allowed, but
-  Settings shows a warning. A sync program that copies the database while mmap is writing to it
-  can damage it. Move the workspace to a folder that is not synced.
+- **Cloud-sync folders** (OneDrive, Dropbox, Google Drive, iCloud Drive, Box) are allowed, but a
+  warning is shown at the top of the window and in Settings. A sync program that copies the
+  database while mmap is writing to it can damage it. Use **Move workspace…** to move it to a
+  folder that is not synced.
 
 ### If a workspace cannot be opened
 
@@ -75,11 +76,27 @@ with the reason and the folder path. Common reasons:
 In every case, **nothing is deleted or replaced**. mmap never creates an empty workspace in place
 of one it cannot find.
 
+### Moving a workspace
+
+**Settings › Workspace › Move workspace…** asks for a local folder and moves the workspace into
+it. mmap closes the workspace, copies every file, checks that each copy is identical to the
+original, opens the copy, and only then moves the old folder to the **Recycle Bin**. If anything
+goes wrong, the copy is discarded and the workspace stays where it was. If the old folder cannot
+be moved to the Recycle Bin (for example because another program has a file open), mmap tells you
+where it is so you can delete it yourself.
+
+### Deleting a workspace
+
+**Settings › Workspace › Delete workspace…** shows the folder that will be removed and asks you
+to type the workspace name. The folder is moved to the **Recycle Bin**, so you can restore it
+from there until you empty the bin. Copies of the folder you made elsewhere are not affected.
+If the folder cannot be moved to the Recycle Bin, nothing is deleted and the workspace opens
+again.
+
 ### Nothing is deleted automatically
 
-mmap does not delete workspaces, and uninstalling mmap leaves all workspace folders in place. There
-is currently no way to delete or move a workspace from inside mmap; see
-[Not available yet](#not-available-yet).
+mmap never deletes a workspace on its own, and uninstalling mmap leaves all workspace folders in
+place. **Remove from list** in the recent workspaces only forgets the entry; the folder stays.
 
 ## Nodes
 
@@ -281,10 +298,8 @@ These features are planned for later versions:
 - **Mind maps** and the **knowledge graph**.
 - **Timeline**: mmap already records when you create nodes and edit notes, but there is no view
   for it yet, and you cannot yet mark a node as reviewed.
-- **Export, import and backups** inside the app.
-- **Moving or deleting a workspace** from inside mmap. To move one, quit mmap, copy the folder, and
-  open the copy with **Open existing workspace folder…**. Remove the old folder yourself only once
-  you have checked the copy.
+- **Export, import and backups** inside the app. Until then, quit mmap and copy the workspace
+  folder to back it up.
 - **More than one window.**
 
 The Mind Maps, Knowledge Graph and Timeline areas in the sidebar show a short note saying when

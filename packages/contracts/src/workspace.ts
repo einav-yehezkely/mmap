@@ -24,6 +24,10 @@ export const WORKSPACE_ERROR_CODES = [
   'WORKSPACE_UNSUPPORTED_LOCATION',
   /** Files inside the workspace are damaged or inconsistent; recovery is required. */
   'WORKSPACE_DAMAGED',
+  /** Moving failed; the original workspace is open and unchanged. */
+  'WORKSPACE_MOVE_FAILED',
+  /** Deleting failed; nothing was deleted and the workspace is open again. */
+  'WORKSPACE_DELETE_FAILED',
 ] as const;
 
 export type WorkspaceErrorCode = (typeof WORKSPACE_ERROR_CODES)[number];
@@ -102,5 +106,23 @@ export const workspaceContracts = {
   revealFolder: {
     request: z.undefined(),
     response: z.strictObject({ revealed: z.boolean() }),
+  },
+  move: {
+    request: z.undefined(),
+    response: z.strictObject({
+      cancelled: z.boolean(),
+      state: workspaceStateSchema,
+      /**
+       * False when the copy was opened but the original folder could not be moved to the Recycle
+       * Bin; the UI then tells the user where it is so they can remove it themselves.
+       */
+      originalRemoved: z.boolean(),
+      originalFolder: z.string().nullable(),
+    }),
+  },
+  delete: {
+    /** The workspace name typed by the user, as an explicit confirmation. */
+    request: z.strictObject({ confirmName: z.string().max(200) }),
+    response: z.strictObject({ state: workspaceStateSchema }),
   },
 } as const;

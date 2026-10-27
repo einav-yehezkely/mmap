@@ -38,6 +38,7 @@ function startApp(): WorkspaceManager {
       now: () => new Date(),
       isProcessAlive: () => true,
     },
+    trashFolder: () => Promise.reject(new Error('Not used in this test.')),
   });
   managers.push(manager);
   return manager;

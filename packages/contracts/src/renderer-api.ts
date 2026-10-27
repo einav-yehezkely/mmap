@@ -29,6 +29,8 @@ export interface MmapRendererApi {
     readonly forgetRecent: BridgeCall<'workspace:forget-recent'>;
     readonly rename: BridgeCall<'workspace:rename'>;
     readonly revealFolder: BridgeCall<'workspace:reveal-folder'>;
+    readonly move: BridgeCall<'workspace:move'>;
+    readonly delete: BridgeCall<'workspace:delete'>;
   };
   readonly nodes: {
     readonly list: BridgeCall<'nodes:list'>;

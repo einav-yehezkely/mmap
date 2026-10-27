@@ -106,6 +106,8 @@ from `packages/contracts/src/envelope.ts` and are produced by the IPC handler it
 | `WORKSPACE_FOLDER_NOT_EMPTY`     | Workspace | A new workspace was requested in a folder that already has files, or no free folder name was found.            |
 | `WORKSPACE_UNSUPPORTED_LOCATION` | Workspace | A network (UNC) path, or a location where SQLite cannot enable WAL mode.                                       |
 | `WORKSPACE_DAMAGED`              | Workspace | The database file is missing, cannot be opened or upgraded, or does not match the manifest.                    |
+| `WORKSPACE_MOVE_FAILED`          | Workspace | Moving failed; the copy was discarded and the original is open and unchanged.                                  |
+| `WORKSPACE_DELETE_FAILED`        | Workspace | The folder could not be moved to the Recycle Bin (or no longer belongs to the workspace); nothing was deleted. |
 | `INVALID_REQUEST`                | Transport | The payload did not match the channel's request schema. The service was not called.                            |
 | `FORBIDDEN_SENDER`               | Transport | The call did not come from the main frame of a trusted origin. The service was not called.                     |
 | `INTERNAL_ERROR`                 | Transport | Anything unexpected, including a response that failed its schema. Logged locally, redacted.                    |
@@ -195,16 +197,18 @@ URLs return `{ opened: false }` without involving the OS.
 Service: `apps/desktop/src/main/services/workspace-ipc-services.ts`, which calls
 `WorkspaceManager` (`apps/desktop/src/main/workspaces/workspace-manager.ts`).
 
-| Channel                   | Purpose                                                        | Request                                            | Response                       |
-| ------------------------- | -------------------------------------------------------------- | -------------------------------------------------- | ------------------------------ |
-| `workspace:get-state`     | Which workspace is open, or why none is.                       | none                                               | `WorkspaceState`               |
-| `workspace:list-recent`   | Recent workspaces (up to 10) for the switcher.                 | none                                               | `{ items: RecentWorkspace[] }` |
-| `workspace:create`        | Create a workspace and switch to it.                           | `{ name, location: 'default' \| 'choose-folder' }` | `{ cancelled, state }`         |
-| `workspace:open-folder`   | Pick an existing workspace folder in a native dialog, open it. | none                                               | `{ cancelled, state }`         |
-| `workspace:open-recent`   | Switch to a workspace from the recent list.                    | `{ workspaceId }`                                  | `WorkspaceState`               |
-| `workspace:forget-recent` | Remove an entry from the recent list. Never deletes files.     | `{ workspaceId }`                                  | `{ items: RecentWorkspace[] }` |
-| `workspace:rename`        | Rename the open workspace (display name only, not the folder). | `{ name }`                                         | `WorkspaceState`               |
-| `workspace:reveal-folder` | Open the workspace folder in Explorer.                         | none                                               | `{ revealed }`                 |
+| Channel                   | Purpose                                                                                                                     | Request                                            | Response                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| `workspace:get-state`     | Which workspace is open, or why none is.                                                                                    | none                                               | `WorkspaceState`                                        |
+| `workspace:list-recent`   | Recent workspaces (up to 10) for the switcher.                                                                              | none                                               | `{ items: RecentWorkspace[] }`                          |
+| `workspace:create`        | Create a workspace and switch to it.                                                                                        | `{ name, location: 'default' \| 'choose-folder' }` | `{ cancelled, state }`                                  |
+| `workspace:open-folder`   | Pick an existing workspace folder in a native dialog, open it.                                                              | none                                               | `{ cancelled, state }`                                  |
+| `workspace:open-recent`   | Switch to a workspace from the recent list.                                                                                 | `{ workspaceId }`                                  | `WorkspaceState`                                        |
+| `workspace:forget-recent` | Remove an entry from the recent list. Never deletes files.                                                                  | `{ workspaceId }`                                  | `{ items: RecentWorkspace[] }`                          |
+| `workspace:rename`        | Rename the open workspace (display name only, not the folder).                                                              | `{ name }`                                         | `WorkspaceState`                                        |
+| `workspace:reveal-folder` | Open the workspace folder in Explorer.                                                                                      | none                                               | `{ revealed }`                                          |
+| `workspace:move`          | Move the open workspace into a folder chosen in a native dialog: verified copy, open the copy, original to the Recycle Bin. | none                                               | `{ cancelled, state, originalRemoved, originalFolder }` |
+| `workspace:delete`        | Move the open workspace folder to the Recycle Bin after the typed name matches.                                             | `{ confirmName }`                                  | `{ state }` (status `none`)                             |
 
 `WorkspaceState` is one of `{ status: 'open', workspace }`,
 `{ status: 'unavailable', reason, message, lastWorkspace }` (the last workspace could not be

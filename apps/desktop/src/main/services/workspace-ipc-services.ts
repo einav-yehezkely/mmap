@@ -11,7 +11,9 @@ import type { WorkspaceManager } from '../workspaces/workspace-manager';
 
 export interface NativeWorkspaceInteractions {
   /** Shows a folder picker. Resolves with the chosen absolute path, or null when cancelled. */
-  chooseFolder(purpose: 'create-workspace-in' | 'open-workspace'): Promise<string | null>;
+  chooseFolder(
+    purpose: 'create-workspace-in' | 'open-workspace' | 'move-workspace-to',
+  ): Promise<string | null>;
   /** Opens a folder in the OS file manager. Resolves false when the OS reports a failure. */
   revealFolder(folderPath: string): Promise<boolean>;
 }
@@ -58,5 +60,23 @@ export function createWorkspaceIpcServices(
       const folder = manager.current?.paths.folder;
       return { revealed: folder === undefined ? false : await native.revealFolder(folder) };
     },
+
+    'workspace:move': async () => {
+      const target = await native.chooseFolder('move-workspace-to');
+      if (target === null) {
+        return {
+          cancelled: true,
+          state: manager.getState(),
+          originalRemoved: false,
+          originalFolder: null,
+        };
+      }
+      const result = await manager.move(target);
+      return { cancelled: false, ...result };
+    },
+
+    'workspace:delete': async ({ confirmName }) => ({
+      state: await manager.deleteCurrent(confirmName),
+    }),
   };
 }

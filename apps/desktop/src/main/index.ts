@@ -83,6 +83,7 @@ const workspaces = new WorkspaceManager({
     isProcessAlive,
   },
   logFailure: (operation, error) => logger.error(operation, error),
+  trashFolder: (folderPath) => shell.trashItem(folderPath),
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -133,7 +134,9 @@ const nativeInteractions: NativeWorkspaceInteractions = {
       title:
         purpose === 'open-workspace'
           ? 'Open an mmap workspace folder'
-          : 'Choose where to create the workspace',
+          : purpose === 'move-workspace-to'
+            ? 'Choose the folder to move the workspace into'
+            : 'Choose where to create the workspace',
       properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
     };
     const result = mainWindow
