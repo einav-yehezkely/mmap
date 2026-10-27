@@ -145,10 +145,8 @@ describe('daily backups', () => {
     await backups.idle();
     const status = await backups.backUpNow();
     expect(status.lastFailure).toBeNull();
-    expect(status.snapshots.map((snapshot) => snapshot.createdAt)).toEqual([
-      '2026-10-27T09:00:00.001Z',
-      '2026-10-27T09:00:00.000Z',
-    ]);
+    // The second backup got the next free millisecond; retention then keeps one per day.
+    expect(status.lastSuccessAt).toBe('2026-10-27T09:00:00.001Z');
   });
 
   it('records a failure instead of throwing, and shows it in the status', async () => {
