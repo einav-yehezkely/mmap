@@ -19,7 +19,12 @@ npmRebuild: false
 # No auto-update feed yet. Update checks must stay visible, configurable and content-free (PRD §8).
 publish: null
 
+# App icon (generated from docs/mmap_icon.png; see docs/runbooks/packaging.md). Windows takes the
+# window and taskbar icon from the executable.
+icon: resources/icon.png
+
 win:
+  icon: resources/icon.ico
   target:
     - target: nsis
       arch:
@@ -28,6 +33,9 @@ win:
 
 nsis:
   oneClick: false
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
   perMachine: false
   allowToChangeInstallationDirectory: true
   # Workspaces and settings live under %APPDATA%\mmap and must survive uninstall (PRD §5.1, §13.17).

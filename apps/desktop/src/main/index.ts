@@ -324,6 +324,7 @@ async function startApplication(): Promise<void> {
     preloadPath: resolvePreloadPath(mainDirectory),
     allowDevTools: !app.isPackaged,
     showWhenReady: !smokeTest,
+    ...(app.isPackaged ? {} : { iconPath: join(app.getAppPath(), 'resources', 'icon.png') }),
   });
   mainWindow.on('closed', () => {
     mainWindow = null;

@@ -13,6 +13,11 @@ export interface MainWindowOptions {
   readonly allowDevTools: boolean;
   /** When false the window stays hidden (used by the packaged smoke test). */
   readonly showWhenReady: boolean;
+  /**
+   * Window icon for development runs. Packaged builds leave it unset: Windows then uses the
+   * executable's icon, which electron-builder embeds.
+   */
+  readonly iconPath?: string;
 }
 
 export function createMainWindow(options: MainWindowOptions): BrowserWindow {
@@ -24,6 +29,7 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
     show: false,
     title: 'mmap',
     backgroundColor: '#ffffff',
+    ...(options.iconPath === undefined ? {} : { icon: options.iconPath }),
     webPreferences: {
       preload: options.preloadPath,
       // The renderer runs untrusted-by-default content (notes, imported data). It gets no Node

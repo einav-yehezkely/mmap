@@ -7,6 +7,7 @@ import type { WorkspaceSummary } from '@mmap/contracts';
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import logoUrl from './assets/mmap-logo.png';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { errorMessage, unwrap } from './lib/ipc';
@@ -99,11 +100,14 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
       </a>
 
       <nav aria-label="Main" className="flex w-56 shrink-0 flex-col gap-1 border-r p-3">
-        <div className="px-2 pb-3">
-          <p className="text-lg font-semibold tracking-tight">mmap</p>
-          <p className="truncate text-xs text-muted-foreground" title={workspace.name}>
-            {workspace.name}
-          </p>
+        <div className="flex items-center gap-2.5 px-2 pb-3">
+          <img src={logoUrl} alt="" className="size-8 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-lg font-semibold leading-tight tracking-tight">mmap</p>
+            <p className="truncate text-xs text-muted-foreground" title={workspace.name}>
+              {workspace.name}
+            </p>
+          </div>
         </div>
         {NAVIGATION_ITEMS.map((item) => {
           const Icon = item.icon;
