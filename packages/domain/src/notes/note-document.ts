@@ -115,8 +115,21 @@ export interface NoteWikilinkNode {
 export type NoteInlineNode =
   NoteTextNode | NoteHardBreakNode | NoteInlineMathNode | NoteWikilinkNode;
 
+/**
+ * Explicit writing direction of a block, set with the editor's direction button (for example a
+ * Hebrew paragraph that starts with an English word). Without it, a block takes its direction from
+ * its own text ("auto"), so most notes never store one. Older versions of mmap ignore the
+ * attribute and show the block in the automatic direction.
+ */
+export type NoteTextDirection = 'rtl' | 'ltr';
+
+export interface NoteDirectionAttrs {
+  dir?: NoteTextDirection;
+}
+
 export interface NoteParagraphNode {
   type: 'paragraph';
+  attrs?: NoteDirectionAttrs;
   content?: NoteInlineNode[];
 }
 
@@ -124,39 +137,43 @@ export type NoteHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface NoteHeadingNode {
   type: 'heading';
-  attrs: { level: NoteHeadingLevel };
+  attrs: { level: NoteHeadingLevel; dir?: NoteTextDirection };
   content?: NoteInlineNode[];
 }
 
 export interface NoteBlockquoteNode {
   type: 'blockquote';
+  attrs?: NoteDirectionAttrs;
   content?: NoteBlockNode[];
 }
 
 export interface NoteListItemNode {
   type: 'listItem';
+  attrs?: NoteDirectionAttrs;
   content?: NoteBlockNode[];
 }
 
 export interface NoteBulletListNode {
   type: 'bulletList';
+  attrs?: NoteDirectionAttrs;
   content?: NoteListItemNode[];
 }
 
 export interface NoteOrderedListNode {
   type: 'orderedList';
-  attrs: { start: number };
+  attrs: { start: number; dir?: NoteTextDirection };
   content?: NoteListItemNode[];
 }
 
 export interface NoteTaskItemNode {
   type: 'taskItem';
-  attrs: { checked: boolean };
+  attrs: { checked: boolean; dir?: NoteTextDirection };
   content?: NoteBlockNode[];
 }
 
 export interface NoteTaskListNode {
   type: 'taskList';
+  attrs?: NoteDirectionAttrs;
   content?: NoteTaskItemNode[];
 }
 
@@ -471,7 +488,20 @@ function parseChildren<T>(
   return children;
 }
 
+/** Adds an explicit direction from untrusted attributes to a block, when it is "rtl" or "ltr". */
+function withDirection<N extends { attrs?: object }>(
+  node: N,
+  rawAttrs: ReadonlyMap<string, unknown>,
+): N {
+  const dir = rawAttrs.get('dir');
+  if (dir === 'rtl' || dir === 'ltr') {
+    Object.assign(node, { attrs: { ...node.attrs, dir } });
+  }
+  return node;
+}
+
 /** Sets `content` only when the input had it, so `{ type: 'paragraph' }` stays content-free. */
+
 function withContent<N extends { content?: unknown }>(node: N, content: N['content']): N {
   if (content !== undefined) {
     node.content = content;
@@ -513,34 +543,52 @@ function parseBlock(value: unknown, depth: number, state: ParseState): NoteBlock
   const raw = readNode(value, depth, state);
   switch (raw.type) {
     case 'paragraph':
-      return withContent<NoteParagraphNode>(
-        { type: 'paragraph' },
-        parseChildren(raw, depth, state, parseInline),
+      return withDirection(
+        withContent<NoteParagraphNode>(
+          { type: 'paragraph' },
+          parseChildren(raw, depth, state, parseInline),
+        ),
+        raw.attrs,
       );
     case 'heading':
-      return withContent<NoteHeadingNode>(
-        { type: 'heading', attrs: { level: readHeadingLevel(raw.attrs) } },
-        parseChildren(raw, depth, state, parseInline),
+      return withDirection(
+        withContent<NoteHeadingNode>(
+          { type: 'heading', attrs: { level: readHeadingLevel(raw.attrs) } },
+          parseChildren(raw, depth, state, parseInline),
+        ),
+        raw.attrs,
       );
     case 'blockquote':
-      return withContent<NoteBlockquoteNode>(
-        { type: 'blockquote' },
-        parseChildren(raw, depth, state, parseBlock),
+      return withDirection(
+        withContent<NoteBlockquoteNode>(
+          { type: 'blockquote' },
+          parseChildren(raw, depth, state, parseBlock),
+        ),
+        raw.attrs,
       );
     case 'bulletList':
-      return withContent<NoteBulletListNode>(
-        { type: 'bulletList' },
-        parseChildren(raw, depth, state, parseListItem),
+      return withDirection(
+        withContent<NoteBulletListNode>(
+          { type: 'bulletList' },
+          parseChildren(raw, depth, state, parseListItem),
+        ),
+        raw.attrs,
       );
     case 'orderedList':
-      return withContent<NoteOrderedListNode>(
-        { type: 'orderedList', attrs: { start: readOrderedListStart(raw.attrs) } },
-        parseChildren(raw, depth, state, parseListItem),
+      return withDirection(
+        withContent<NoteOrderedListNode>(
+          { type: 'orderedList', attrs: { start: readOrderedListStart(raw.attrs) } },
+          parseChildren(raw, depth, state, parseListItem),
+        ),
+        raw.attrs,
       );
     case 'taskList':
-      return withContent<NoteTaskListNode>(
-        { type: 'taskList' },
-        parseChildren(raw, depth, state, parseTaskItem),
+      return withDirection(
+        withContent<NoteTaskListNode>(
+          { type: 'taskList' },
+          parseChildren(raw, depth, state, parseTaskItem),
+        ),
+        raw.attrs,
       );
     case 'codeBlock':
       return withContent<NoteCodeBlockNode>(
@@ -571,9 +619,12 @@ function parseListItem(value: unknown, depth: number, state: ParseState): NoteLi
   if (raw.type !== 'listItem') {
     throw misplaced(raw.type, 'a "listItem" node');
   }
-  return withContent<NoteListItemNode>(
-    { type: 'listItem' },
-    parseChildren(raw, depth, state, parseBlock),
+  return withDirection(
+    withContent<NoteListItemNode>(
+      { type: 'listItem' },
+      parseChildren(raw, depth, state, parseBlock),
+    ),
+    raw.attrs,
   );
 }
 
@@ -582,9 +633,12 @@ function parseTaskItem(value: unknown, depth: number, state: ParseState): NoteTa
   if (raw.type !== 'taskItem') {
     throw misplaced(raw.type, 'a "taskItem" node');
   }
-  return withContent<NoteTaskItemNode>(
-    { type: 'taskItem', attrs: { checked: readTaskChecked(raw.attrs) } },
-    parseChildren(raw, depth, state, parseBlock),
+  return withDirection(
+    withContent<NoteTaskItemNode>(
+      { type: 'taskItem', attrs: { checked: readTaskChecked(raw.attrs) } },
+      parseChildren(raw, depth, state, parseBlock),
+    ),
+    raw.attrs,
   );
 }
 

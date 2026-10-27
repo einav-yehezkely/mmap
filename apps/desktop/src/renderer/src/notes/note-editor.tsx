@@ -31,6 +31,7 @@ import {
   Brackets,
   Paperclip,
   Pi,
+  PilcrowLeft,
   Quote,
   Redo2,
   Sigma,
@@ -342,6 +343,8 @@ function Toolbar({
       blockquote: current.isActive('blockquote'),
       codeBlock: current.isActive('codeBlock'),
       inTable: current.isActive('table'),
+      // The paragraph (or heading, list item…) at the cursor was set to right-to-left.
+      rtl: current.state.selection.$from.parent.attrs.dir === 'rtl',
       canUndo: current.can().undo(),
       canRedo: current.can().redo(),
     }),
@@ -437,6 +440,16 @@ function Toolbar({
           label="Code block"
           pressed={active.codeBlock}
           onClick={() => run((c) => c.toggleCodeBlock())}
+        />
+        <ToolbarButton
+          icon={PilcrowLeft}
+          label="Right to left (Hebrew, Arabic): selected paragraphs"
+          pressed={active.rtl}
+          // Sets the selected paragraphs to right-to-left; pressed again, back to the automatic
+          // direction (each paragraph follows its own first letters).
+          onClick={() =>
+            run((c) => (active.rtl ? c.setTextDirection('auto') : c.setTextDirection('rtl')))
+          }
         />
         <ToolbarButton
           icon={Table}
