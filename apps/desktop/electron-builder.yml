@@ -25,6 +25,14 @@ icon: resources/icon.png
 
 win:
   icon: resources/icon.ico
+  # Authenticode signing (release gate, ADR-0004). electron-builder signs the executables and the
+  # installer automatically when a certificate is supplied through the environment (CSC_LINK and
+  # CSC_KEY_PASSWORD, never committed). Without one, builds stay unsigned for internal testing.
+  # Check a release with scripts/verify-signature.ps1.
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
   target:
     - target: nsis
       arch:
