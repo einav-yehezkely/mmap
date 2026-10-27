@@ -5,7 +5,7 @@
 
 import type { WorkspaceSummary } from '@mmap/contracts';
 import { Plus, Search } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import logoUrl from './assets/mmap-logo.png';
 import { Button } from './components/ui/button';
@@ -43,6 +43,9 @@ export function App() {
   return <Workbench key={state.workspace.id} workspace={state.workspace} />;
 }
 
+/** Views that open nodes in the full-width editor. */
+type PageView = 'home' | 'library';
+
 function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   // The app opens on Home (a summary and quick actions), not inside one of the work views.
   const [activeView, setActiveView] = useState<ViewId>('home');
@@ -51,6 +54,12 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   const [mapRequest, setMapRequest] = useState<{ mapId: string; request: number } | null>(null);
   /** The map being edited in the Mind Maps view, preselected when creating a node there. */
   const [editedMapId, setEditedMapId] = useState<string | null>(null);
+  /** A node opened from Home or the Library, shown full-width in place of that view. */
+  const [pageNode, setPageNode] = useState<{ view: PageView; nodeId: string } | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  /** Scroll position of the view a full-width node replaced, restored when going back. */
+  const pageReturnScroll = useRef(0);
+  const restoreScroll = useRef<number | null>(null);
   /** Open "New node" dialog, with the map to preselect. */
   const [newNode, setNewNode] = useState<{ preselectedMapId: string | null } | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -80,17 +89,64 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  /** Switches the main view; a node open full-width over Home is closed (its edits are saved). */
+  const navigate = (view: ViewId) => {
+    setPageNode(null);
+    setActiveView(view);
+  };
+
+  /** Opens a mind map in the Mind Maps view (from Home, the graph or the node panel). */
+  const openMap = (mapId: string) => {
+    setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
+    navigate('maps');
+  };
+
+  /**
+   * Home and the Library open nodes in a full-width editor instead of squeezing the view beside a
+   * panel. The view stays mounted (hidden), so going back shows it exactly as it was, at the same
+   * scroll position. Links followed inside the editor open in the same place.
+   */
+  const openFullPage = (view: PageView, nodeId: string) => {
+    if (pageNode === null) pageReturnScroll.current = mainRef.current?.scrollTop ?? 0;
+    setOpenNodeId(null);
+    setPageNode({ view, nodeId });
+  };
+  const closeFullPage = () => {
+    restoreScroll.current = pageReturnScroll.current;
+    setPageNode(null);
+  };
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (main === null) return;
+    if (pageNode !== null) {
+      main.scrollTop = 0;
+    } else if (restoreScroll.current !== null) {
+      main.scrollTop = restoreScroll.current;
+      restoreScroll.current = null;
+    }
+  }, [pageNode]);
+
+  /** The full-width editor, for the view it replaces. */
+  const fullPageEditor = (view: PageView, backLabel: string) =>
+    pageNode?.view === view ? (
+      <NodeDetailPanel
+        key={pageNode.nodeId}
+        layout="page"
+        backLabel={backLabel}
+        workspaceId={workspace.id}
+        timeZone={workspace.timezone}
+        nodeId={pageNode.nodeId}
+        onClose={closeFullPage}
+        onOpenNode={(nodeId) => setPageNode({ view, nodeId })}
+        onOpenMap={openMap}
+      />
+    ) : null;
+
   /**
    * Creating a node is always an explicit action (PRD §5.6): the dialog asks for a title and,
    * optionally, mind maps to add it to (the map being edited is preselected). The new node opens
    * straight away.
    */
-  /** Opens a mind map in the Mind Maps view (from Home, the graph or the node panel). */
-  const openMap = (mapId: string) => {
-    setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
-    setActiveView('maps');
-  };
-
   const createNode = () =>
     setNewNode({ preselectedMapId: activeView === 'maps' ? editedMapId : null });
 
@@ -122,7 +178,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               variant="ghost"
               aria-current={isActive ? 'page' : undefined}
               className={cn('justify-start', isActive && 'bg-accent text-accent-foreground')}
-              onClick={() => setActiveView(item.id)}
+              onClick={() => navigate(item.id)}
             >
               <Icon aria-hidden="true" />
               {item.label}
@@ -148,12 +204,12 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               value={searchText}
               onChange={(event) => {
                 setSearchText(event.target.value);
-                if (event.target.value.trim() !== '') setActiveView('search');
+                if (event.target.value.trim() !== '') navigate('search');
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   setSearchQuery(searchText);
-                  setActiveView('search');
+                  navigate('search');
                 }
               }}
             />
@@ -169,7 +225,11 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
             onClose={() => setNewNode(null)}
             onCreated={(nodeId) => {
               setNewNode(null);
-              setOpenNodeId(nodeId);
+              if (activeView === 'home' || activeView === 'library') {
+                openFullPage(activeView, nodeId);
+              } else {
+                setOpenNodeId(nodeId);
+              }
             }}
           />
         )}
@@ -181,29 +241,40 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
 
         <div className="flex min-h-0 flex-1">
           <main
+            ref={mainRef}
             id="main-content"
             tabIndex={-1}
             className="min-w-0 flex-1 overflow-auto p-6 focus:outline-none"
           >
             {activeItem?.id === 'home' && (
-              <HomeView
-                workspaceName={workspace.name}
-                timeZone={workspace.timezone}
-                onOpenNode={setOpenNodeId}
-                onOpenMap={openMap}
-                onNavigate={setActiveView}
-                onCreateNode={createNode}
-                onFocusSearch={() => searchInput.current?.focus()}
-              />
+              <>
+                <div hidden={pageNode !== null}>
+                  <HomeView
+                    workspaceName={workspace.name}
+                    timeZone={workspace.timezone}
+                    onOpenNode={(nodeId) => openFullPage('home', nodeId)}
+                    onOpenMap={openMap}
+                    onNavigate={navigate}
+                    onCreateNode={createNode}
+                    onFocusSearch={() => searchInput.current?.focus()}
+                  />
+                </div>
+                {fullPageEditor('home', 'Back to Home')}
+              </>
             )}
             {activeItem?.id === 'settings' && <SettingsView workspace={workspace} />}
             {activeItem?.id === 'library' && (
-              <LibraryView
-                timeZone={workspace.timezone}
-                selectedNodeId={openNodeId}
-                onOpenNode={setOpenNodeId}
-                onCreateNode={createNode}
-              />
+              <>
+                <div hidden={pageNode !== null}>
+                  <LibraryView
+                    timeZone={workspace.timezone}
+                    selectedNodeId={pageNode?.nodeId ?? null}
+                    onOpenNode={(nodeId) => openFullPage('library', nodeId)}
+                    onCreateNode={createNode}
+                  />
+                </div>
+                {fullPageEditor('library', 'Back to Library')}
+              </>
             )}
             {activeItem?.id === 'maps' && (
               <MapsView
