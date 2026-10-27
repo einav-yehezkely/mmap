@@ -350,6 +350,8 @@ export interface TagWithUsage {
 
 export interface TagRepository {
   listWithUsage(workspaceId: WorkspaceId): Promise<readonly TagWithUsage[]>;
+  /** Every tag of the workspace, ordered by normalized label. */
+  listAll(workspaceId: WorkspaceId): Promise<readonly TagRecord[]>;
   findById(workspaceId: WorkspaceId, tagId: TagId): Promise<TagRecord | null>;
   findByNormalizedLabel(
     workspaceId: WorkspaceId,

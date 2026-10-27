@@ -4,6 +4,8 @@ export * from './connection';
 export * from './graph/sqlite-graph-layout-repository';
 export * from './graph/sqlite-graph-query';
 export * from './migrations';
+export * from './portability/sqlite-import-history-repository';
+export * from './portability/sqlite-workspace-snapshot-reader';
 export * from './repositories/sqlite-attachment-repository';
 export * from './repositories/sqlite-knowledge-node-repository';
 export * from './repositories/sqlite-map-repository';

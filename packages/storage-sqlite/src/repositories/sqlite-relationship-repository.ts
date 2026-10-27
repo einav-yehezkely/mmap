@@ -51,7 +51,7 @@ export class SqliteRelationshipRepository implements RelationshipRepository {
       .forRead()
       .prepare(`SELECT ${COLUMNS} FROM relationships AS r WHERE r.workspace_id = ? AND r.id = ?`)
       .get(workspaceId, relationshipId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toRelationshipRecord(row);
   }
 
   public async findByEndpoints(
@@ -67,7 +67,7 @@ export class SqliteRelationshipRepository implements RelationshipRepository {
          WHERE r.workspace_id = ? AND r.source_node_id = ? AND r.target_node_id = ? AND r.type_id = ?`,
       )
       .get(workspaceId, sourceNodeId, targetNodeId, typeId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toRelationshipRecord(row);
   }
 
   public async update(record: RelationshipRecord): Promise<void> {
@@ -119,7 +119,7 @@ export class SqliteRelationshipRepository implements RelationshipRepository {
       )
       .all(workspaceId, nodeId, nodeId, nodeId)
       .map((row) => ({
-        ...toRecord(row),
+        ...toRelationshipRecord(row),
         typeLabel: String(row.type_label),
         sourceTitle: String(row.source_title),
         targetTitle: String(row.target_title),
@@ -127,7 +127,7 @@ export class SqliteRelationshipRepository implements RelationshipRepository {
   }
 }
 
-function toRecord(row: Record<string, SQLOutputValue>): RelationshipRecord {
+export function toRelationshipRecord(row: Record<string, SQLOutputValue>): RelationshipRecord {
   return {
     id: String(row.id) as RelationshipId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

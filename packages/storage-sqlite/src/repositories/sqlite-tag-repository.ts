@@ -35,12 +35,20 @@ export class SqliteTagRepository implements TagRepository {
       }));
   }
 
+  public async listAll(workspaceId: WorkspaceId): Promise<readonly TagRecord[]> {
+    return this.connections
+      .forRead()
+      .prepare('SELECT * FROM tags WHERE workspace_id = ? ORDER BY normalized_label')
+      .all(workspaceId)
+      .map(toTagRecord);
+  }
+
   public async findById(workspaceId: WorkspaceId, tagId: TagId): Promise<TagRecord | null> {
     const row = this.connections
       .forRead()
       .prepare('SELECT * FROM tags WHERE workspace_id = ? AND id = ?')
       .get(workspaceId, tagId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toTagRecord(row);
   }
 
   public async findByNormalizedLabel(
@@ -51,7 +59,7 @@ export class SqliteTagRepository implements TagRepository {
       .forRead()
       .prepare('SELECT * FROM tags WHERE workspace_id = ? AND normalized_label = ?')
       .get(workspaceId, normalizedLabel);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toTagRecord(row);
   }
 
   public async insert(record: TagRecord): Promise<void> {
@@ -151,7 +159,7 @@ export function placeholders(count: number): string {
   return Array.from({ length: count }, () => '?').join(', ');
 }
 
-function toRecord(row: Record<string, SQLOutputValue>): TagRecord {
+export function toTagRecord(row: Record<string, SQLOutputValue>): TagRecord {
   return {
     id: String(row.id) as TagId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

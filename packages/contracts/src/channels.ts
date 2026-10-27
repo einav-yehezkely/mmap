@@ -81,6 +81,10 @@ export const IPC_CHANNELS = {
   timelineAddMilestone: 'timeline:add-milestone',
   timelineUpdateEntry: 'timeline:update-entry',
   timelineDeleteEntry: 'timeline:delete-entry',
+  transferExportZip: 'transfer:export-zip',
+  transferPreviewImport: 'transfer:preview-import',
+  transferApplyImport: 'transfer:apply-import',
+  transferDiscardImport: 'transfer:discard-import',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

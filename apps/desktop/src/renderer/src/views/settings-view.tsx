@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 
 import { WorkspaceSettings } from '../workspace/workspace-settings';
 import { AttachmentPreferences } from './attachment-preferences';
+import { ExportImportSettings } from './export-import-settings';
 import { TimezoneSetting } from './timezone-setting';
 
 type LoadState =
@@ -57,6 +58,10 @@ export function SettingsView({ workspace }: { workspace: WorkspaceSummary }) {
       <h2 className="mt-10 text-lg font-medium">Attachments</h2>
       <div className="mt-3">
         <AttachmentPreferences />
+      </div>
+      <h2 className="mt-10 text-lg font-medium">Export and import</h2>
+      <div className="mt-3">
+        <ExportImportSettings timeZone={workspace.timezone} />
       </div>
       <h2 className="mt-10 text-lg font-medium">About this installation</h2>
       <div aria-live="polite" className="mt-3">

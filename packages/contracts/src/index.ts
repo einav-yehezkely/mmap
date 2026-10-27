@@ -8,4 +8,5 @@ export * from './maps';
 export * from './nodes';
 export * from './relationships';
 export * from './renderer-api';
+export * from './transfer';
 export * from './workspace';

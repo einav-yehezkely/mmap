@@ -6,6 +6,7 @@
 import {
   createAttachmentService,
   createGraphService,
+  createImportService,
   createKnowledgeNodeService,
   createMapService,
   createRelationshipService,
@@ -15,6 +16,7 @@ import {
   type AttachmentService,
   type Clock,
   type GraphService,
+  type ImportService,
   type KnowledgeNodeService,
   type MapService,
   type RelationshipService,
@@ -25,6 +27,7 @@ import {
   type WorkspaceId,
   type WorkspaceRecord,
   type WorkspaceService,
+  type WorkspaceSnapshotReader,
 } from '@mmap/domain';
 import {
   DatabaseConfigurationError,
@@ -35,6 +38,7 @@ import {
   SqliteAttachmentRepository,
   SqliteGraphLayoutRepository,
   SqliteGraphQuery,
+  SqliteImportHistoryRepository,
   SqliteKnowledgeNodeRepository,
   SqliteMapRepository,
   SqliteNoteReferenceRepository,
@@ -44,6 +48,7 @@ import {
   SqliteTagRepository,
   SqliteTimelineEventRepository,
   SqliteWorkspaceRepository,
+  SqliteWorkspaceSnapshotReader,
   type SqliteConnections,
 } from '@mmap/storage-sqlite';
 
@@ -62,6 +67,10 @@ export interface WorkspaceServices {
   readonly search: SearchIndex;
   readonly graph: GraphService;
   readonly timeline: TimelineService;
+  /** Consistent reads of the whole workspace, for export. */
+  readonly snapshots: WorkspaceSnapshotReader;
+  /** Writes planned archive imports in one transaction. */
+  readonly importer: ImportService;
 }
 
 export interface OpenWorkspace {
@@ -93,6 +102,9 @@ export function createWorkspaceServices(
   const timelineRepository = new SqliteTimelineEventRepository(connections);
   const relationshipTypeRepository = new SqliteRelationshipTypeRepository(connections);
   const relationshipRepository = new SqliteRelationshipRepository(connections);
+  const attachmentRepository = new SqliteAttachmentRepository(connections);
+  const mapRepository = new SqliteMapRepository(connections);
+  const graphLayoutRepository = new SqliteGraphLayoutRepository(connections);
   const nodes = createKnowledgeNodeService({
     workspaceId,
     transactions: connections,
@@ -105,10 +117,27 @@ export function createWorkspaceServices(
   });
   return {
     search: new SqliteSearchIndex(connections),
+    snapshots: new SqliteWorkspaceSnapshotReader(connections),
+    importer: createImportService({
+      workspaceId,
+      transactions: connections,
+      nodes: nodeRepository,
+      tags: tagRepository,
+      relationshipTypes: relationshipTypeRepository,
+      relationships: relationshipRepository,
+      references: new SqliteNoteReferenceRepository(connections),
+      maps: mapRepository,
+      timeline: timelineRepository,
+      attachments: attachmentRepository,
+      graphLayout: graphLayoutRepository,
+      importHistory: new SqliteImportHistoryRepository(connections),
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+    }),
     graph: createGraphService({
       workspaceId,
       graph: new SqliteGraphQuery(connections),
-      layout: new SqliteGraphLayoutRepository(connections),
+      layout: graphLayoutRepository,
       transactions: connections,
       clock: dependencies.clock,
     }),
@@ -124,7 +153,7 @@ export function createWorkspaceServices(
     maps: createMapService({
       workspaceId,
       transactions: connections,
-      maps: new SqliteMapRepository(connections),
+      maps: mapRepository,
       nodes: nodeRepository,
       relationships: relationshipRepository,
       ids: dependencies.ids,
@@ -155,7 +184,7 @@ export function createWorkspaceServices(
     attachments: createAttachmentService({
       workspaceId,
       transactions: connections,
-      attachments: new SqliteAttachmentRepository(connections),
+      attachments: attachmentRepository,
       nodes: nodeRepository,
       ids: dependencies.ids,
       clock: dependencies.clock,

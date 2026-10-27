@@ -44,6 +44,10 @@ import { createGraphTimelineIpcServices } from './services/graph-timeline-ipc-se
 import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
 import {
+  createTransferIpcServices,
+  type TransferNativeInteractions,
+} from './services/transfer-ipc-services';
+import {
   createWorkspaceIpcServices,
   type NativeWorkspaceInteractions,
 } from './services/workspace-ipc-services';
@@ -169,6 +173,33 @@ const attachmentInteractions: AttachmentNativeInteractions = {
   },
 };
 
+/** Archives are chosen in native dialogs only; the renderer never names a path (PRD §8). */
+const transferInteractions: TransferNativeInteractions = {
+  async chooseExportDestination(suggestedName) {
+    const options: Electron.SaveDialogOptions = {
+      title: 'Export workspace',
+      defaultPath: join(app.getPath('documents'), suggestedName),
+      filters: [{ name: 'mmap workspace export', extensions: ['zip'] }],
+      properties: ['showOverwriteConfirmation', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options);
+    return result.canceled || result.filePath === '' ? null : result.filePath;
+  },
+  async chooseArchiveToImport() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Import a workspace export',
+      filters: [{ name: 'mmap workspace export', extensions: ['zip'] }],
+      properties: ['openFile', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+};
+
 async function startApplication(): Promise<void> {
   if (app.isPackaged) {
     // Removes the default menu, which exposes developer tools and reload shortcuts.
@@ -225,6 +256,14 @@ async function startApplication(): Promise<void> {
           (await workspaces.getPreferences()).maxAttachmentMegabytes * 1024 * 1024,
         native: attachmentInteractions,
         logFailure: (operation, error) => logger.error(operation, error),
+      }),
+      ...createTransferIpcServices({
+        currentWorkspace: () => workspaces.current,
+        maxAttachmentBytes: async () =>
+          (await workspaces.getPreferences()).maxAttachmentMegabytes * 1024 * 1024,
+        native: transferInteractions,
+        appVersion: app.getVersion(),
+        ids: { newId: () => randomUUID() },
       }),
       'preferences:get': () => workspaces.getPreferences(),
       'preferences:update': (changes) => workspaces.updatePreferences(changes),

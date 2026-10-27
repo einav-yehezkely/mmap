@@ -44,7 +44,7 @@ export class SqliteRelationshipTypeRepository implements RelationshipTypeReposit
         `SELECT ${COLUMNS} FROM relationship_types WHERE workspace_id = ? ORDER BY normalized_label`,
       )
       .all(workspaceId)
-      .map(toRecord);
+      .map(toRelationshipTypeRecord);
   }
 
   public async findById(
@@ -55,7 +55,7 @@ export class SqliteRelationshipTypeRepository implements RelationshipTypeReposit
       .forRead()
       .prepare(`SELECT ${COLUMNS} FROM relationship_types WHERE workspace_id = ? AND id = ?`)
       .get(workspaceId, typeId);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toRelationshipTypeRecord(row);
   }
 
   public async findByNormalizedLabel(
@@ -68,7 +68,7 @@ export class SqliteRelationshipTypeRepository implements RelationshipTypeReposit
         `SELECT ${COLUMNS} FROM relationship_types WHERE workspace_id = ? AND normalized_label = ?`,
       )
       .get(workspaceId, normalizedLabel);
-    return row === undefined ? null : toRecord(row);
+    return row === undefined ? null : toRelationshipTypeRecord(row);
   }
 
   public async update(record: RelationshipTypeRecord): Promise<void> {
@@ -108,7 +108,9 @@ export class SqliteRelationshipTypeRepository implements RelationshipTypeReposit
   }
 }
 
-function toRecord(row: Record<string, SQLOutputValue>): RelationshipTypeRecord {
+export function toRelationshipTypeRecord(
+  row: Record<string, SQLOutputValue>,
+): RelationshipTypeRecord {
   return {
     id: String(row.id) as RelationshipTypeId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

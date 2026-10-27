@@ -62,7 +62,7 @@ export class SqliteMapRepository implements MapRepository {
          FROM mind_maps WHERE workspace_id = ? AND id = ?`,
       )
       .get(workspaceId, mapId);
-    return row === undefined ? null : toMap(row);
+    return row === undefined ? null : toMindMapRecord(row);
   }
 
   public async insertMap(record: MindMapRecord): Promise<void> {
@@ -139,7 +139,7 @@ export class SqliteMapRepository implements MapRepository {
          ORDER BY p.sibling_order, p.id`,
       )
       .all(workspaceId, mapId)
-      .map((row) => ({ ...toPlacement(row), nodeTitle: String(row.node_title) }));
+      .map((row) => ({ ...toPlacementRecord(row), nodeTitle: String(row.node_title) }));
   }
 
   public async insertPlacement(record: PlacementRecord): Promise<void> {
@@ -212,7 +212,7 @@ export class SqliteMapRepository implements MapRepository {
       )
       .all(workspaceId, mapId)
       .map((row) => ({
-        ...toConnection(row),
+        ...toMapConnectionRecord(row),
         relationshipTypeLabel:
           row.relationship_type_label === null ? null : String(row.relationship_type_label),
       }));
@@ -251,7 +251,7 @@ export class SqliteMapRepository implements MapRepository {
   }
 }
 
-function toMap(row: Row): MindMapRecord {
+export function toMindMapRecord(row: Row): MindMapRecord {
   return {
     id: String(row.id) as MapId,
     workspaceId: String(row.workspace_id) as WorkspaceId,
@@ -264,7 +264,7 @@ function toMap(row: Row): MindMapRecord {
   };
 }
 
-function toPlacement(row: Row): PlacementRecord {
+export function toPlacementRecord(row: Row): PlacementRecord {
   return {
     id: String(row.id) as PlacementId,
     workspaceId: String(row.workspace_id) as WorkspaceId,
@@ -282,7 +282,7 @@ function toPlacement(row: Row): PlacementRecord {
   };
 }
 
-function toConnection(row: Row): MapConnectionRecord {
+export function toMapConnectionRecord(row: Row): MapConnectionRecord {
   return {
     id: String(row.id) as MapConnectionId,
     workspaceId: String(row.workspace_id) as WorkspaceId,

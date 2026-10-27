@@ -93,6 +93,12 @@ export interface MmapRendererApi {
     readonly updateEntry: BridgeCall<'timeline:update-entry'>;
     readonly deleteEntry: BridgeCall<'timeline:delete-entry'>;
   };
+  readonly transfer: {
+    readonly exportZip: BridgeCall<'transfer:export-zip'>;
+    readonly previewImport: BridgeCall<'transfer:preview-import'>;
+    readonly applyImport: BridgeCall<'transfer:apply-import'>;
+    readonly discardImport: BridgeCall<'transfer:discard-import'>;
+  };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;
     readonly create: BridgeCall<'maps:create'>;

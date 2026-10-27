@@ -17,6 +17,7 @@ import type { BrowserWindow } from 'electron';
 
 import { checkAttachmentPreview } from './smoke-attachments';
 import { checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
+import { checkExportImport } from './smoke-transfer';
 import type { WorkspaceManager } from './workspaces/workspace-manager';
 
 export interface SmokeTestCheck {
@@ -274,6 +275,16 @@ export async function runSmokeTest(
   );
   checks.push(
     await check('review recorded and shown in the timeline', () => checkTimeline(window)),
+  );
+  checks.push(
+    await check('workspace exported to ZIP and imported back', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-transfer-'));
+      try {
+        await checkExportImport(workspaces, directory);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }),
   );
 
   return { passed: checks.every((item) => item.passed), checks };

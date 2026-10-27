@@ -94,6 +94,12 @@ const api: MmapRendererApi = {
     updateEntry: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineUpdateEntry, request),
     deleteEntry: (request) => ipcRenderer.invoke(IPC_CHANNELS.timelineDeleteEntry, request),
   },
+  transfer: {
+    exportZip: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferExportZip, request),
+    previewImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferPreviewImport, request),
+    applyImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferApplyImport, request),
+    discardImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferDiscardImport, request),
+  },
   maps: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),
     create: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsCreate, request),

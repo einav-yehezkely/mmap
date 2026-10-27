@@ -8,6 +8,7 @@
 
 export * from './application/attachment-service';
 export * from './application/graph-service';
+export * from './application/import-service';
 export * from './application/knowledge-node-service';
 export * from './application/map-service';
 export * from './application/relationship-service';
@@ -28,10 +29,14 @@ export * from './notes/link-policy';
 export * from './notes/note-document';
 export * from './notes/note-references';
 export * from './notes/plain-text';
+export * from './portability/archive-format';
+export * from './portability/export-archive';
+export * from './portability/import-plan';
 export * from './ports/attachment-store';
 export * from './ports/graph';
 export * from './ports/map-repository';
 export * from './ports/pagination';
+export * from './ports/portability';
 export * from './ports/repositories';
 export * from './ports/search';
 export * from './ports/transaction';

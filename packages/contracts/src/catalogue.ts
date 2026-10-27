@@ -16,6 +16,7 @@ import { nodeContracts, searchContracts, tagContracts } from './nodes';
 import { graphContracts, timelineContracts } from './graph-timeline';
 import { mapContracts } from './maps';
 import { relationshipContracts, relationshipTypeContracts } from './relationships';
+import { transferContracts } from './transfer';
 import { workspaceContracts } from './workspace';
 
 export interface IpcContract<
@@ -99,6 +100,10 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.timelineAddMilestone]: timelineContracts.addMilestone,
   [IPC_CHANNELS.timelineUpdateEntry]: timelineContracts.updateEntry,
   [IPC_CHANNELS.timelineDeleteEntry]: timelineContracts.deleteEntry,
+  [IPC_CHANNELS.transferExportZip]: transferContracts.exportZip,
+  [IPC_CHANNELS.transferPreviewImport]: transferContracts.previewImport,
+  [IPC_CHANNELS.transferApplyImport]: transferContracts.applyImport,
+  [IPC_CHANNELS.transferDiscardImport]: transferContracts.discardImport,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;
