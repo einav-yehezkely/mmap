@@ -6,6 +6,8 @@
  */
 :root {
   --background: oklch(1 0 0);
+  /* Slightly raised surface for cards on the home page. */
+  --card: oklch(0.985 0.003 265);
   --foreground: oklch(0.21 0.02 265);
   --muted: oklch(0.967 0.003 265);
   --muted-foreground: oklch(0.45 0.02 265);
@@ -23,6 +25,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: oklch(0.17 0.01 265);
+    --card: oklch(0.2 0.012 265);
     --foreground: oklch(0.96 0.005 265);
     --muted: oklch(0.24 0.01 265);
     --muted-foreground: oklch(0.75 0.01 265);
@@ -39,6 +42,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);

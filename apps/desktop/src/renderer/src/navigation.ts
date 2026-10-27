@@ -3,10 +3,10 @@
  * routing share one definition.
  */
 
-import { Clock3, Library, Network, Settings, Workflow, type LucideIcon } from 'lucide-react';
+import { Clock3, House, Library, Network, Settings, Workflow, type LucideIcon } from 'lucide-react';
 
 /** `search` is reached from the search box, not from the sidebar. */
-export type ViewId = 'library' | 'maps' | 'graph' | 'timeline' | 'settings' | 'search';
+export type ViewId = 'home' | 'library' | 'maps' | 'graph' | 'timeline' | 'settings' | 'search';
 
 export interface NavigationItem {
   readonly id: ViewId;
@@ -16,6 +16,12 @@ export interface NavigationItem {
 }
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
+  {
+    id: 'home',
+    label: 'Home',
+    icon: House,
+    description: 'Pick up where you left off: recent notes, maps and activity.',
+  },
   {
     id: 'library',
     label: 'Library',

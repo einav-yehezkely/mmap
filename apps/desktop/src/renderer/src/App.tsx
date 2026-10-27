@@ -11,6 +11,7 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { errorMessage, unwrap } from './lib/ipc';
 import { GraphView } from './graph/graph-view';
+import { HomeView } from './home/home-view';
 import { cn } from './lib/utils';
 import { MapsView } from './maps/maps-view';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
@@ -43,7 +44,8 @@ export function App() {
 }
 
 function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
-  const [activeView, setActiveView] = useState<ViewId>('library');
+  // The app opens on Home (a summary and quick actions), not inside one of the work views.
+  const [activeView, setActiveView] = useState<ViewId>('home');
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
   /** A mind map to open from another view (e.g. the graph); the counter remounts the maps view. */
   const [mapRequest, setMapRequest] = useState<{ mapId: string; request: number } | null>(null);
@@ -170,6 +172,20 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
             tabIndex={-1}
             className="min-w-0 flex-1 overflow-auto p-6 focus:outline-none"
           >
+            {activeItem?.id === 'home' && (
+              <HomeView
+                workspaceName={workspace.name}
+                timeZone={workspace.timezone}
+                onOpenNode={setOpenNodeId}
+                onOpenMap={(mapId) => {
+                  setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
+                  setActiveView('maps');
+                }}
+                onNavigate={setActiveView}
+                onCreateNode={() => void createNode()}
+                onFocusSearch={() => searchInput.current?.focus()}
+              />
+            )}
             {activeItem?.id === 'settings' && <SettingsView workspace={workspace} />}
             {activeItem?.id === 'library' && (
               <LibraryView
