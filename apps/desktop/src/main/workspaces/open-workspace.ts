@@ -6,12 +6,14 @@
 import {
   createAttachmentService,
   createKnowledgeNodeService,
+  createMapService,
   createRelationshipService,
   createTagService,
   createWorkspaceService,
   type AttachmentService,
   type Clock,
   type KnowledgeNodeService,
+  type MapService,
   type RelationshipService,
   type SearchIndex,
   type TagService,
@@ -28,6 +30,7 @@ import {
   SchemaTooNewError,
   SqliteAttachmentRepository,
   SqliteKnowledgeNodeRepository,
+  SqliteMapRepository,
   SqliteNoteReferenceRepository,
   SqliteRelationshipRepository,
   SqliteRelationshipTypeRepository,
@@ -49,6 +52,7 @@ export interface WorkspaceServices {
   readonly tags: TagService;
   readonly attachments: AttachmentService;
   readonly relationships: RelationshipService;
+  readonly maps: MapService;
   readonly search: SearchIndex;
 }
 
@@ -80,28 +84,42 @@ export function createWorkspaceServices(
   const tagRepository = new SqliteTagRepository(connections);
   const timelineRepository = new SqliteTimelineEventRepository(connections);
   const relationshipTypeRepository = new SqliteRelationshipTypeRepository(connections);
+  const relationshipRepository = new SqliteRelationshipRepository(connections);
+  const nodes = createKnowledgeNodeService({
+    workspaceId,
+    transactions: connections,
+    nodes: nodeRepository,
+    timeline: timelineRepository,
+    tags: tagRepository,
+    references: new SqliteNoteReferenceRepository(connections),
+    ids: dependencies.ids,
+    clock: dependencies.clock,
+  });
   return {
     search: new SqliteSearchIndex(connections),
+    maps: createMapService({
+      workspaceId,
+      transactions: connections,
+      maps: new SqliteMapRepository(connections),
+      nodes: nodeRepository,
+      relationships: relationshipRepository,
+      ids: dependencies.ids,
+      clock: dependencies.clock,
+      // New nodes made from a map go through the node service, so they get the same
+      // validation, timeline event and search entry as nodes created anywhere else.
+      createNode: (title) => nodes.create({ title }),
+    }),
     relationships: createRelationshipService({
       workspaceId,
       transactions: connections,
-      relationships: new SqliteRelationshipRepository(connections),
+      relationships: relationshipRepository,
       types: relationshipTypeRepository,
       nodes: nodeRepository,
       timeline: timelineRepository,
       ids: dependencies.ids,
       clock: dependencies.clock,
     }),
-    nodes: createKnowledgeNodeService({
-      workspaceId,
-      transactions: connections,
-      nodes: nodeRepository,
-      timeline: timelineRepository,
-      tags: tagRepository,
-      references: new SqliteNoteReferenceRepository(connections),
-      ids: dependencies.ids,
-      clock: dependencies.clock,
-    }),
+    nodes,
     tags: createTagService({
       workspaceId,
       transactions: connections,

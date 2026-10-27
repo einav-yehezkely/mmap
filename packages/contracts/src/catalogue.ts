@@ -13,6 +13,7 @@ import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from '.
 import { attachmentContracts, preferenceContracts } from './attachments';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
 import { nodeContracts, searchContracts, tagContracts } from './nodes';
+import { mapContracts } from './maps';
 import { relationshipContracts, relationshipTypeContracts } from './relationships';
 import { workspaceContracts } from './workspace';
 
@@ -69,6 +70,23 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.relationshipsCreate]: relationshipContracts.create,
   [IPC_CHANNELS.relationshipsUpdate]: relationshipContracts.update,
   [IPC_CHANNELS.relationshipsDelete]: relationshipContracts.delete,
+  [IPC_CHANNELS.mapsList]: mapContracts.list,
+  [IPC_CHANNELS.mapsCreate]: mapContracts.create,
+  [IPC_CHANNELS.mapsGet]: mapContracts.get,
+  [IPC_CHANNELS.mapsRename]: mapContracts.rename,
+  [IPC_CHANNELS.mapsDuplicate]: mapContracts.duplicate,
+  [IPC_CHANNELS.mapsDelete]: mapContracts.delete,
+  [IPC_CHANNELS.mapsSetViewport]: mapContracts.setViewport,
+  [IPC_CHANNELS.mapsAddPlacement]: mapContracts.addPlacement,
+  [IPC_CHANNELS.mapsRemovePlacement]: mapContracts.removePlacement,
+  [IPC_CHANNELS.mapsMovePlacements]: mapContracts.movePlacements,
+  [IPC_CHANNELS.mapsReparent]: mapContracts.reparent,
+  [IPC_CHANNELS.mapsSetCollapsed]: mapContracts.setCollapsed,
+  [IPC_CHANNELS.mapsSetPlacementColor]: mapContracts.setPlacementColor,
+  [IPC_CHANNELS.mapsAddConnection]: mapContracts.addConnection,
+  [IPC_CHANNELS.mapsRemoveConnection]: mapContracts.removeConnection,
+  [IPC_CHANNELS.mapsProposeHierarchy]: mapContracts.proposeHierarchy,
+  [IPC_CHANNELS.mapsSwitchMode]: mapContracts.switchMode,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

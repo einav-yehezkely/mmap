@@ -3,6 +3,7 @@ export * from './attachments';
 export * from './catalogue';
 export * from './channels';
 export * from './envelope';
+export * from './maps';
 export * from './nodes';
 export * from './relationships';
 export * from './renderer-api';

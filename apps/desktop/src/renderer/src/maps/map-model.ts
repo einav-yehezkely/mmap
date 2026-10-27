@@ -1,0 +1,292 @@
+/**
+ * Pure helpers that turn a map view (from the main process) into what the canvas and the outline
+ * show, and that compute keyboard moves within a hierarchy (PRD §5.6). Kept free of React and
+ * React Flow so they can be unit-tested directly.
+ *
+ * Two kinds of lines are kept visually distinct (PRD §14 "confusion between visual structure and
+ * meaning"): hierarchy lines (parent → child, hierarchical mode only) and map connectors. A
+ * connector that references a semantic relationship shows that relationship's type.
+ */
+
+import type { MapConnectionViewDto, MapViewDto, PlacementViewDto } from '@mmap/contracts';
+import { childrenIndex, layoutTree, orderedChildren, type HierarchyItem } from '@mmap/domain';
+
+export interface CanvasItem {
+  readonly placement: PlacementViewDto;
+  readonly position: { readonly x: number; readonly y: number };
+  readonly childCount: number;
+}
+
+export interface CanvasLine {
+  readonly id: string;
+  readonly kind: 'hierarchy' | 'connector';
+  readonly source: string;
+  readonly target: string;
+  /** Text shown on the line: the connector label and/or the referenced relationship type. */
+  readonly label: string | null;
+}
+
+export interface CanvasModel {
+  readonly items: readonly CanvasItem[];
+  readonly lines: readonly CanvasLine[];
+  /** Placements hidden because an ancestor is collapsed (hierarchical mode only). */
+  readonly hiddenCount: number;
+}
+
+export function hierarchyItemsOf(view: MapViewDto): HierarchyItem[] {
+  return view.placements.map((placement) => ({
+    id: placement.id,
+    parentId: placement.parentPlacementId,
+    siblingOrder: placement.siblingOrder,
+  }));
+}
+
+export function connectorLabel(connection: MapConnectionViewDto): string | null {
+  const parts = [connection.label, connection.relationshipTypeLabel].filter(
+    (part): part is string => part !== null,
+  );
+  if (connection.relationshipTypeLabel !== null && parts.length === 2) {
+    return `${parts[0]} (${parts[1]})`;
+  }
+  return parts[0] ?? null;
+}
+
+/**
+ * Freeform mode shows stored coordinates. Hierarchical mode computes a deterministic tree layout
+ * and never writes it back, so the freeform coordinates stay available for switching back.
+ */
+export function buildCanvasModel(view: MapViewDto): CanvasModel {
+  const childCounts = new Map<string, number>();
+  for (const placement of view.placements) {
+    if (placement.parentPlacementId !== null) {
+      childCounts.set(
+        placement.parentPlacementId,
+        (childCounts.get(placement.parentPlacementId) ?? 0) + 1,
+      );
+    }
+  }
+
+  if (view.map.mode === 'freeform') {
+    return {
+      items: view.placements.map((placement) => ({
+        placement,
+        position: { x: placement.x, y: placement.y },
+        childCount: childCounts.get(placement.id) ?? 0,
+      })),
+      lines: connectorLines(view.connections, () => true),
+      hiddenCount: 0,
+    };
+  }
+
+  const layout = layoutTree(
+    view.placements.map((placement) => ({
+      id: placement.id,
+      parentId: placement.parentPlacementId,
+      siblingOrder: placement.siblingOrder,
+      collapsed: placement.isCollapsed,
+    })),
+  );
+  const visible = (id: string) => layout.positions.has(id);
+  const items: CanvasItem[] = [];
+  for (const placement of view.placements) {
+    const position = layout.positions.get(placement.id);
+    if (position !== undefined) {
+      items.push({ placement, position, childCount: childCounts.get(placement.id) ?? 0 });
+    }
+  }
+  const hierarchyLines: CanvasLine[] = view.placements
+    .filter(
+      (placement) =>
+        placement.parentPlacementId !== null &&
+        visible(placement.id) &&
+        visible(placement.parentPlacementId),
+    )
+    .map((placement) => ({
+      id: `hierarchy:${placement.id}`,
+      kind: 'hierarchy',
+      source: placement.parentPlacementId ?? '',
+      target: placement.id,
+      label: null,
+    }));
+  return {
+    items,
+    lines: [
+      ...hierarchyLines,
+      ...connectorLines(
+        view.connections,
+        (c) => visible(c.sourcePlacementId) && visible(c.targetPlacementId),
+      ),
+    ],
+    hiddenCount: layout.hidden.size,
+  };
+}
+
+function connectorLines(
+  connections: readonly MapConnectionViewDto[],
+  include: (connection: MapConnectionViewDto) => boolean,
+): CanvasLine[] {
+  return connections.filter(include).map((connection) => ({
+    id: `connector:${connection.id}`,
+    kind: 'connector',
+    source: connection.sourcePlacementId,
+    target: connection.targetPlacementId,
+    label: connectorLabel(connection),
+  }));
+}
+
+export interface OutlineRow {
+  readonly placement: PlacementViewDto;
+  /** 1-based depth, as used by `aria-level`. */
+  readonly level: number;
+  readonly hasChildren: boolean;
+  /** Position among siblings (1-based) and sibling count, for `aria-posinset`/`aria-setsize`. */
+  readonly position: number;
+  readonly setSize: number;
+}
+
+/**
+ * Rows of the outline (the keyboard-accessible list of the map). Hierarchical maps show the tree
+ * in display order, skipping children of collapsed items; freeform maps show a flat list sorted
+ * by title.
+ */
+export function buildOutlineRows(view: MapViewDto): OutlineRow[] {
+  const byId = new Map(view.placements.map((placement) => [placement.id, placement]));
+  if (view.map.mode === 'freeform') {
+    const sorted = [...view.placements].sort(
+      (a, b) => a.nodeTitle.localeCompare(b.nodeTitle) || (a.id < b.id ? -1 : 1),
+    );
+    return sorted.map((placement, index) => ({
+      placement,
+      level: 1,
+      hasChildren: false,
+      position: index + 1,
+      setSize: sorted.length,
+    }));
+  }
+
+  const childrenOf = childrenIndex(hierarchyItemsOf(view));
+  const rows: OutlineRow[] = [];
+  // Iterative depth-first walk; the stack holds items in reverse display order.
+  const roots = childrenOf.get(null) ?? [];
+  const stack = roots
+    .map((item, index) => ({ id: item.id, level: 1, position: index + 1, setSize: roots.length }))
+    .reverse();
+  const visited = new Set<string>();
+  while (stack.length > 0) {
+    const entry = stack.pop();
+    if (entry === undefined || visited.has(entry.id)) continue;
+    visited.add(entry.id);
+    const placement = byId.get(entry.id);
+    if (placement === undefined) continue;
+    const children = childrenOf.get(entry.id) ?? [];
+    rows.push({
+      placement,
+      level: entry.level,
+      hasChildren: children.length > 0,
+      position: entry.position,
+      setSize: entry.setSize,
+    });
+    if (!placement.isCollapsed) {
+      for (let index = children.length - 1; index >= 0; index -= 1) {
+        const child = children[index];
+        if (child === undefined) continue;
+        stack.push({
+          id: child.id,
+          level: entry.level + 1,
+          position: index + 1,
+          setSize: children.length,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+export type HierarchyMove = 'up' | 'down' | 'indent' | 'outdent';
+
+export interface ReparentTarget {
+  readonly placementId: string;
+  readonly parentPlacementId: string | null;
+  readonly index: number;
+}
+
+/**
+ * Where a keyboard move puts an item (PRD §5.6 keyboard alternatives), or null when the move is
+ * not possible (first item cannot move up, a root cannot be outdented, and so on).
+ * - up/down: swap with the previous/next sibling;
+ * - indent: become the last child of the previous sibling;
+ * - outdent: become the next sibling of the current parent.
+ */
+export function planKeyboardMove(
+  view: MapViewDto,
+  placementId: string,
+  move: HierarchyMove,
+): ReparentTarget | null {
+  const items = hierarchyItemsOf(view);
+  const item = items.find((candidate) => candidate.id === placementId);
+  if (item === undefined) return null;
+  const siblings = orderedChildren(items, item.parentId);
+  const index = siblings.findIndex((sibling) => sibling.id === placementId);
+
+  switch (move) {
+    case 'up':
+      return index > 0 ? { placementId, parentPlacementId: item.parentId, index: index - 1 } : null;
+    case 'down':
+      return index < siblings.length - 1
+        ? { placementId, parentPlacementId: item.parentId, index: index + 1 }
+        : null;
+    case 'indent': {
+      const previous = siblings[index - 1];
+      if (previous === undefined) return null;
+      return {
+        placementId,
+        parentPlacementId: previous.id,
+        index: orderedChildren(items, previous.id).length,
+      };
+    }
+    case 'outdent': {
+      if (item.parentId === null) return null;
+      const parent = items.find((candidate) => candidate.id === item.parentId);
+      if (parent === undefined) return null;
+      const parentIndex = orderedChildren(items, parent.parentId).findIndex(
+        (sibling) => sibling.id === parent.id,
+      );
+      return { placementId, parentPlacementId: parent.parentId, index: parentIndex + 1 };
+    }
+  }
+}
+
+/** A free spot for a new freeform item: right of the right-most item, or the origin. */
+export function nextFreeformPosition(view: MapViewDto): { x: number; y: number } {
+  if (view.placements.length === 0) return { x: 0, y: 0 };
+  const right = Math.max(...view.placements.map((placement) => placement.x));
+  const top = Math.min(...view.placements.map((placement) => placement.y));
+  return { x: right + 240, y: top };
+}
+
+/**
+ * Items whose chosen parents lead back to themselves (a loop), sorted by ID. Used to stop the
+ * user before submitting an assignment the main process would reject, and to name the items.
+ */
+export function findParentLoops(parents: ReadonlyMap<string, string | null>): string[] {
+  const inLoop = new Set<string>();
+  const settled = new Set<string>();
+  for (const start of parents.keys()) {
+    if (settled.has(start)) continue;
+    // Walks up from `start`; meeting an item of the current walk again closes a loop.
+    const path: string[] = [];
+    const onPath = new Set<string>();
+    let current: string | null | undefined = start;
+    while (current !== null && current !== undefined && !settled.has(current)) {
+      if (onPath.has(current)) {
+        for (const id of path.slice(path.indexOf(current))) inLoop.add(id);
+        break;
+      }
+      path.push(current);
+      onPath.add(current);
+      current = parents.get(current);
+    }
+    for (const id of path) settled.add(id);
+  }
+  return [...inLoop].sort();
+}

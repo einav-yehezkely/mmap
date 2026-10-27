@@ -5,12 +5,13 @@ This page explains the SQLite schema created by migration 1,
 entities in PRD §7.3 and explains the constraints that are not obvious from the SQL. Migration 2
 changes no table; it only marks note schema version 2 (see [Migrations](#migrations)).
 
-Migration 1 creates the complete schema for the whole logical model. Phase 1 and Phase 2 services
-use part of it; the rest waits for the phases that need it (see
-[Table usage](#table-usage-after-phase-2)). The schema is verified by the tests in
+Migration 1 creates the complete schema for the whole logical model. The Phase 1 to 3 services
+use most of it; the rest waits for the phases that need it (see
+[Table usage](#table-usage-after-phase-3)). Phase 3 (mind maps) added no migration: the map tables
+were already in migration 1. The schema is verified by the tests in
 `packages/storage-sqlite/src/migrations/initial-schema.test.ts`.
 
-## Table usage after Phase 2
+## Table usage after Phase 3
 
 Repositories are in `packages/storage-sqlite/src/repositories/`; the services that call them are
 in `packages/domain/src/application/`. Every repository method takes the workspace ID and filters
@@ -27,7 +28,7 @@ by it, so a record from another workspace behaves as not found.
 | `attachments`                                    | Used         | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                            |
 | `relationships`                                  | Used         | `RelationshipService`: create, update (type, description, reverse), delete, list for a node                  |
 | `note_references`                                | Used         | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks and delete preview      |
-| `mind_maps`, `map_placements`, `map_connections` | Not used yet | Phase 3. Node deletion already promotes child placements (see below)                                         |
+| `mind_maps`, `map_placements`, `map_connections` | Used         | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below)    |
 | `transfer_jobs`                                  | Not used yet | Phase 5                                                                                                      |
 | `schema_migrations`                              | Used         | Migration runner                                                                                             |
 
@@ -246,6 +247,25 @@ returns nodes that carry all selected tags.
 `title`, `mode` (`freeform` or `hierarchical`), `viewport_json`, `revision`. Deleting a map
 cascades to its placements and connectors, never to the canonical nodes (acceptance criterion 8).
 
+Phase 3 behaviour (`packages/domain/src/application/map-service.ts`,
+`packages/storage-sqlite/src/repositories/sqlite-map-repository.ts`):
+
+- `title` is NFC-normalized, single-line, 1 to 200 characters without control characters. A
+  duplicate is titled `<title> (copy)`.
+- `viewport_json` is `{"x": …, "y": …, "zoom": …}`: the canvas pan and zoom, written by
+  `setViewport` (zoom 0.05 to 8, coordinates within ±1,000,000). New maps start with
+  `{"x":0,"y":0,"zoom":1}`, which the editor treats as "never saved" and fits the view. A value
+  that cannot be parsed is read as that default instead of failing to open the map.
+- `revision` starts at 1 and is the map's optimistic-concurrency counter (PRD §14). Every
+  structural change (rename, adding, removing, moving, reparenting, collapsing or coloring an
+  item, adding or removing a connector, switching mode) runs in one transaction that checks the
+  expected revision, applies the change to `map_placements` or `map_connections`, and writes
+  `revision + 1` and `updated_at` with `UPDATE … WHERE revision = ?`. Saving the viewport changes
+  neither. Deleting a node raises the revision (not `updated_at`) of every map that shows it;
+  deleting a relationship that a connector references changes neither.
+- The map list is ordered by `updated_at` descending, then `id` (index `mind_maps_by_updated`),
+  with the placement count computed by a subquery.
+
 ### `map_placements` (MapPlacement)
 
 A canonical node placed on one map. Everything here is map-specific visual state:
@@ -268,6 +288,29 @@ Note content stays on the node, so editing it updates every map that shows it.
   a new row has no descendants. The CTE uses `UNION` rather than `UNION ALL`, so it terminates
   even on corrupted data.
 
+Phase 3 behaviour:
+
+- `freeform_x` and `freeform_y` are the item's position on the freeform canvas, rounded to whole
+  pixels by the editor. In hierarchical mode they are neither used nor changed: the tree layout is
+  computed from `parent_placement_id`, `sibling_order` and `is_collapsed` each time the map is
+  shown and is never stored.
+- `parent_placement_id` is `NULL` for a top-level item. `sibling_order` is the position among
+  siblings; ties are broken by `id`. Moves renumber the affected sibling groups as 0, 1, 2, …
+- `style_json` is `{"color": <name or null>}`, where the name is one of `gray`, `blue`, `green`,
+  `amber`, `red` and `violet`. An unknown value is read as `{"color": null}` (the default look).
+- `is_collapsed` hides the item's descendants in hierarchical mode; freeform mode shows every
+  item.
+- **Removing an item from a map** first moves its children into its place among its siblings, in
+  their order, then deletes the placement. The node is never deleted.
+- **Deleting a node** first sets the parent of each child of the node's placements to that
+  placement's parent (`NULL` for a top-level placement), keeping their `sibling_order`, raises the
+  revision of the affected maps, then deletes the node; its placements and their connectors
+  cascade.
+- Placements are read with the node's current title (`JOIN knowledge_nodes`), never with a copy.
+
+The domain checks every rule before writing (`NOT_FOUND`, `DUPLICATE`, `INVARIANT_VIOLATION`), so
+users see a clear message; the constraints above remain the second line of defense.
+
 ### `map_connections` (MapConnection)
 
 Visual connectors between two placements on the same map: `source_placement_id`,
@@ -276,6 +319,15 @@ form cycles; only the hierarchy is acyclic. Both endpoints reference `(map_id, i
 `map_placements`, so they must be on the connector's map. `relationship_id` is set to `NULL` when
 the relationship is deleted, and the workspace triggers described above keep it in the same
 workspace.
+
+Phase 3 behaviour: a connector is written only by `MapService.addConnection`, in a structural
+change of its map. `source_placement_id` is where the user started drawing, shown as the arrow's
+tail. `label` is optional (at most 200 characters, `NULL` when empty). `relationship_id` is set
+only when the request names an existing relationship whose two nodes are exactly the nodes of the
+two placements, in either direction; the service never creates a relationship. `style_json` is
+always `{}`: connectors have no styling yet. Removing either placement deletes the connector by
+cascade. Connectors are listed by `created_at`, then `id`, with the referenced relationship's type
+label from a `LEFT JOIN`.
 
 ### `timeline_events` (TimelineEvent)
 

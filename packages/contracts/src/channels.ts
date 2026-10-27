@@ -53,6 +53,23 @@ export const IPC_CHANNELS = {
   relationshipsCreate: 'relationships:create',
   relationshipsUpdate: 'relationships:update',
   relationshipsDelete: 'relationships:delete',
+  mapsList: 'maps:list',
+  mapsCreate: 'maps:create',
+  mapsGet: 'maps:get',
+  mapsRename: 'maps:rename',
+  mapsDuplicate: 'maps:duplicate',
+  mapsDelete: 'maps:delete',
+  mapsSetViewport: 'maps:set-viewport',
+  mapsAddPlacement: 'maps:add-placement',
+  mapsRemovePlacement: 'maps:remove-placement',
+  mapsMovePlacements: 'maps:move-placements',
+  mapsReparent: 'maps:reparent',
+  mapsSetCollapsed: 'maps:set-collapsed',
+  mapsSetPlacementColor: 'maps:set-placement-color',
+  mapsAddConnection: 'maps:add-connection',
+  mapsRemoveConnection: 'maps:remove-connection',
+  mapsProposeHierarchy: 'maps:propose-hierarchy',
+  mapsSwitchMode: 'maps:switch-mode',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

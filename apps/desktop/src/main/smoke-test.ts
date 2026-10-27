@@ -154,6 +154,81 @@ export async function runSmokeTest(
     }),
   );
   checks.push(
+    // PRD §13 acceptance criteria 6 and 8 through the real bridge: one node on two maps shows
+    // the same title, moving it on one map leaves the other, and deleting a map keeps the node.
+    await check('mind maps reuse nodes, persist layout and keep nodes on delete', async () => {
+      const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { nodes, maps } = window.mmap;
+          const node = (await nodes.create({ title: 'Smoke map node' })).data;
+          let first = (await maps.create({ title: 'Smoke map one' })).data;
+          let second = (await maps.create({ title: 'Smoke map two', mode: 'hierarchical' })).data;
+          first = (await maps.addPlacement({ mapId: first.map.id, expectedRevision: first.map.revision, nodeId: node.id, x: 0, y: 0 })).data;
+          second = (await maps.addPlacement({ mapId: second.map.id, expectedRevision: second.map.revision, nodeId: node.id, x: 0, y: 0 })).data;
+          const placement = first.placements[0];
+          const moved = await maps.movePlacements({ mapId: first.map.id, expectedRevision: first.map.revision, changes: [{ placementId: placement.id, x: 400, y: 300 }] });
+          if (!moved.ok) return 'moving a placement failed: ' + moved.error.code;
+          await nodes.update({ nodeId: node.id, expectedRevision: node.revision, changes: { title: 'Smoke map node renamed' } });
+          const reloaded = (await maps.get({ mapId: second.map.id })).data;
+          if (reloaded.placements[0]?.nodeTitle !== 'Smoke map node renamed') return 'title not shared between maps';
+          if (reloaded.placements[0]?.x !== 0) return 'moving on one map changed the other';
+          const stale = await maps.rename({ mapId: first.map.id, expectedRevision: first.map.revision, title: 'Stale' });
+          if (stale.ok || stale.error.code !== 'REVISION_CONFLICT') return 'stale map revision was accepted';
+          await maps.delete({ mapId: first.map.id });
+          await maps.delete({ mapId: second.map.id });
+          const stillThere = await nodes.get({ nodeId: node.id });
+          if (!stillThere.ok) return 'deleting maps deleted the node';
+          await nodes.delete({ nodeId: node.id, expectedRevision: stillThere.data.revision });
+          return 'ok';
+        })()`)) as string;
+      if (outcome !== 'ok') {
+        throw new Error(outcome);
+      }
+    }),
+  );
+  checks.push(
+    // Renders the real map editor (React Flow under the production CSP) and measures PRD §9
+    // "open a 200-placement map within 2 seconds of data availability".
+    await check('200-placement map opens in the editor within 2 seconds', async () => {
+      const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { nodes, maps } = window.mmap;
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const until = async (predicate, timeoutMs) => {
+            const start = performance.now();
+            while (performance.now() - start < timeoutMs) {
+              if (predicate()) return true;
+              await wait(20);
+            }
+            return false;
+          };
+          const buttonWithText = (text) =>
+            [...document.querySelectorAll('button')].find((button) => button.textContent.includes(text));
+          let view = (await maps.create({ title: 'Smoke large map' })).data;
+          for (let index = 0; index < 200; index += 1) {
+            view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
+              newNodeTitle: 'Smoke item ' + index, x: (index % 20) * 220, y: Math.floor(index / 20) * 80 })).data;
+          }
+          buttonWithText('Mind Maps').click();
+          if (!(await until(() => buttonWithText('Smoke large map'), 3000))) return 'map list did not show the map';
+          const start = performance.now();
+          buttonWithText('Smoke large map').click();
+          const rendered = await until(() => document.querySelectorAll('.react-flow__node').length === 200, 5000);
+          const elapsed = Math.round(performance.now() - start);
+          if (!rendered) return 'map editor did not render 200 items (' + document.querySelectorAll('.react-flow__node').length + ')';
+          if (elapsed > 2000) return 'opening took ' + elapsed + ' ms';
+          if (!document.querySelector('[role="tree"]')) return 'outline missing';
+          buttonWithText('All maps').click();
+          await maps.delete({ mapId: view.map.id });
+          return 'ok:' + elapsed;
+        })()`)) as string;
+      if (!outcome.startsWith('ok')) {
+        throw new Error(outcome);
+      }
+      console.log(`      map open time: ${outcome.slice(3)} ms`);
+    }),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",

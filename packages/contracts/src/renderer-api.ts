@@ -78,4 +78,23 @@ export interface MmapRendererApi {
     readonly update: BridgeCall<'relationships:update'>;
     readonly delete: BridgeCall<'relationships:delete'>;
   };
+  readonly maps: {
+    readonly list: BridgeCall<'maps:list'>;
+    readonly create: BridgeCall<'maps:create'>;
+    readonly get: BridgeCall<'maps:get'>;
+    readonly rename: BridgeCall<'maps:rename'>;
+    readonly duplicate: BridgeCall<'maps:duplicate'>;
+    readonly delete: BridgeCall<'maps:delete'>;
+    readonly setViewport: BridgeCall<'maps:set-viewport'>;
+    readonly addPlacement: BridgeCall<'maps:add-placement'>;
+    readonly removePlacement: BridgeCall<'maps:remove-placement'>;
+    readonly movePlacements: BridgeCall<'maps:move-placements'>;
+    readonly reparent: BridgeCall<'maps:reparent'>;
+    readonly setCollapsed: BridgeCall<'maps:set-collapsed'>;
+    readonly setPlacementColor: BridgeCall<'maps:set-placement-color'>;
+    readonly addConnection: BridgeCall<'maps:add-connection'>;
+    readonly removeConnection: BridgeCall<'maps:remove-connection'>;
+    readonly proposeHierarchy: BridgeCall<'maps:propose-hierarchy'>;
+    readonly switchMode: BridgeCall<'maps:switch-mode'>;
+  };
 }

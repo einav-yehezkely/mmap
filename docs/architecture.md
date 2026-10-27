@@ -1,10 +1,11 @@
 # Architecture overview
 
 This page explains how the code is organized, how a request travels from the UI to the storage
-engine, how the Phase 1 features (workspaces, nodes, notes, tags, attachments) and the Phase 2
-features (relationships, wikilinks and backlinks, search) work, and how the security baseline from
+engine, how the Phase 1 features (workspaces, nodes, notes, tags, attachments), the Phase 2
+features (relationships, wikilinks and backlinks, search) and the Phase 3 features (mind maps)
+work, and how the security baseline from
 [ADR-0003](adr/0003-electron-version-and-security-baseline.md) is implemented. It describes the
-code on branch `phase-2-connections`; later phases are listed separately at the end. It is a
+code on branch `phase-3-mind-maps`; later phases are listed separately at the end. It is a
 reviewer-level overview: follow the file references for details.
 
 ## Packages and dependency rules
@@ -12,16 +13,16 @@ reviewer-level overview: follow the file references for details.
 The repository is an npm-workspaces monorepo
 ([ADR-0001](adr/0001-monorepo-and-module-boundaries.md)).
 
-| Package                   | Responsibility                                                                                                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, labels, attachment file-type policy, timeline sessions, application services |
-| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                    |
-| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories, FTS5 search index                                                                                  |
-| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                         |
+| Package                   | Responsibility                                                                                                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, map hierarchy and tree layout, labels, attachment file-type policy, timeline sessions, application services |
+| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                                                   |
+| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories, FTS5 search index                                                                                                                 |
+| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                                                        |
 
 Application services live in `packages/domain/src/application/` (`workspace-service.ts`,
 `knowledge-node-service.ts`, `tag-service.ts`, `attachment-service.ts`,
-`relationship-service.ts`). They depend only on ports (`packages/domain/src/ports/`), so the same
+`relationship-service.ts`, `map-service.ts`). They depend only on ports (`packages/domain/src/ports/`), so the same
 services run against SQLite today and could run against another adapter later. The SQLite
 implementations of those ports are in `packages/storage-sqlite/src/repositories/`, and the search
 port (`ports/search.ts`) is implemented in `packages/storage-sqlite/src/search/`. All of them are
@@ -54,7 +55,9 @@ renderer --(window.mmap only)--> preload --(ipcRenderer.invoke)--> main
 
 The renderer imports a few pure functions from `@mmap/domain` (`parseNoteDocument`,
 `isSafeLinkHref`) so that the editor applies exactly the same rules as the main process. These
-are checks for a fast, accurate UI; the main process repeats them and remains the authority.
+are checks for a fast, accurate UI; the main process repeats them and remains the authority. The
+map editor also imports the pure hierarchy helpers and `layoutTree` (see [Mind maps](#mind-maps)),
+so the tree layout is computed by domain code in the renderer instead of being stored.
 
 The rules are written once in `tooling/architecture-rules.mjs` and enforced twice:
 
@@ -85,7 +88,7 @@ mmap follows Electron's standard three-part model, with the renderer treated as 
 | -------- | --------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Main     | `apps/desktop/src/main`     | Node (ESM bundle `out/main/index.js`)         | Composition root, window, security policy, `app://` and `mmap-attachment://` protocols, workspaces, storage, IPC handlers |
 | Preload  | `apps/desktop/src/preload`  | Sandboxed, context-isolated (CJS `index.cjs`) | Exposes `window.mmap` with named, typed methods only                                                                      |
-| Renderer | `apps/desktop/src/renderer` | Chromium, sandboxed, origin `app://mmap`      | React UI (Tailwind, shadcn/ui, Tiptap, KaTeX); no Node or Electron APIs                                                   |
+| Renderer | `apps/desktop/src/renderer` | Chromium, sandboxed, origin `app://mmap`      | React UI (Tailwind, shadcn/ui, Tiptap, KaTeX, React Flow); no Node or Electron APIs                                       |
 
 Build configuration is in `apps/desktop/electron.vite.config.ts`. Every library and every
 `@mmap/*` package is bundled, so the packaged app contains no `node_modules`. The preload script is
@@ -106,7 +109,7 @@ Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 On quit, `before-quit` is delayed until `WorkspaceManager.close()` has flushed queued writes,
 checkpointed the WAL and released the workspace lock.
 
-### Current scope (Phases 1 and 2)
+### Current scope (Phases 1 to 3)
 
 The renderer (`apps/desktop/src/renderer/src/App.tsx`) shows a workspace gate: while no workspace
 is open, `WorkspaceSetupView` explains why and offers create, open and recent workspaces. Once a
@@ -122,11 +125,14 @@ switching workspaces discards all view state of the previous one.
 - **Node detail panel** (`nodes/node-detail-panel.tsx`): title, summary, tags, relationships
   (`relationships/node-relationships.tsx`), rich note with wikilinks, attachments, backlinks
   (`nodes/node-backlinks.tsx`), save status, recovery and conflict banners, duplicate and delete.
+- **Mind Maps** (`maps/maps-view.tsx`, `maps/map-editor.tsx`): the list of maps and the editor
+  for one map, with the canvas, the outline and the dialogs (see [Mind maps](#mind-maps)).
+  Opening an item opens its node in the same detail panel as everywhere else.
 - **Settings** (`views/settings-view.tsx`): workspace name, location and switching, attachment
   size limit, diagnostics.
-- Mind Maps, Knowledge Graph and Timeline show an empty state naming their phase.
+- Knowledge Graph and Timeline show an empty state naming their phase.
 
-Views that show data owned by other nodes (relationships, backlinks, search results) reload when
+Views that show data owned by other nodes (relationships, backlinks, search results, open maps) reload when
 `notifyNodesChanged` fires (`nodes/node-events.ts`), for example after a node is renamed, created
 from the wikilink picker, or deleted.
 
@@ -134,7 +140,7 @@ The renderer's top level is wrapped in an error boundary (`components/error-boun
 
 ## Request flow: one IPC call end to end
 
-This is the full path of `app:get-info`, the pattern every channel follows. The other 43 channels
+This is the full path of `app:get-info`, the pattern every channel follows. The other 60 channels
 are listed in [ipc-contracts.md](ipc-contracts.md#channel-reference).
 
 1. **Renderer.** `SettingsView` (`src/renderer/src/views/settings-view.tsx`) calls
@@ -408,8 +414,8 @@ schema repeats the structural ones as a second line of defense ([data-model.md](
 - **Timeline.** Creating a relationship writes a `relationship_created` timeline event in the
   same transaction, attributed to the request's source node.
 
-Nothing else creates relationships. Wikilinks never do, and map structure will not either
-(PRD §4.3, §4.4).
+Nothing else creates relationships. Wikilinks never do, and neither does map structure
+(PRD §4.3, §4.4; see [Mind maps](#mind-maps)).
 
 ### Directionality copy and type changes
 
@@ -615,6 +621,168 @@ the limit is clamped to 1–50.
 caveats are in [testing.md](testing.md#search-benchmark). All search work runs synchronously on
 the main process thread, like the rest of the database work.
 
+## Mind maps
+
+PRD §4.4 and §5.6. The main decisions are recorded in
+[ADR-0009](adr/0009-mind-map-editing.md).
+
+A map shows canonical nodes through **placements**. A placement holds only what belongs to this
+map: freeform position, parent, sibling order, collapse state and color. The node's title, note,
+tags and relationships stay on the node, so a node edited anywhere shows the same content on every
+map (acceptance criterion 6). A node appears at most once per map (PRD version 1 rule).
+
+### Layers
+
+| Layer        | Code                                                                                                                                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pure rules   | `packages/domain/src/maps/hierarchy.ts` (cycle check, sibling order, move planning), `tree-layout.ts` (hierarchical layout), `hierarchy-proposal.ts` (parent suggestions and validation for the switch to hierarchy)              |
+| Service      | `packages/domain/src/application/map-service.ts` (`MapService`), port `packages/domain/src/ports/map-repository.ts`                                                                                                               |
+| Storage      | `packages/storage-sqlite/src/repositories/sqlite-map-repository.ts`; tables from migration 1 ([data-model.md](data-model.md#mind_maps-mindmap))                                                                                   |
+| Contracts    | `packages/contracts/src/maps.ts`: 17 `maps:*` channels ([ipc-contracts.md](ipc-contracts.md#mind-maps))                                                                                                                           |
+| Main process | `apps/desktop/src/main/services/map-ipc-services.ts` maps domain records field by field to DTOs, so workspace IDs and timestamps the renderer does not need never cross the bridge                                                |
+| Composition  | `createWorkspaceServices` (`open-workspace.ts`) gives `MapService` a `createNode` function backed by the node service, so nodes created from a map get the usual validation, timeline event and search entry                      |
+| Renderer     | `apps/desktop/src/renderer/src/maps/`: list (`maps-view.tsx`), editor (`map-editor.tsx`), canvas (`map-canvas.tsx`), outline (`map-outline.tsx`), dialogs, change queue (`use-map-document.ts`), pure view model (`map-model.ts`) |
+
+All persistent map state lives in the main process. React Flow holds only transient UI state
+(selection, an item's position while it is being dragged); after every change the canvas is
+rebuilt from the map view the main process returns.
+
+### Revisions and the change queue
+
+Every structural change carries the map revision the renderer last saw: rename, add or remove an
+item, move items, reparent, collapse or expand, set a color, add or remove a connector, switch
+mode. `MapService` runs each one through `structuralChange`: inside one write transaction it
+loads the map, compares the revision (`REVISION_CONFLICT` if it differs), applies the change,
+and stores the next revision with a conditional `UPDATE … WHERE revision = ?` as a second check.
+If any rule fails, the whole transaction rolls back and the map is unchanged. Every structural
+response is the complete map view with the new revision.
+
+Not structural, and therefore without a revision: creating, duplicating and deleting a map,
+proposing a hierarchy, and saving the viewport. The viewport is visual state; `setViewport`
+writes only `viewport_json` and changes neither the revision nor `updated_at`.
+
+In the renderer, `useMapDocument` keeps the latest map view and runs changes one at a time on a
+promise queue. Each queued change reads the revision from the latest view when it starts, so
+quick successive edits (dragging two items, then reordering) never conflict with each other. On
+`REVISION_CONFLICT` the map is reloaded and a banner says that the last change was not applied;
+other errors are shown in the same banner. A node change event (for example a rename in the node
+panel) queues a reload behind pending changes, so titles stay current.
+
+Positions changed by dragging or by arrow keys are collected and sent together in one
+`maps:move-placements` call 300 ms after the last move. The viewport is saved 600 ms after panning
+or zooming stops, and once more when the editor closes; a failed viewport save is ignored.
+
+### Freeform and hierarchical modes
+
+**Freeform** shows the stored coordinates (`freeform_x`, `freeform_y`). Items can be dragged, and
+connectors are drawn by dragging from an item's right handle to another item.
+
+**Hierarchical** shows a layout computed by `layoutTree` from parent, sibling order and collapse
+state only: x is the depth times 260 px, every visible leaf takes the next 56 px row in
+depth-first order, a parent is centred between its first and last visible child, root trees are
+separated by one empty row, and descendants of a collapsed item are hidden. The algorithm is
+iterative and tolerates corrupt input (a missing parent, a self-parent or a stored cycle) by
+treating the affected item as a root, so a damaged map still renders.
+
+The computed layout is never stored, for these reasons:
+
+- **Deterministic.** The same hierarchy always looks the same, on any computer, after a
+  duplicate, and after a future import; nothing depends on stored pixels or input order.
+- **Nothing to keep in sync.** Reparenting, reordering, collapsing or removing an item would
+  otherwise have to rewrite the positions of whole subtrees in the same transaction.
+- **Freeform coordinates are preserved.** Switching to hierarchy never touches `freeform_x` and
+  `freeform_y`, so switching back restores the previous freeform layout exactly (PRD §5.6).
+
+Consequently items cannot be dragged in hierarchical mode, and new connectors can be drawn only in
+freeform mode. The canvas fits the view when a map with items opens with the default viewport
+(never saved) and after every mode switch, because all items move.
+
+### Hierarchy rules
+
+- A hierarchical map is a forest: several roots are allowed and each other item has exactly one
+  parent on the same map.
+- **No cycles.** `reparent` calls `assertNoCycle` (walks up from the new parent) and `planMove`,
+  which renumbers the affected sibling groups densely. A cycle is `INVARIANT_VIOLATION`. The
+  trigger `map_placements_reject_cycles` rejects the same update in the database as a second line
+  of defense.
+- **Never a relationship.** Parent and child are organizational only; no map operation writes
+  `relationships` (PRD §4.4, tested).
+- **Adding** appends the item after its future siblings. An item created from a new node title
+  calls the injected `createNode` inside the map's transaction, so a rejected placement also
+  discards the new node.
+- **Removing an item** from a map deletes only the placement. Its children take its place among
+  its siblings, in their own order, so no branch disappears and no node is deleted.
+- **Deleting a node** (`nodes:delete`) first moves the children of each of its placements to that
+  placement's parent (`SqliteKnowledgeNodeRepository.delete`) and raises the revision of every map
+  that shows the node, so an editor still holding the old structure gets `REVISION_CONFLICT` and
+  reloads. Then it deletes the node; its placements and their connectors cascade.
+- **Deleting a map** removes the map, its placements and connectors in one statement. Nodes are
+  never deleted (acceptance criterion 8).
+- **Duplicating a map** places the same canonical nodes with new placement IDs, inserting parents
+  before children, and copies connectors including their relationship references.
+
+### Switching between modes
+
+Switching from freeform to hierarchy needs a parent decision for every item (PRD §5.6).
+`MapService.proposeHierarchy` prepares one, and says where it came from (`source`):
+
+- **`previous-hierarchy`**: if any item still has a stored parent (the map was a hierarchy
+  before), the stored parents are proposed unchanged; items added since then are top level.
+  Connectors are not consulted, so a hierarchy → freeform → hierarchy round trip gives back the
+  same tree. Nothing is ambiguous, because the stored tree is already acyclic.
+- **`connectors`**: otherwise `proposeHierarchy` (`hierarchy-proposal.ts`) applies simple,
+  explainable rules: a connector A → B suggests "A is the parent of B"; an item without incoming
+  connectors becomes a root; an item with connectors from several items, or whose only connector
+  would close a loop, is **ambiguous** and is proposed as a root with its candidate parents
+  listed. Items are processed in ID order, so the outcome never depends on input order.
+
+`switch-to-hierarchy-dialog.tsx` shows the proposal and does not allow switching until every
+ambiguous item has a decision and the choices form no loop (`findParentLoops` in `map-model.ts`
+names the items on a loop). It fetches the proposal again if the map changes while it is open.
+The main process then validates the whole assignment again
+(`validateHierarchyAssignment`: one entry per item, known parents, no cycles), detaches all
+parents first (so the cycle trigger, which checks one row at a time, only ever sees the new,
+validated parents), and assigns sibling orders in the previous order within each new parent.
+
+Switching from hierarchy to freeform only changes the mode. The stored parents and sibling orders
+stay, which is what the next switch to hierarchy proposes.
+
+### Connectors
+
+Map connectors (`map_connections`) are visual lines between two placements of the same map. They
+may form cycles; a connector from an item to itself is refused (`INVARIANT_VIOLATION`, plus a
+`CHECK`). A connector may carry a label (at most 200 characters) and may reference an existing
+semantic relationship, but only one that connects exactly the same two nodes, in either direction
+(`VALIDATION_FAILED` otherwise). Referencing never creates a relationship, and deleting the
+relationship only clears the reference. The canvas shows the label and, for a referenced
+relationship, its type in brackets. Today the canvas creates plain connectors only; the label and
+the reference are available through `maps:add-connection`.
+
+To keep visual structure and meaning apart (PRD §14), hierarchy lines are solid and cannot be
+selected, connectors are dashed with an arrow, and a legend in the editor explains both. Both use
+the muted text color for at least 3:1 contrast, and they differ in shape, not only in color
+(`styles.css`).
+
+### Outline: the keyboard alternative
+
+`map-outline.tsx` lists the map's items next to the canvas as a WAI-ARIA tree with one focusable
+row (roving `tabindex`), `aria-level`, `aria-posinset`, `aria-setsize` and `aria-expanded`. It
+offers every action without a pointer: Up/Down/Home/End to move focus, Left/Right to collapse,
+expand or go to the parent, Enter to open the node, Insert to add (as a child in hierarchical
+mode), Delete to remove from the map, and Alt+Up/Down/Left/Right to reorder, outdent and indent.
+The moves are planned by the pure `planKeyboardMove` and sent as `maps:reparent`. Freeform maps are
+listed flat, sorted by title. Buttons offer the same actions to pointer users.
+
+### React Flow under the content security policy
+
+React Flow (`@xyflow/react` 12.12.0) is bundled with its stylesheet like every other renderer
+dependency; nothing is loaded from a CDN. It positions and sizes elements with inline `style`
+attributes, which is one of the reasons the production CSP allows `style-src 'self'
+'unsafe-inline'` (see `content-security-policy.ts`; Tiptap and KaTeX need the same). Inline
+scripts remain forbidden, which is what protects against injected content. React Flow's
+attribution link is hidden because the canvas never navigates to the web. The packaged smoke test
+renders the real editor with 200 items under the production CSP.
+
 ## Attachments
 
 PRD §5.10. Code: `apps/desktop/src/main/services/attachment-ipc-services.ts`,
@@ -705,26 +873,26 @@ denied (`guardAllWebContents`), so this channel is the only way out. Rendered li
 
 This maps each part of the baseline in ADR-0003 and PRD §8 to the code that implements it.
 
-| Control                       | Implementation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Window isolation              | `src/main/main-window.ts`: `nodeIntegration` (and in workers/sub-frames) off, `contextIsolation`, `sandbox`, `webSecurity` on, `webviewTag` off, `navigateOnDragDrop` off, devtools only when unpackaged.                                                                                                                                                                                                                                                                                           |
-| Custom origin instead of file | `src/main/security/app-protocol.ts` registers `app` as a standard, secure scheme and serves the bundle at `app://mmap`. It does not bypass CSP.                                                                                                                                                                                                                                                                                                                                                     |
-| Protocol path safety          | `src/main/security/resolve-renderer-asset.ts`: wrong scheme/host → 403; NUL bytes, backslashes, drive letters or malformed escapes → 400; lexical path must stay inside the renderer root; the real path (symlinks and junctions resolved) must also stay inside; only regular files are served. Responses also get `X-Content-Type-Options: nosniff`.                                                                                                                                              |
-| Content Security Policy       | `src/main/security/content-security-policy.ts` builds the policy: `default-src 'none'`, scripts and connections only from `'self'`, images from `'self'`, `data:`, `blob:` and `mmap-attachment:`, no remote origins, no `unsafe-eval`, no inline scripts in production (inline styles are allowed for Tiptap and KaTeX). It is applied in two places: the `app://` handler sets the header on its own responses, and `hardenSession` adds it to every response via `webRequest.onHeadersReceived`. |
-| Navigation and windows        | `src/main/security/harden-electron.ts` `guardAllWebContents`: `will-navigate` and `will-redirect` to an untrusted origin are cancelled, `window.open` and `target=_blank` are denied, `<webview>` attachment is prevented. Applied to every `webContents` the app ever creates.                                                                                                                                                                                                                     |
-| Permissions                   | `hardenSession` denies every permission request, permission check and device permission.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Trusted origins               | `src/main/security/trusted-origins.ts`: production trusts only `app://mmap`. The dev server is trusted only when unpackaged and on a loopback `http` URL.                                                                                                                                                                                                                                                                                                                                           |
-| IPC sender and payload        | `src/main/ipc/ipc-handler.ts`: main-frame and origin check, zod validation of the request and of the response, result envelope.                                                                                                                                                                                                                                                                                                                                                                     |
-| Narrow bridge, no paths       | `src/preload/index.ts` exposes one named method per operation. `ipcRenderer`, filesystem, shell and SQL are never exposed. No request carries a filesystem path; folders and files are chosen in native dialogs in the main process.                                                                                                                                                                                                                                                                |
-| Untrusted notes               | `parseNoteDocument` validates and rebuilds every note in the main process; links restricted to safe schemes; wikilinks limited to a canonical target ID and a bounded label; KaTeX `trust: false`; rendering from the schema, never from HTML. See [Notes pipeline](#notes-pipeline).                                                                                                                                                                                                               |
-| Search input and output       | User text is reduced to quoted FTS5 words or an escaped `LIKE` pattern, so it can never act as query syntax; word count and length are bounded; cursors are accepted only in the exact form the service issued. Snippets cross the bridge as plain-text segments and are rendered as text. See [Search](#search).                                                                                                                                                                                   |
-| Attachments                   | Executables refused by extension and content; generated storage names; traversal and junction checks on every stored path; re-check before opening; previews limited to raster images of the open workspace. See [Attachments](#attachments).                                                                                                                                                                                                                                                       |
-| External links                | Re-validated in the main process before `shell.openExternal`; only after a user gesture. See [External links](#external-links).                                                                                                                                                                                                                                                                                                                                                                     |
-| Workspace isolation           | One open workspace at a time; every repository query is scoped by `workspace_id`, including search, which joins the workspace-less FTS index back to `knowledge_nodes`; composite foreign keys reject cross-workspace relationships, references and tags; the renderer workbench and recovery copies are keyed by workspace ID.                                                                                                                                                                     |
-| Redacted logging              | `src/main/logging.ts` logs only the operation, the error class name and its code. Error messages are dropped because lower layers can embed titles or paths; stack traces appear only in unpackaged builds. IPC payloads are never logged.                                                                                                                                                                                                                                                          |
-| Database file hardening       | `packages/storage-sqlite/src/connection.ts`: extension loading off, `trusted_schema = OFF`, double-quoted string literals off, foreign keys on and verified.                                                                                                                                                                                                                                                                                                                                        |
-| Packaged binary               | Electron fuses in `apps/desktop/electron-builder.yml`. See the [packaging runbook](runbooks/packaging.md#electron-fuses).                                                                                                                                                                                                                                                                                                                                                                           |
-| No network                    | The main process makes no network calls, and CSP blocks remote requests from the renderer. The smoke test runs with a dead proxy to prove the app works offline.                                                                                                                                                                                                                                                                                                                                    |
+| Control                       | Implementation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Window isolation              | `src/main/main-window.ts`: `nodeIntegration` (and in workers/sub-frames) off, `contextIsolation`, `sandbox`, `webSecurity` on, `webviewTag` off, `navigateOnDragDrop` off, devtools only when unpackaged.                                                                                                                                                                                                                                                                                                       |
+| Custom origin instead of file | `src/main/security/app-protocol.ts` registers `app` as a standard, secure scheme and serves the bundle at `app://mmap`. It does not bypass CSP.                                                                                                                                                                                                                                                                                                                                                                 |
+| Protocol path safety          | `src/main/security/resolve-renderer-asset.ts`: wrong scheme/host → 403; NUL bytes, backslashes, drive letters or malformed escapes → 400; lexical path must stay inside the renderer root; the real path (symlinks and junctions resolved) must also stay inside; only regular files are served. Responses also get `X-Content-Type-Options: nosniff`.                                                                                                                                                          |
+| Content Security Policy       | `src/main/security/content-security-policy.ts` builds the policy: `default-src 'none'`, scripts and connections only from `'self'`, images from `'self'`, `data:`, `blob:` and `mmap-attachment:`, no remote origins, no `unsafe-eval`, no inline scripts in production (inline styles are allowed for Tiptap, KaTeX and React Flow). It is applied in two places: the `app://` handler sets the header on its own responses, and `hardenSession` adds it to every response via `webRequest.onHeadersReceived`. |
+| Navigation and windows        | `src/main/security/harden-electron.ts` `guardAllWebContents`: `will-navigate` and `will-redirect` to an untrusted origin are cancelled, `window.open` and `target=_blank` are denied, `<webview>` attachment is prevented. Applied to every `webContents` the app ever creates.                                                                                                                                                                                                                                 |
+| Permissions                   | `hardenSession` denies every permission request, permission check and device permission.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Trusted origins               | `src/main/security/trusted-origins.ts`: production trusts only `app://mmap`. The dev server is trusted only when unpackaged and on a loopback `http` URL.                                                                                                                                                                                                                                                                                                                                                       |
+| IPC sender and payload        | `src/main/ipc/ipc-handler.ts`: main-frame and origin check, zod validation of the request and of the response, result envelope.                                                                                                                                                                                                                                                                                                                                                                                 |
+| Narrow bridge, no paths       | `src/preload/index.ts` exposes one named method per operation. `ipcRenderer`, filesystem, shell and SQL are never exposed. No request carries a filesystem path; folders and files are chosen in native dialogs in the main process.                                                                                                                                                                                                                                                                            |
+| Untrusted notes               | `parseNoteDocument` validates and rebuilds every note in the main process; links restricted to safe schemes; wikilinks limited to a canonical target ID and a bounded label; KaTeX `trust: false`; rendering from the schema, never from HTML. See [Notes pipeline](#notes-pipeline).                                                                                                                                                                                                                           |
+| Search input and output       | User text is reduced to quoted FTS5 words or an escaped `LIKE` pattern, so it can never act as query syntax; word count and length are bounded; cursors are accepted only in the exact form the service issued. Snippets cross the bridge as plain-text segments and are rendered as text. See [Search](#search).                                                                                                                                                                                               |
+| Attachments                   | Executables refused by extension and content; generated storage names; traversal and junction checks on every stored path; re-check before opening; previews limited to raster images of the open workspace. See [Attachments](#attachments).                                                                                                                                                                                                                                                                   |
+| External links                | Re-validated in the main process before `shell.openExternal`; only after a user gesture. See [External links](#external-links).                                                                                                                                                                                                                                                                                                                                                                                 |
+| Workspace isolation           | One open workspace at a time; every repository query is scoped by `workspace_id`, including search, which joins the workspace-less FTS index back to `knowledge_nodes`; composite foreign keys reject cross-workspace relationships, references, tags and map placements; the renderer workbench and recovery copies are keyed by workspace ID.                                                                                                                                                                 |
+| Redacted logging              | `src/main/logging.ts` logs only the operation, the error class name and its code. Error messages are dropped because lower layers can embed titles or paths; stack traces appear only in unpackaged builds. IPC payloads are never logged.                                                                                                                                                                                                                                                                      |
+| Database file hardening       | `packages/storage-sqlite/src/connection.ts`: extension loading off, `trusted_schema = OFF`, double-quoted string literals off, foreign keys on and verified.                                                                                                                                                                                                                                                                                                                                                    |
+| Packaged binary               | Electron fuses in `apps/desktop/electron-builder.yml`. See the [packaging runbook](runbooks/packaging.md#electron-fuses).                                                                                                                                                                                                                                                                                                                                                                                       |
+| No network                    | The main process makes no network calls, and CSP blocks remote requests from the renderer. The smoke test runs with a dead proxy to prove the app works offline.                                                                                                                                                                                                                                                                                                                                                |
 
 Not implemented yet: the release security test suite (Phase 5) and safe handling of imported
 archives (Phase 5).
@@ -734,17 +902,18 @@ archives (Phase 5).
 - **Graph.** `relationships:list-for-node` answers one node's neighbourhood; the Phase 4 graph
   will need bounded multi-node loading and relationship-type filters. Note references can feed
   its optional reference layer (PRD §4.3).
-- **Maps.** `nodes:delete` already promotes child placements before deleting a node; map services
-  arrive in Phase 3. `NodePicker` is reusable for placing nodes on a map.
+- **Maps in export and import (Phase 5).** Placements, hierarchy, connectors and viewports must be
+  exported and re-mapped to new IDs on import. Hierarchical layouts need no export because they
+  are computed.
 - **Import (Phase 5).** Imported raw or Markdown text with `[[Title]]` links will need its own
   resolution step that asks the user when a title is ambiguous (PRD §5.4); the editor never
   resolves links by title.
 - **Timeline display.** Events are recorded (see [data-model.md](data-model.md)); the Timeline
   view arrives in Phase 4.
-- **Heavy work off the main thread.** Database work, including search, currently runs on the
-  main process thread. Archives, layouts and large queries in later phases should move to a
-  worker; the
-  `TransactionRunner` port is asynchronous so the coordinator can move with them.
+- **Heavy work off the main thread.** Database work, including search and maps, currently runs on
+  the main process thread, and the hierarchical map layout runs in the renderer. Archives, graph
+  layouts and large queries in later phases should move to a worker; the `TransactionRunner` port
+  is asynchronous so the coordinator can move with them.
 - **New IPC channels.** Each feature adds channels through the contract catalogue
   ([ipc-contracts.md](ipc-contracts.md)). Long-running operations will additionally need progress,
   cancellation and idempotency keys (PRD §7.2); `transfer_jobs` in the schema already has
