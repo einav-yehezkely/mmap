@@ -751,7 +751,7 @@ describe('text direction (Hebrew / right-to-left writing)', () => {
       undefined,
       { dir: 'rtl' },
     ]);
-    const list = document.content[4] as { content: [{ attrs?: unknown }] };
+    const list = document.content[4] as unknown as { content: [{ attrs?: unknown }] };
     expect(list.content[0].attrs).toEqual({ dir: 'rtl' });
   });
 });
