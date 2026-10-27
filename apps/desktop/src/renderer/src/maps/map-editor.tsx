@@ -43,7 +43,8 @@ interface ConnectorSnapshot {
 type ConnectorChange =
   | { readonly kind: 'added'; readonly connectionId: string }
   | { readonly kind: 'removed'; readonly connectors: readonly ConnectorSnapshot[] }
-  | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot };
+  | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot }
+  | { readonly kind: 'noted'; readonly connectionId: string; readonly previous: string | null };
 
 const UNDO_LIMIT = 20;
 /** How long the "Undo" notice stays; Ctrl+Z keeps working afterwards. */
@@ -53,6 +54,7 @@ const CHANGE_TEXT: Record<ConnectorChange['kind'], string> = {
   added: 'Connector added.',
   removed: 'Connector removed.',
   moved: 'Connector moved.',
+  noted: 'Connector note saved.',
 };
 
 export interface MapEditorProps {
@@ -154,6 +156,14 @@ function LoadedMapEditor({
     [apply],
   );
 
+  const writeConnectorNote = useCallback(
+    (connectionId: string, label: string | null) =>
+      apply((mapId, expectedRevision) =>
+        window.mmap.maps.setConnectionLabel({ mapId, expectedRevision, connectionId, label }),
+      ),
+    [apply],
+  );
+
   const snapshotOf = (connectionId: string): ConnectorSnapshot | null => {
     const connection = view.connections.find((item) => item.id === connectionId);
     return connection === undefined
@@ -182,8 +192,11 @@ function LoadedMapEditor({
       case 'moved':
         if (await deleteConnector(change.connectionId)) await createConnector(change.previous);
         break;
+      case 'noted':
+        await writeConnectorNote(change.connectionId, change.previous);
+        break;
     }
-  }, [undoStack, createConnector, deleteConnector]);
+  }, [undoStack, createConnector, deleteConnector, writeConnectorNote]);
 
   /** Ctrl+Z anywhere in the editor, except while typing in a field. */
   const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -295,6 +308,13 @@ function LoadedMapEditor({
     })();
   };
 
+  const onConnectorLabel = (connectionId: string, label: string | null) => {
+    const previous = view.connections.find((item) => item.id === connectionId)?.label ?? null;
+    void writeConnectorNote(connectionId, label).then((ok) => {
+      if (ok) remember({ kind: 'noted', connectionId, previous });
+    });
+  };
+
   const switchToHierarchy = async (
     parents: readonly { placementId: string; parentPlacementId: string | null }[],
   ) => {
@@ -315,7 +335,10 @@ function LoadedMapEditor({
     );
 
   return (
-    <div className="flex h-full min-h-[520px] flex-col gap-3" onKeyDown={onEditorKeyDown}>
+    <div
+      className="@container flex h-full min-h-[520px] flex-col gap-3"
+      onKeyDown={onEditorKeyDown}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
@@ -394,8 +417,9 @@ function LoadedMapEditor({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-3">
-        <div className="relative min-w-0 flex-1 rounded-md border">
+      {/* When a panel beside the map leaves it narrow, the outline moves below the canvas. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 @3xl:flex-row">
+        <div className="relative min-h-80 min-w-0 flex-1 rounded-md border">
           {noticeVisible && undoStack.length > 0 && (
             <div
               role="status"
@@ -427,10 +451,11 @@ function LoadedMapEditor({
             onToggleCollapse={onToggleCollapse}
             onRemove={onRemove}
             onReconnect={onReconnect}
+            onConnectorLabel={onConnectorLabel}
             onViewportChange={document.saveViewport}
           />
         </div>
-        <aside className="flex w-72 shrink-0 flex-col gap-3">
+        <aside className="flex w-full shrink-0 flex-col gap-3 @3xl:w-72">
           <MapOutline
             view={view}
             selectedPlacementId={selectedId}
@@ -515,9 +540,10 @@ function MapLegend({ isHierarchy }: { isHierarchy: boolean }) {
           <>
             <li>Drag from an item's dot to another item to connect them.</li>
             <li>
-              Click a connector, then × or Delete to remove it; drag its round end to move it.
+              Click a connector to write a note on it, remove it (× or Delete), or drag its round
+              end to move it.
             </li>
-            <li>Ctrl+Z undoes connector changes. Double-click an item to open it.</li>
+            <li>Ctrl+Z undoes connector changes. Double-click an item to preview its note.</li>
           </>
         )}
       </ul>

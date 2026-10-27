@@ -91,6 +91,7 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.mapsSetPlacementColor]: mapContracts.setPlacementColor,
   [IPC_CHANNELS.mapsAddConnection]: mapContracts.addConnection,
   [IPC_CHANNELS.mapsRemoveConnection]: mapContracts.removeConnection,
+  [IPC_CHANNELS.mapsSetConnectionLabel]: mapContracts.setConnectionLabel,
   [IPC_CHANNELS.mapsProposeHierarchy]: mapContracts.proposeHierarchy,
   [IPC_CHANNELS.mapsSwitchMode]: mapContracts.switchMode,
   [IPC_CHANNELS.graphOverview]: graphContracts.overview,

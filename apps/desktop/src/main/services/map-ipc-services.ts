@@ -197,6 +197,15 @@ export function createMapIpcServices(manager: WorkspaceManager): Pick<IpcService
           connectionId as MapConnectionId,
         ),
       ),
+    'maps:set-connection-label': async ({ mapId, expectedRevision, connectionId, label }) =>
+      toMapViewDto(
+        await maps().setConnectionLabel(
+          mapId as MapId,
+          expectedRevision,
+          connectionId as MapConnectionId,
+          label,
+        ),
+      ),
     'maps:propose-hierarchy': async ({ mapId }) => {
       const proposal = await maps().proposeHierarchy(mapId as MapId);
       return {

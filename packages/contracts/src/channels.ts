@@ -69,6 +69,7 @@ export const IPC_CHANNELS = {
   mapsReparent: 'maps:reparent',
   mapsSetCollapsed: 'maps:set-collapsed',
   mapsSetPlacementColor: 'maps:set-placement-color',
+  mapsSetConnectionLabel: 'maps:set-connection-label',
   mapsAddConnection: 'maps:add-connection',
   mapsRemoveConnection: 'maps:remove-connection',
   mapsProposeHierarchy: 'maps:propose-hierarchy',

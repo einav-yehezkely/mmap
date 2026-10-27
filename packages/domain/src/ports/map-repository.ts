@@ -145,4 +145,11 @@ export interface MapRepository {
   /** Semantic relationships whose source and target are both placed on the map. */
   listRelationships(workspaceId: WorkspaceId, mapId: MapId): Promise<readonly MapRelationship[]>;
   deleteConnection(workspaceId: WorkspaceId, connectionId: MapConnectionId): Promise<void>;
+  /** Sets or clears (null) the note written on a connector. */
+  updateConnectionLabel(
+    workspaceId: WorkspaceId,
+    connectionId: MapConnectionId,
+    label: string | null,
+    updatedAt: string,
+  ): Promise<void>;
 }

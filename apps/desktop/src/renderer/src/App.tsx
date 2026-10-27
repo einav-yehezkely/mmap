@@ -18,6 +18,7 @@ import { NAVIGATION_ITEMS, type ViewId } from './navigation';
 import { LibraryView } from './nodes/library-view';
 import { NewNodeDialog } from './nodes/new-node-dialog';
 import { NodeDetailPanel } from './nodes/node-detail-panel';
+import { NodePreview } from './nodes/node-preview';
 import { SearchView } from './nodes/search-view';
 import { TimelineView } from './timeline/timeline-view';
 import { SettingsView } from './views/settings-view';
@@ -50,6 +51,8 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   // The app opens on Home (a summary and quick actions), not inside one of the work views.
   const [activeView, setActiveView] = useState<ViewId>('home');
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
+  /** Node shown read-only beside the view (Mind Maps); the node editor panel takes precedence. */
+  const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
   /** A mind map to open from another view (e.g. the graph); the counter remounts the maps view. */
   const [mapRequest, setMapRequest] = useState<{ mapId: string; request: number } | null>(null);
   /** The map being edited in the Mind Maps view, preselected when creating a node there. */
@@ -92,7 +95,18 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   /** Switches the main view; a node open full-width over Home is closed (its edits are saved). */
   const navigate = (view: ViewId) => {
     setPageNode(null);
+    setPreviewNodeId(null);
     setActiveView(view);
+  };
+
+  /** Mind map items open read-only first; the preview's pencil switches to the editor. */
+  const previewNode = (nodeId: string) => {
+    setOpenNodeId(null);
+    setPreviewNodeId(nodeId);
+  };
+  const editNode = (nodeId: string) => {
+    setPreviewNodeId(null);
+    setOpenNodeId(nodeId);
   };
 
   /** Opens a mind map in the Mind Maps view (from Home, the graph or the node panel). */
@@ -281,7 +295,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                 key={mapRequest?.request ?? 0}
                 initialMapId={mapRequest?.mapId ?? null}
                 timeZone={workspace.timezone}
-                onOpenNode={setOpenNodeId}
+                onOpenNode={previewNode}
                 onOpenMapChange={setEditedMapId}
               />
             )}
@@ -296,6 +310,15 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
             )}
           </main>
 
+          {openNodeId === null && previewNodeId !== null && (
+            <NodePreview
+              key={previewNodeId}
+              nodeId={previewNodeId}
+              onClose={() => setPreviewNodeId(null)}
+              onEdit={editNode}
+              onOpenNode={previewNode}
+            />
+          )}
           {openNodeId !== null && (
             <NodeDetailPanel
               key={openNodeId}
