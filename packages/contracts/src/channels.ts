@@ -55,6 +55,8 @@ export const IPC_CHANNELS = {
   relationshipsUpdate: 'relationships:update',
   relationshipsDelete: 'relationships:delete',
   mapsList: 'maps:list',
+  mapsListForNode: 'maps:list-for-node',
+  mapsAddNode: 'maps:add-node',
   mapsCreate: 'maps:create',
   mapsGet: 'maps:get',
   mapsRename: 'maps:rename',

@@ -111,6 +111,8 @@ export interface MmapRendererApi {
   };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;
+    readonly listForNode: BridgeCall<'maps:list-for-node'>;
+    readonly addNode: BridgeCall<'maps:add-node'>;
     readonly create: BridgeCall<'maps:create'>;
     readonly get: BridgeCall<'maps:get'>;
     readonly rename: BridgeCall<'maps:rename'>;

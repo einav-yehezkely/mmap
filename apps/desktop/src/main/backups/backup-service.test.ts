@@ -149,6 +149,25 @@ describe('daily backups', () => {
     expect(status.lastSuccessAt).toBe('2026-10-27T09:00:00.001Z');
   });
 
+  it('runs the daily backup a while after opening, and not after stop (regression)', async () => {
+    const { manager, backups } = startApp('app');
+    await manager.startup();
+    await backups.idle();
+    clock = new Date('2026-10-28T09:00:00.000Z');
+    backups.scheduleAfterOpen(manager.current!, 20);
+    expect((await backups.status()).snapshots).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await backups.idle();
+    expect((await backups.status()).snapshots).toHaveLength(2);
+
+    clock = new Date('2026-10-29T09:00:00.000Z');
+    backups.scheduleAfterOpen(manager.current!, 20);
+    backups.stop();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await backups.idle();
+    expect((await backups.status()).snapshots).toHaveLength(2);
+  });
+
   it('records a failure instead of throwing, and shows it in the status', async () => {
     const blocked = join(sandbox, 'not-a-folder');
     writeFileSync(blocked, 'a file where the backup folder should be');

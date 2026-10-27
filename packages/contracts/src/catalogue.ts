@@ -75,6 +75,8 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.relationshipsUpdate]: relationshipContracts.update,
   [IPC_CHANNELS.relationshipsDelete]: relationshipContracts.delete,
   [IPC_CHANNELS.mapsList]: mapContracts.list,
+  [IPC_CHANNELS.mapsListForNode]: mapContracts.listForNode,
+  [IPC_CHANNELS.mapsAddNode]: mapContracts.addNode,
   [IPC_CHANNELS.mapsCreate]: mapContracts.create,
   [IPC_CHANNELS.mapsGet]: mapContracts.get,
   [IPC_CHANNELS.mapsRename]: mapContracts.rename,

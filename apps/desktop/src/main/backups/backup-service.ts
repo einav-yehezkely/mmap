@@ -1,8 +1,10 @@
 /**
  * Backups of the open workspace (PRD §9).
  *
- * - **When:** on the first opening of a workspace each local day, again every hour while the app
- *   runs (so a session left open overnight still gets its daily backup), and on request.
+ * - **When:** shortly after a workspace is opened (the first time each local day), again every hour
+ *   while the app runs (so a session left open overnight still gets its daily backup), and on
+ *   request. The delay after opening keeps the backup's database work away from the moments when
+ *   the user starts working, because parts of it (the integrity check) run on the main thread.
  * - **Where:** a configurable destination; by default `<app data>/backups`. The status says when
  *   the destination is on the same drive as the workspace, which does not protect against a drive
  *   failure, so the user can choose a folder on another drive.
@@ -38,6 +40,8 @@ import {
 } from './snapshot-store';
 
 export const BACKUP_CHECK_INTERVAL_MS = 60 * 60 * 1_000;
+/** How long after a workspace opens the daily backup check runs. */
+export const BACKUP_DELAY_AFTER_OPEN_MS = 2 * 60 * 1_000;
 
 export interface BackupStatus {
   readonly destination: string;
@@ -69,6 +73,7 @@ export class BackupService {
   private running = false;
   private readonly failures = new Map<string, { at: string; message: string }>();
   private timer: NodeJS.Timeout | null = null;
+  private afterOpen: NodeJS.Timeout | null = null;
 
   public constructor(private readonly dependencies: BackupServiceDependencies) {}
 
@@ -85,9 +90,21 @@ export class BackupService {
     this.timer.unref();
   }
 
+  /** Schedules the daily backup check for a workspace that was just opened. */
+  public scheduleAfterOpen(workspace: OpenWorkspace, delayMs = BACKUP_DELAY_AFTER_OPEN_MS): void {
+    if (this.afterOpen !== null) clearTimeout(this.afterOpen);
+    this.afterOpen = setTimeout(() => {
+      this.afterOpen = null;
+      void this.backUpIfDue(workspace);
+    }, delayMs);
+    this.afterOpen.unref();
+  }
+
   public stop(): void {
     if (this.timer !== null) clearInterval(this.timer);
+    if (this.afterOpen !== null) clearTimeout(this.afterOpen);
     this.timer = null;
+    this.afterOpen = null;
   }
 
   /** Resolves when every backup operation started so far has finished. */

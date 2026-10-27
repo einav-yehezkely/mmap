@@ -85,6 +85,12 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
    * optionally, mind maps to add it to (the map being edited is preselected). The new node opens
    * straight away.
    */
+  /** Opens a mind map in the Mind Maps view (from Home, the graph or the node panel). */
+  const openMap = (mapId: string) => {
+    setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
+    setActiveView('maps');
+  };
+
   const createNode = () =>
     setNewNode({ preselectedMapId: activeView === 'maps' ? editedMapId : null });
 
@@ -184,10 +190,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                 workspaceName={workspace.name}
                 timeZone={workspace.timezone}
                 onOpenNode={setOpenNodeId}
-                onOpenMap={(mapId) => {
-                  setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
-                  setActiveView('maps');
-                }}
+                onOpenMap={openMap}
                 onNavigate={setActiveView}
                 onCreateNode={createNode}
                 onFocusSearch={() => searchInput.current?.focus()}
@@ -215,13 +218,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               <SearchView query={searchQuery} onOpenNode={setOpenNodeId} />
             )}
             {activeItem?.id === 'graph' && (
-              <GraphView
-                onOpenNode={setOpenNodeId}
-                onOpenMap={(mapId) => {
-                  setMapRequest((current) => ({ mapId, request: (current?.request ?? 0) + 1 }));
-                  setActiveView('maps');
-                }}
-              />
+              <GraphView onOpenNode={setOpenNodeId} onOpenMap={openMap} />
             )}
             {activeItem?.id === 'timeline' && (
               <TimelineView timeZone={workspace.timezone} onOpenNode={setOpenNodeId} />
@@ -236,6 +233,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               nodeId={openNodeId}
               onClose={() => setOpenNodeId(null)}
               onOpenNode={setOpenNodeId}
+              onOpenMap={openMap}
             />
           )}
         </div>

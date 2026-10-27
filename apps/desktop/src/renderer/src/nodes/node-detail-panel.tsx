@@ -17,6 +17,7 @@ import type { AttachmentNodeAttributes } from '../notes/attachment-node';
 import { NoteEditor } from '../notes/note-editor';
 import { NodeAttachments } from './node-attachments';
 import { NodeBacklinks } from './node-backlinks';
+import { NodeMaps } from './node-maps';
 import { errorMessage, unwrap } from '../lib/ipc';
 import type { SaveStatus } from './node-draft-saver';
 import { notifyNodesChanged } from './node-events';
@@ -31,6 +32,8 @@ export interface NodeDetailPanelProps {
   readonly nodeId: string;
   readonly onClose: () => void;
   readonly onOpenNode: (nodeId: string) => void;
+  /** Opens a mind map (from the panel's list of maps showing the node). */
+  readonly onOpenMap?: (mapId: string) => void;
 }
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
@@ -48,6 +51,7 @@ export function NodeDetailPanel({
   nodeId,
   onClose,
   onOpenNode,
+  onOpenMap,
 }: NodeDetailPanelProps) {
   const editor = useNodeEditor(workspaceId, nodeId);
   const titleId = useId();
@@ -239,6 +243,8 @@ export function NodeDetailPanel({
       <NodeTagsEditor nodeId={node.id} initialTags={node.tags} />
 
       <NodeRelationships nodeId={node.id} onOpenNode={onOpenNode} />
+
+      <NodeMaps nodeId={node.id} nodeTitle={node.title} onOpenMap={onOpenMap} />
 
       <section aria-label="Note">
         <NoteEditor

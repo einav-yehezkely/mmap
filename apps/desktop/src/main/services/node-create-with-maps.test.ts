@@ -114,3 +114,68 @@ it('creates nothing when a placement is rejected', async () => {
   expect(titles).not.toContain('Orphan');
   expect((await maps['maps:get']({ mapId: tree.map.id })).placements).toEqual([]);
 });
+
+it('adds an existing node to more maps from the node panel, all or nothing', async () => {
+  const nodes = createNodeIpcServices(manager);
+  const maps = createMapIpcServices(manager);
+  const node = await nodes['nodes:create']({ title: 'Existing idea' });
+  const first = await maps['maps:create']({ title: 'Alpha' });
+  let tree = await maps['maps:create']({ title: 'Beta', mode: 'hierarchical' });
+  tree = await maps['maps:add-placement']({
+    mapId: tree.map.id,
+    expectedRevision: tree.map.revision,
+    newNodeTitle: 'Root',
+    x: 0,
+    y: 0,
+  });
+  const root = tree.placements[0]!;
+  expect((await maps['maps:list-for-node']({ nodeId: node.id })).items).toEqual([]);
+
+  const result = await maps['maps:add-node']({
+    nodeId: node.id,
+    targets: [
+      { mapId: first.map.id, parentPlacementId: null },
+      { mapId: tree.map.id, parentPlacementId: root.id },
+    ],
+  });
+  expect(result.items.map((map) => map.title)).toEqual(['Alpha', 'Beta']);
+  const beta = await maps['maps:get']({ mapId: tree.map.id });
+  expect(beta.placements.find((placement) => placement.nodeId === node.id)?.parentPlacementId).toBe(
+    root.id,
+  );
+
+  // Adding to a map that already shows the node changes nothing there.
+  await maps['maps:add-node']({
+    nodeId: node.id,
+    targets: [{ mapId: first.map.id, parentPlacementId: null }],
+  });
+  expect((await maps['maps:get']({ mapId: first.map.id })).placements).toHaveLength(1);
+
+  // A map that already shows the node is skipped, even with a parent that no longer exists.
+  const gamma = await maps['maps:create']({ title: 'Gamma', mode: 'hierarchical' });
+  await expect(
+    maps['maps:add-node']({
+      nodeId: node.id,
+      targets: [
+        { mapId: gamma.map.id, parentPlacementId: null },
+        { mapId: tree.map.id, parentPlacementId: crypto.randomUUID() },
+      ],
+    }),
+  ).resolves.toBeDefined();
+  expect(
+    (await maps['maps:list-for-node']({ nodeId: node.id })).items.map((map) => map.title),
+  ).toEqual(['Alpha', 'Beta', 'Gamma']);
+  // A rejected target leaves every map unchanged.
+  const delta = await maps['maps:create']({ title: 'Delta', mode: 'hierarchical' });
+  const epsilon = await maps['maps:create']({ title: 'Epsilon' });
+  await expect(
+    maps['maps:add-node']({
+      nodeId: node.id,
+      targets: [
+        { mapId: epsilon.map.id, parentPlacementId: null },
+        { mapId: delta.map.id, parentPlacementId: crypto.randomUUID() },
+      ],
+    }),
+  ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  expect((await maps['maps:get']({ mapId: epsilon.map.id })).placements).toEqual([]);
+});

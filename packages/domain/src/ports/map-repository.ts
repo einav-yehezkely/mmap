@@ -111,6 +111,13 @@ export interface MapRelationship {
   readonly directionality: RelationshipDirectionality;
 }
 
+/** A map that shows a given node (for the node panel's "Mind maps" list). */
+export interface MapOfNode {
+  readonly id: MapId;
+  readonly title: string;
+  readonly mode: MapMode;
+}
+
 export interface MapRepository {
   listMaps(workspaceId: WorkspaceId): Promise<readonly MindMapSummary[]>;
   findMap(workspaceId: WorkspaceId, mapId: MapId): Promise<MindMapRecord | null>;
@@ -133,6 +140,8 @@ export interface MapRepository {
     mapId: MapId,
   ): Promise<readonly MapConnectionWithRelationship[]>;
   insertConnection(record: MapConnectionRecord): Promise<void>;
+  /** Maps the node is placed on, by title. */
+  listMapsForNode(workspaceId: WorkspaceId, nodeId: NodeId): Promise<readonly MapOfNode[]>;
   /** Semantic relationships whose source and target are both placed on the map. */
   listRelationships(workspaceId: WorkspaceId, mapId: MapId): Promise<readonly MapRelationship[]>;
   deleteConnection(workspaceId: WorkspaceId, connectionId: MapConnectionId): Promise<void>;

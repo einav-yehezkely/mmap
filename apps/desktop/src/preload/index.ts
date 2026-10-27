@@ -115,6 +115,8 @@ const api: MmapRendererApi = {
   },
   maps: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),
+    listForNode: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsListForNode, request),
+    addNode: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsAddNode, request),
     create: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsCreate, request),
     get: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsGet, request),
     rename: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRename, request),

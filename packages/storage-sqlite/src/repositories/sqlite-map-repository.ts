@@ -5,6 +5,7 @@ import {
   type MapConnectionId,
   type MapConnectionRecord,
   type MapConnectionWithRelationship,
+  type MapOfNode,
   type MapRelationship,
   type RelationshipDirectionality,
   type MapId,
@@ -217,6 +218,27 @@ export class SqliteMapRepository implements MapRepository {
         ...toMapConnectionRecord(row),
         relationshipTypeLabel:
           row.relationship_type_label === null ? null : String(row.relationship_type_label),
+      }));
+  }
+
+  public async listMapsForNode(
+    workspaceId: WorkspaceId,
+    nodeId: NodeId,
+  ): Promise<readonly MapOfNode[]> {
+    return this.connections
+      .forRead()
+      .prepare(
+        `SELECT m.id, m.title, m.mode
+         FROM map_placements AS p
+         JOIN mind_maps AS m ON m.id = p.map_id
+         WHERE p.workspace_id = ? AND p.node_id = ?
+         ORDER BY m.title COLLATE NOCASE, m.id`,
+      )
+      .all(workspaceId, nodeId)
+      .map((row) => ({
+        id: String(row.id) as MapId,
+        title: String(row.title),
+        mode: String(row.mode) as MapMode,
       }));
   }
 

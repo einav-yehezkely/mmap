@@ -85,6 +85,13 @@ const parentAssignmentSchema = z.strictObject({
   parentPlacementId: z.uuid().nullable(),
 });
 
+/** Maps a node is placed on (node panel). */
+export const mapsOfNodeSchema = z.strictObject({
+  items: z
+    .array(z.strictObject({ id: z.uuid(), title: z.string(), mode: mapModeSchema }))
+    .readonly(),
+});
+
 export type MapSummaryDto = z.infer<typeof mapSummarySchema>;
 export type PlacementViewDto = z.infer<typeof placementViewSchema>;
 export type MapConnectionViewDto = z.infer<typeof mapConnectionViewSchema>;
@@ -94,6 +101,25 @@ export type MapViewDto = z.infer<typeof mapViewSchema>;
 const structural = { mapId: z.uuid(), expectedRevision: revision };
 
 export const mapContracts = {
+  /** Maps the node is placed on. */
+  listForNode: {
+    request: z.strictObject({ nodeId: z.uuid() }),
+    response: mapsOfNodeSchema,
+  },
+  /**
+   * Adds an existing node to maps, each optionally under a parent placement, in one transaction
+   * (all or nothing). A map that already shows the node is left as it is. Returns the node's maps.
+   */
+  addNode: {
+    request: z.strictObject({
+      nodeId: z.uuid(),
+      targets: z
+        .array(z.strictObject({ mapId: z.uuid(), parentPlacementId: z.uuid().nullable() }))
+        .min(1)
+        .max(50),
+    }),
+    response: mapsOfNodeSchema,
+  },
   list: {
     request: z.undefined(),
     response: z.strictObject({ items: z.array(mapSummarySchema).readonly() }),

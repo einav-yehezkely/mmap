@@ -36,6 +36,7 @@ import { findFreePosition } from '../maps/free-position';
 import type {
   MapConnectionRecord,
   MapConnectionWithRelationship,
+  MapOfNode,
   MapRelationship,
   MapMode,
   MapRepository,
@@ -115,6 +116,8 @@ export interface MapService {
    * when a node is created with "Add to Mind Maps"; it joins the caller's transaction.
    */
   placeNode(mapId: MapId, nodeId: NodeId, parentPlacementId: PlacementId | null): Promise<MapView>;
+  /** Maps the node is placed on. */
+  mapsForNode(nodeId: NodeId): Promise<readonly MapOfNode[]>;
   removePlacement(
     mapId: MapId,
     expectedRevision: Revision,
@@ -477,6 +480,8 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
           updatedAt: now,
         });
       }),
+
+    mapsForNode: (nodeId) => maps.listMapsForNode(workspaceId, nodeId),
 
     placeNode: (mapId, nodeId, parentPlacementId) =>
       transactions.runInTransaction(async () => {

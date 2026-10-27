@@ -103,8 +103,8 @@ const workspaces = new WorkspaceManager({
   },
   logFailure: (operation, error) => logger.error(operation, error),
   trashFolder: (folderPath) => shell.trashItem(folderPath),
-  // The daily backup (PRD §9) runs in the background after a workspace opens.
-  onWorkspaceOpened: (workspace) => void backups.backUpIfDue(workspace),
+  // The daily backup (PRD §9) runs in the background shortly after a workspace opens.
+  onWorkspaceOpened: (workspace) => backups.scheduleAfterOpen(workspace),
 });
 
 const backups = new BackupService({
