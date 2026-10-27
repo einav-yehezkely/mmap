@@ -86,6 +86,13 @@ export const IPC_CHANNELS = {
   transferPreviewImport: 'transfer:preview-import',
   transferApplyImport: 'transfer:apply-import',
   transferDiscardImport: 'transfer:discard-import',
+  backupsGetStatus: 'backups:get-status',
+  backupsCreateNow: 'backups:create-now',
+  backupsChooseDestination: 'backups:choose-destination',
+  backupsUseDefaultDestination: 'backups:use-default-destination',
+  backupsSetRetention: 'backups:set-retention',
+  backupsRestore: 'backups:restore',
+  backupsRestoreFromFolder: 'backups:restore-from-folder',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

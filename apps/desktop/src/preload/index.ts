@@ -101,6 +101,18 @@ const api: MmapRendererApi = {
     applyImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferApplyImport, request),
     discardImport: (request) => ipcRenderer.invoke(IPC_CHANNELS.transferDiscardImport, request),
   },
+  backups: {
+    getStatus: (request) => ipcRenderer.invoke(IPC_CHANNELS.backupsGetStatus, request),
+    createNow: (request) => ipcRenderer.invoke(IPC_CHANNELS.backupsCreateNow, request),
+    chooseDestination: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.backupsChooseDestination, request),
+    useDefaultDestination: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.backupsUseDefaultDestination, request),
+    setRetention: (request) => ipcRenderer.invoke(IPC_CHANNELS.backupsSetRetention, request),
+    restore: (request) => ipcRenderer.invoke(IPC_CHANNELS.backupsRestore, request),
+    restoreFromFolder: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.backupsRestoreFromFolder, request),
+  },
   maps: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),
     create: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsCreate, request),

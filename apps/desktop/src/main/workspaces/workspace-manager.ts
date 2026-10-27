@@ -12,7 +12,8 @@
  * - Paths come only from settings written by this process or from native dialogs.
  */
 
-import { access, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { access, rename, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 
 import type { RecentWorkspace, WorkspaceState } from '@mmap/contracts';
@@ -24,6 +25,7 @@ import {
   type WorkspaceRecord,
 } from '@mmap/domain';
 
+import { TransferError } from '../portability/transfer-errors';
 import {
   forgetWorkspace,
   rememberWorkspace,
@@ -72,7 +74,15 @@ export interface WorkspaceManagerDependencies extends ServiceDependencies {
    * permanently by mmap, so a mistake stays recoverable.
    */
   readonly trashFolder: (folderPath: string) => Promise<void>;
+  /**
+   * Called (not awaited) after a workspace was opened, for background work such as the daily
+   * backup. Must not throw.
+   */
+  readonly onWorkspaceOpened?: (workspace: OpenWorkspace) => void;
 }
+
+/** Builds a complete workspace folder at the given path (which does not exist yet). */
+export type RestoredFolderBuilder = (targetFolder: string) => Promise<void>;
 
 export interface MoveResult {
   readonly state: WorkspaceState;
@@ -340,6 +350,100 @@ export class WorkspaceManager {
     });
   }
 
+  /**
+   * Replaces the open workspace's content with a restored copy (PRD §9 "full snapshot restore").
+   *
+   * 1. Build and verify the restored folder next to the workspace folder, while the workspace
+   *    stays open (`build` reads only the backup).
+   * 2. Run `beforeSwap` (a safety backup of the current state).
+   * 3. Close the workspace, move its folder aside, move the restored folder into its place and
+   *    open it (migrations run if the backup is from an older version).
+   * 4. Move the old folder to the Recycle Bin.
+   * If step 3 fails, the restored folder is removed, the original folder is moved back and opened
+   * again, and `RESTORE_FAILED` is thrown: the workspace is unchanged.
+   */
+  public restoreCurrent(
+    build: RestoredFolderBuilder,
+    beforeSwap: () => Promise<void>,
+  ): Promise<WorkspaceState> {
+    return this.serialize(async () => {
+      const opened = this.requireOpen();
+      const folder = opened.workspace.paths.folder;
+      const suffix = randomUUID().slice(0, 8);
+      const restored = `${folder}.restoring-${suffix}`;
+      await build(restored);
+      try {
+        await beforeSwap();
+      } catch (error) {
+        await rm(restored, { recursive: true, force: true }).catch(() => undefined);
+        throw error;
+      }
+
+      const aside = `${folder}.before-restore-${suffix}`;
+      this.opened = null;
+      await opened.workspace.close();
+      try {
+        await rename(folder, aside);
+      } catch (error) {
+        await rm(restored, { recursive: true, force: true }).catch(() => undefined);
+        await this.switchTo(folder);
+        throw restoreFailed(
+          'Files in the workspace folder are in use by another program. Close it and try again.',
+          error,
+        );
+      }
+      try {
+        await rename(restored, folder);
+        await this.switchTo(folder);
+      } catch (error) {
+        this.opened = null;
+        await rm(folder, { recursive: true, force: true }).catch(() => undefined);
+        await rm(restored, { recursive: true, force: true }).catch(() => undefined);
+        await rename(aside, folder);
+        await this.switchTo(folder);
+        throw restoreFailed('The restored workspace could not be opened.', error);
+      }
+      await this.dependencies.trashFolder(aside).catch((error: unknown) => {
+        // The restore worked; the old folder is only a leftover the user can delete.
+        this.dependencies.logFailure?.('restore: trash previous folder', error);
+      });
+      return this.getState();
+    });
+  }
+
+  /**
+   * Restores a backup into a new workspace folder under the default location and opens it, for
+   * when the original workspace is gone (for example after a drive failure).
+   *
+   * @param workspaceId the backup's workspace; restoring the open workspace this way is refused,
+   *   because two folders would then claim the same identity.
+   */
+  public restoreAsNew(
+    workspaceId: string,
+    workspaceName: string,
+    build: RestoredFolderBuilder,
+  ): Promise<WorkspaceState> {
+    return this.serialize(async () => {
+      if (this.opened?.workspace.id === workspaceId) {
+        throw restoreFailed(
+          'This backup belongs to the open workspace. Restore it from the list of backups instead.',
+        );
+      }
+      const folder = await chooseUnusedFolder(
+        resolve(this.dependencies.defaultWorkspacesRoot),
+        `${toWorkspaceFolderName(normalizeWorkspaceName(workspaceName))} (restored)`,
+      );
+      await build(folder);
+      try {
+        await this.switchTo(folder);
+      } catch (error) {
+        await rm(folder, { recursive: true, force: true }).catch(() => undefined);
+        throw restoreFailed('The restored workspace could not be opened.', error);
+      }
+      return this.getState();
+    });
+  }
+
   /** Flushes pending writes and closes the open workspace (app quit). */
   public close(): Promise<void> {
     return this.serialize(async () => {
@@ -410,6 +514,7 @@ export class WorkspaceManager {
     await this.remember(next.workspace, next.record);
     // Not awaited: cleanup must never delay opening the workspace. It is retried on every open.
     void this.reconcileAttachments(next.workspace);
+    this.dependencies.onWorkspaceOpened?.(next.workspace);
   }
 
   /**
@@ -567,6 +672,10 @@ export class WorkspaceManager {
       }),
     );
   }
+}
+
+function restoreFailed(message: string, cause?: unknown): TransferError {
+  return new TransferError('RESTORE_FAILED', message, { cause });
 }
 
 /** Returns `parent/baseName`, or `parent/baseName (2)`, … for the first that does not exist. */

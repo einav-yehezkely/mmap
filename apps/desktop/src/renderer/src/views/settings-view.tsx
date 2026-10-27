@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 
 import { WorkspaceSettings } from '../workspace/workspace-settings';
 import { AttachmentPreferences } from './attachment-preferences';
+import { BackupSettings } from './backup-settings';
 import { ExportImportSettings } from './export-import-settings';
 import { TimezoneSetting } from './timezone-setting';
 
@@ -58,6 +59,10 @@ export function SettingsView({ workspace }: { workspace: WorkspaceSummary }) {
       <h2 className="mt-10 text-lg font-medium">Attachments</h2>
       <div className="mt-3">
         <AttachmentPreferences />
+      </div>
+      <h2 className="mt-10 text-lg font-medium">Backups</h2>
+      <div className="mt-3">
+        <BackupSettings timeZone={workspace.timezone} />
       </div>
       <h2 className="mt-10 text-lg font-medium">Export and import</h2>
       <div className="mt-3">

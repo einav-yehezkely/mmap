@@ -43,6 +43,11 @@ import { createNodeIpcServices } from './services/node-ipc-services';
 import { createGraphTimelineIpcServices } from './services/graph-timeline-ipc-services';
 import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
+import { BackupService } from './backups/backup-service';
+import {
+  createBackupIpcServices,
+  type BackupNativeInteractions,
+} from './services/backup-ipc-services';
 import {
   createTransferIpcServices,
   type TransferNativeInteractions,
@@ -75,8 +80,9 @@ const logger = createRedactedLogger({ includeStacks: !app.isPackaged });
 registerAppSchemeAsPrivileged();
 guardAllWebContents(rendererLocation);
 
+const settings = createFileSettingsStore(app.getPath('userData'));
 const workspaces = new WorkspaceManager({
-  settings: createFileSettingsStore(app.getPath('userData')),
+  settings,
   defaultWorkspacesRoot: join(app.getPath('userData'), 'workspaces'),
   appVersion: app.getVersion(),
   timezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -91,6 +97,16 @@ const workspaces = new WorkspaceManager({
   },
   logFailure: (operation, error) => logger.error(operation, error),
   trashFolder: (folderPath) => shell.trashItem(folderPath),
+  // The daily backup (PRD §9) runs in the background after a workspace opens.
+  onWorkspaceOpened: (workspace) => void backups.backUpIfDue(workspace),
+});
+
+const backups = new BackupService({
+  workspaces,
+  settings,
+  defaultDestination: join(app.getPath('userData'), 'backups'),
+  appVersion: app.getVersion(),
+  logFailure: (operation, error) => logger.error(operation, error),
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -120,8 +136,11 @@ if (!app.requestSingleInstanceLock()) {
     }
     // Delay quitting until queued writes are committed and the lock is released.
     event.preventDefault();
-    workspaces
-      .close()
+    backups.stop();
+    // A backup in progress finishes first: it reads the database that is about to close.
+    backups
+      .idle()
+      .then(() => workspaces.close())
       .catch((error: unknown) => logger.error('workspace close', error))
       .finally(() => {
         workspaceClosed = true;
@@ -200,6 +219,30 @@ const transferInteractions: TransferNativeInteractions = {
   },
 };
 
+/** Backup folders are chosen in native dialogs only (PRD §8). */
+const backupInteractions: BackupNativeInteractions = {
+  async chooseBackupFolder() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a folder for backups',
+      properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+  async chooseSnapshotFolder() {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a backup to restore (a folder inside "snapshots")',
+      properties: ['openDirectory', 'dontAddToRecent'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+};
+
 async function startApplication(): Promise<void> {
   if (app.isPackaged) {
     // Removes the default menu, which exposes developer tools and reload shortcuts.
@@ -224,6 +267,7 @@ async function startApplication(): Promise<void> {
     }),
   );
 
+  backups.start();
   try {
     await workspaces.startup();
   } catch (error) {
@@ -265,6 +309,7 @@ async function startApplication(): Promise<void> {
         appVersion: app.getVersion(),
         ids: { newId: () => randomUUID() },
       }),
+      ...createBackupIpcServices(backups, backupInteractions),
       'preferences:get': () => workspaces.getPreferences(),
       'preferences:update': (changes) => workspaces.updatePreferences(changes),
     },
@@ -285,7 +330,9 @@ async function startApplication(): Promise<void> {
   });
 
   if (smokeTest) {
-    const report = await runSmokeTest(mainWindow, workspaces);
+    const report = await runSmokeTest(mainWindow, workspaces, backups);
+    backups.stop();
+    await backups.idle();
     await workspaces.close();
     writeSmokeReport(report, smokeReportPath(process.argv));
     app.exit(report.passed ? 0 : 1);

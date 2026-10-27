@@ -15,6 +15,7 @@ export * from './application/relationship-service';
 export * from './application/tag-service';
 export * from './application/timeline-service';
 export * from './application/workspace-service';
+export * from './backups/retention';
 export * from './clock';
 export * from './errors';
 export * from './files/attachment-policy';

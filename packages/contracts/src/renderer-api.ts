@@ -100,6 +100,15 @@ export interface MmapRendererApi {
     readonly applyImport: BridgeCall<'transfer:apply-import'>;
     readonly discardImport: BridgeCall<'transfer:discard-import'>;
   };
+  readonly backups: {
+    readonly getStatus: BridgeCall<'backups:get-status'>;
+    readonly createNow: BridgeCall<'backups:create-now'>;
+    readonly chooseDestination: BridgeCall<'backups:choose-destination'>;
+    readonly useDefaultDestination: BridgeCall<'backups:use-default-destination'>;
+    readonly setRetention: BridgeCall<'backups:set-retention'>;
+    readonly restore: BridgeCall<'backups:restore'>;
+    readonly restoreFromFolder: BridgeCall<'backups:restore-from-folder'>;
+  };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;
     readonly create: BridgeCall<'maps:create'>;

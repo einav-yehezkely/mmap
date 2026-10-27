@@ -11,6 +11,7 @@ import type { z } from 'zod';
 
 import { appInfoRequestSchema, appInfoSchema, openExternalLinkContract } from './app-info';
 import { attachmentContracts, preferenceContracts } from './attachments';
+import { backupContracts } from './backups';
 import { IPC_CHANNELS, type IpcChannel } from './channels';
 import { nodeContracts, searchContracts, tagContracts } from './nodes';
 import { graphContracts, timelineContracts } from './graph-timeline';
@@ -105,6 +106,13 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.transferPreviewImport]: transferContracts.previewImport,
   [IPC_CHANNELS.transferApplyImport]: transferContracts.applyImport,
   [IPC_CHANNELS.transferDiscardImport]: transferContracts.discardImport,
+  [IPC_CHANNELS.backupsGetStatus]: backupContracts.getStatus,
+  [IPC_CHANNELS.backupsCreateNow]: backupContracts.createNow,
+  [IPC_CHANNELS.backupsChooseDestination]: backupContracts.chooseDestination,
+  [IPC_CHANNELS.backupsUseDefaultDestination]: backupContracts.useDefaultDestination,
+  [IPC_CHANNELS.backupsSetRetention]: backupContracts.setRetention,
+  [IPC_CHANNELS.backupsRestore]: backupContracts.restore,
+  [IPC_CHANNELS.backupsRestoreFromFolder]: backupContracts.restoreFromFolder,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

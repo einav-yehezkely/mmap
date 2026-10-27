@@ -1,5 +1,6 @@
 export * from './app-info';
 export * from './attachments';
+export * from './backups';
 export * from './catalogue';
 export * from './channels';
 export * from './envelope';

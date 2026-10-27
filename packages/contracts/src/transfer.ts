@@ -25,6 +25,12 @@ export const TRANSFER_ERROR_CODES = [
   'TRANSFER_FAILED',
   /** The previewed import is no longer available (it expired or another workspace was opened). */
   'IMPORT_EXPIRED',
+  /** A backup could not be written (disk full, folder unavailable, no permission, …). */
+  'BACKUP_FAILED',
+  /** A backup is incomplete or its files do not match their checksums. */
+  'BACKUP_DAMAGED',
+  /** Restoring failed; the workspace is unchanged. */
+  'RESTORE_FAILED',
 ] as const;
 
 export type TransferErrorCode = (typeof TRANSFER_ERROR_CODES)[number];

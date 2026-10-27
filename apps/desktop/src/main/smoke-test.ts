@@ -18,6 +18,8 @@ import type { BrowserWindow } from 'electron';
 import { checkAttachmentPreview } from './smoke-attachments';
 import { checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
 import { checkExportImport } from './smoke-transfer';
+import { checkBackupAndRestore } from './smoke-backups';
+import type { BackupService } from './backups/backup-service';
 import type { WorkspaceManager } from './workspaces/workspace-manager';
 
 export interface SmokeTestCheck {
@@ -48,6 +50,7 @@ export function smokeReportPath(argv: readonly string[]): string | undefined {
 export async function runSmokeTest(
   window: BrowserWindow,
   workspaces: WorkspaceManager,
+  backups: BackupService,
 ): Promise<SmokeTestReport> {
   const checks: SmokeTestCheck[] = [];
 
@@ -281,6 +284,17 @@ export async function runSmokeTest(
       const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-transfer-'));
       try {
         await checkExportImport(workspaces, directory);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  checks.push(
+    await check('backup taken and restorable', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-backup-'));
+      try {
+        await checkBackupAndRestore(workspaces, backups, directory);
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
