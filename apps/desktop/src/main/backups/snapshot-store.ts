@@ -112,8 +112,8 @@ export async function createSnapshot(
   options: { readonly appVersion: string; readonly now: () => Date },
 ): Promise<SnapshotSummary> {
   const root = workspaceBackupFolder(destination, workspace.id);
-  const createdAt = options.now();
-  const snapshotId = createdAt.toISOString().replace(/[:.]/gu, '-');
+  const createdAt = await unusedSnapshotTime(join(root, SNAPSHOTS), options.now());
+  const snapshotId = snapshotIdOf(createdAt);
   const partial = join(root, SNAPSHOTS, `.partial-${randomUUID()}`);
   try {
     await mkdir(partial, { recursive: true });
@@ -333,6 +333,27 @@ export async function buildWorkspaceFromSnapshot(
     if (error instanceof TransferError) throw error;
     throw new TransferError('RESTORE_FAILED', describeWriteFailure(error), { cause: error });
   }
+}
+
+function snapshotIdOf(time: Date): string {
+  return time.toISOString().replace(/[:.]/gu, '-');
+}
+
+/**
+ * `time`, or the first later millisecond whose snapshot name is free: two backups in the same
+ * millisecond (for example the daily one and "Back up now") must not collide.
+ */
+async function unusedSnapshotTime(snapshotsFolder: string, time: Date): Promise<Date> {
+  let candidate = time;
+  while (
+    await stat(join(snapshotsFolder, snapshotIdOf(candidate))).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    candidate = new Date(candidate.getTime() + 1);
+  }
+  return candidate;
 }
 
 function summarize(manifest: SnapshotManifest, folder: string): SnapshotSummary {

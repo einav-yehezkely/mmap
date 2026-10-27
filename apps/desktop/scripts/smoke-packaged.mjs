@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -23,12 +24,15 @@ if (!existsSync(executable)) {
 
 const workDirectory = mkdtempSync(join(tmpdir(), 'mmap-smoke-run-'));
 const reportPath = join(workDirectory, 'report.json');
+// axe-core (a development dependency, not shipped) for the accessibility check.
+const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 
 const child = spawn(
   executable,
   [
     '--smoke-test',
     `--smoke-report=${reportPath}`,
+    `--smoke-axe=${axePath}`,
     '--proxy-server=http://127.0.0.1:9',
     '--proxy-bypass-list=<-loopback>',
   ],

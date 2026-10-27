@@ -56,7 +56,13 @@ import {
   createWorkspaceIpcServices,
   type NativeWorkspaceInteractions,
 } from './services/workspace-ipc-services';
-import { isSmokeTestRun, runSmokeTest, smokeReportPath, writeSmokeReport } from './smoke-test';
+import {
+  isSmokeTestRun,
+  runSmokeTest,
+  smokeAxePath,
+  smokeReportPath,
+  writeSmokeReport,
+} from './smoke-test';
 import { createFileSettingsStore } from './workspaces/app-settings';
 import { WorkspaceManager } from './workspaces/workspace-manager';
 import { isProcessAlive } from './workspaces/workspace-lock';
@@ -331,7 +337,7 @@ async function startApplication(): Promise<void> {
   });
 
   if (smokeTest) {
-    const report = await runSmokeTest(mainWindow, workspaces, backups);
+    const report = await runSmokeTest(mainWindow, workspaces, backups, smokeAxePath(process.argv));
     backups.stop();
     await backups.idle();
     await workspaces.close();

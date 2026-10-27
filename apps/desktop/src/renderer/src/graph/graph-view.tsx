@@ -406,7 +406,8 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
                 setFindText('');
               }
             }}
-            aria-controls={`${findId}-results`}
+            // Only while the list exists: a reference to a missing element is invalid ARIA.
+            aria-controls={matches.length > 0 ? `${findId}-results` : undefined}
           />
           {matches.length > 0 && (
             <ul

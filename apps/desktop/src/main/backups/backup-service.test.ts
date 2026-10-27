@@ -139,6 +139,18 @@ describe('daily backups', () => {
     expect(files).toHaveLength(1);
   });
 
+  it('takes two backups in the same millisecond under different names (regression)', async () => {
+    const { manager, backups } = startApp('app');
+    await manager.startup();
+    await backups.idle();
+    const status = await backups.backUpNow();
+    expect(status.lastFailure).toBeNull();
+    expect(status.snapshots.map((snapshot) => snapshot.createdAt)).toEqual([
+      '2026-10-27T09:00:00.001Z',
+      '2026-10-27T09:00:00.000Z',
+    ]);
+  });
+
   it('records a failure instead of throwing, and shows it in the status', async () => {
     const blocked = join(sandbox, 'not-a-folder');
     writeFileSync(blocked, 'a file where the backup folder should be');
@@ -254,6 +266,28 @@ describe('restore', () => {
     await expect(backups.restoreFromFolder(snapshot!.folder)).rejects.toMatchObject({
       code: 'RESTORE_FAILED',
     });
+  });
+
+  it('rejects a tampered backup whose file paths leave the workspace folder', async () => {
+    const { manager, backups } = startApp('app');
+    await manager.startup();
+    await backups.idle();
+    const node = await manager.current!.services.nodes.create({ title: 'Picture' });
+    await addAttachment(manager, node.id, 'picture.png');
+    const status = await backups.backUpNow();
+    const [snapshot] = await listSnapshots(status.destination, manager.current!.id);
+    const manifestPath = join(snapshot!.folder, 'backup.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      attachments: { relativePath: string }[];
+    };
+    manifest.attachments[0]!.relativePath = '../../escaped.png';
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    await expect(backups.restoreFromFolder(snapshot!.folder)).rejects.toMatchObject({
+      code: 'BACKUP_DAMAGED',
+    });
+    expect(existsSync(join(sandbox, 'escaped.png'))).toBe(false);
+    expect((await backups.status()).snapshots.map((item) => item.id)).not.toContain(snapshot!.id);
   });
 
   it('rejects a folder that is not a backup', async () => {
