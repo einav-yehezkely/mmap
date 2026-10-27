@@ -3,7 +3,7 @@
  * moment the request is handled; requests while no workspace is open fail with a clear error.
  */
 
-import type { NodeId, TagId } from '@mmap/domain';
+import type { MapId, NodeId, PlacementId, TagId } from '@mmap/domain';
 
 import type { IpcServices } from '../ipc/register-ipc-handlers';
 import type { OpenWorkspace, WorkspaceServices } from '../workspaces/open-workspace';
@@ -52,8 +52,26 @@ export function createNodeIpcServices(manager: WorkspaceManager): Pick<IpcServic
         tagIds: tagIds as TagId[],
         page: { limit, cursor },
       }),
-    'nodes:create': ({ title, summary }) =>
-      services().nodes.create({ title, summary: summary ?? null }),
+    'nodes:create': ({ title, summary, addToMaps }) => {
+      const targets = [
+        ...new Map((addToMaps ?? []).map((target) => [target.mapId, target])).values(),
+      ];
+      if (targets.length === 0) return services().nodes.create({ title, summary: summary ?? null });
+      // One canonical node, placed on every chosen map, all in one transaction: if any map
+      // rejects the placement (for example a parent that no longer exists), nothing is created.
+      const workspace = requireWorkspace();
+      return workspace.connections.runInTransaction(async () => {
+        const node = await workspace.services.nodes.create({ title, summary: summary ?? null });
+        for (const target of targets) {
+          await workspace.services.maps.placeNode(
+            target.mapId as MapId,
+            node.id,
+            target.parentPlacementId as PlacementId | null,
+          );
+        }
+        return node;
+      });
+    },
     'nodes:update': ({ nodeId, expectedRevision, changes }) =>
       services().nodes.update(nodeId as NodeId, expectedRevision, changes),
     'nodes:duplicate': ({ nodeId }) => services().nodes.duplicate(nodeId as NodeId),

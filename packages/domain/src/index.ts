@@ -23,6 +23,7 @@ export * from './ids';
 export * from './knowledge/builtin-relationship-types';
 export * from './knowledge/node-fields';
 export * from './knowledge/relationship-rules';
+export * from './maps/free-position';
 export * from './maps/hierarchy';
 export * from './maps/hierarchy-proposal';
 export * from './maps/tree-layout';

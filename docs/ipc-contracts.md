@@ -17,6 +17,8 @@ add a channel, and lists every channel that exists. For the end-to-end path of a
 | `packages/contracts/src/attachments.ts`    | `attachments:*` and `preferences:*` schemas, the preview URL scheme.                            |
 | `packages/contracts/src/maps.ts`           | `maps:*` schemas and the map view DTOs.                                                         |
 | `packages/contracts/src/graph-timeline.ts` | `graph:*` and `timeline:*` schemas, the graph slice and timeline entry DTOs.                    |
+| `packages/contracts/src/transfer.ts`       | `transfer:*` schemas (export and import) and `TRANSFER_ERROR_CODES`.                            |
+| `packages/contracts/src/backups.ts`        | `backups:*` schemas and the backup status DTO.                                                  |
 | `packages/contracts/src/catalogue.ts`      | `IPC_CATALOGUE`: pairs each channel with `{ request, response }` schemas.                       |
 | `packages/contracts/src/envelope.ts`       | `IpcResult<Data>`, `ipcErrorSchema`, the combined list of error codes.                          |
 | `packages/contracts/src/renderer-api.ts`   | `MmapRendererApi`: the type of `window.mmap`.                                                   |
@@ -28,7 +30,8 @@ Rules the code relies on:
   `satisfies Record<IpcChannel, IpcContract>`, so TypeScript fails if a channel has no contract.
   `catalogue.test.ts` also checks that the catalogue has exactly the channels in `IPC_CHANNELS`.
 - **Strict schemas.** Object schemas use `z.strictObject`, so unexpected properties are rejected
-  instead of silently dropped. A channel with no argument uses `z.undefined()`.
+  instead of silently dropped. A channel with no argument uses `z.undefined()`; the `transfer:*`
+  and `backups:*` channels instead take an empty object `{}` (`z.strictObject({})`).
 - **Both directions are validated.** The main process parses the request before the service runs
   and the response before it leaves. Response validation is what stops a service bug from leaking
   an extra field to the renderer.
@@ -49,9 +52,17 @@ process opens the native dialog itself and uses the result directly:
 - `attachments:add` takes only a node ID and opens a multi-file picker in the main process.
   `attachments:open`, `attachments:remove` and the `mmap-attachment://current/<id>` preview URL
   take an attachment ID; the stored relative path is read from the database and re-validated.
+- `transfer:export-zip` and `transfer:export-markdown` open a save dialog, and
+  `transfer:preview-import` an open dialog, in the main process. `transfer:apply-import` refers to
+  the previewed archive by an opaque token, never by its path.
+- `backups:choose-destination` and `backups:restore-from-folder` open folder pickers in the main
+  process. `backups:restore` refers to a snapshot by the ID from the status list; the main process
+  looks it up in the backup folder it knows.
 
 Paths do travel the other way, for display only: `WorkspaceSummary.folderPath` and
-`RecentWorkspace.folderPath` let Settings show where a workspace lives (PRD §5.1).
+`RecentWorkspace.folderPath` let Settings show where a workspace lives (PRD §5.1), the backup
+status carries the backup folder, and export and import results carry the chosen file's name (not
+its folder).
 
 ### Note JSON is untrusted input
 
@@ -99,7 +110,10 @@ which throws an `IpcFailure` carrying the code.
 Domain codes come from `packages/domain/src/errors.ts` and are produced when a service throws a
 `DomainError`. Workspace codes come from `WORKSPACE_ERROR_CODES` in
 `packages/contracts/src/workspace.ts` and are produced when the main process throws a
-`WorkspaceError` (`apps/desktop/src/main/workspaces/workspace-errors.ts`). Transport codes come
+`WorkspaceError` (`apps/desktop/src/main/workspaces/workspace-errors.ts`). Transfer codes come
+from `TRANSFER_ERROR_CODES` in `packages/contracts/src/transfer.ts` and are produced when the
+export, import, backup or restore code throws a `TransferError`
+(`apps/desktop/src/main/portability/transfer-errors.ts`). Transport codes come
 from `packages/contracts/src/envelope.ts` and are produced by the IPC handler itself
 (`apps/desktop/src/main/ipc/ipc-handler.ts`).
 
@@ -120,6 +134,16 @@ from `packages/contracts/src/envelope.ts` and are produced by the IPC handler it
 | `WORKSPACE_DAMAGED`              | Workspace | The database file is missing, cannot be opened or upgraded, or does not match the manifest.                                                   |
 | `WORKSPACE_MOVE_FAILED`          | Workspace | Moving failed; the copy was discarded and the original is open and unchanged.                                                                 |
 | `WORKSPACE_DELETE_FAILED`        | Workspace | The folder could not be moved to the Recycle Bin (or no longer belongs to the workspace); nothing was deleted.                                |
+| `ARCHIVE_INVALID`                | Transfer  | The file is not an mmap archive, or it is damaged or inconsistent (bad JSON, schema, layout, counts or manifest).                             |
+| `ARCHIVE_UNSAFE`                 | Transfer  | The archive contains unsafe entries: traversal, absolute or drive paths, control characters, links, encrypted or unexpected files.            |
+| `ARCHIVE_TOO_LARGE`              | Transfer  | The archive exceeds a size or entry-count limit, or an entry inflates to more than allowed.                                                   |
+| `ARCHIVE_TOO_NEW`                | Transfer  | The archive or backup was written by a newer mmap version. The message says to update mmap.                                                   |
+| `ARCHIVE_CHECKSUM_MISMATCH`      | Transfer  | A file's bytes do not match the checksum recorded in the archive.                                                                             |
+| `TRANSFER_FAILED`                | Transfer  | Writing an export or copying files failed (disk full, no permission, …).                                                                      |
+| `IMPORT_EXPIRED`                 | Transfer  | The previewed import is no longer available: the token is unknown or older than 10 minutes, or another preview or workspace replaced it.      |
+| `BACKUP_FAILED`                  | Transfer  | A backup could not be written (disk full, folder unavailable, no permission).                                                                 |
+| `BACKUP_DAMAGED`                 | Transfer  | A backup is incomplete, unknown, or its files do not match their checksums.                                                                   |
+| `RESTORE_FAILED`                 | Transfer  | Restoring failed; the workspace is unchanged.                                                                                                 |
 | `INVALID_REQUEST`                | Transport | The payload did not match the channel's request schema. The service was not called.                                                           |
 | `FORBIDDEN_SENDER`               | Transport | The call did not come from the main frame of a trusted origin. The service was not called.                                                    |
 | `INTERNAL_ERROR`                 | Transport | Anything unexpected, including a response that failed its schema. Logged locally, redacted.                                                   |
@@ -128,8 +152,8 @@ How the handler chooses a result:
 
 1. Untrusted sender → `FORBIDDEN_SENDER`.
 2. Request fails its schema → `INVALID_REQUEST`.
-3. Service throws a `DomainError` or a `WorkspaceError` → its `code` and `message` (both classes
-   must therefore be written to be safe for display).
+3. Service throws a `DomainError`, a `WorkspaceError` or a `TransferError` → its `code` and
+   `message` (all three classes must therefore be written to be safe for display).
 4. Service throws anything else, or its result fails the response schema → `INTERNAL_ERROR` with a
    generic message, and `logFailure` records the channel and error class name only.
 5. Otherwise → `{ ok: true, data }` with the parsed response.
@@ -177,18 +201,20 @@ entry (implementation plan §4). Work through these steps in order.
      ([testing.md](testing.md)).
 8. **Docs.** Add the channel to the [channel reference](#channel-reference) below.
 
-Long-running operations (import, export, backup) will also need progress events, cancellation and
-idempotency keys (PRD §7.2). That pattern does not exist yet; design it with the first channel
-that needs it and document it here.
+Long-running operations (import, export, backup) should also have progress events, cancellation
+and idempotency keys (PRD §7.2). That pattern does not exist yet: the `transfer:*` and `backups:*`
+channels are plain request and response calls, and the renderer shows a busy message until they
+return. Design the pattern with the first channel that needs it and document it here.
 
 ## Channel reference
 
-There are 72 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+There are 84 channels. The renderer method is `window.mmap.<group>.<method>`; for example
 `nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
 is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
-the other codes. Node, search, tag, relationship, map, graph, timeline and attachment channels,
-and `workspace:set-timezone`, return `WORKSPACE_MISSING` when no workspace is open.
+the other codes. Node, search, tag, relationship, map, graph, timeline, attachment and transfer
+channels, `workspace:set-timezone`, and the backup channels that need the open workspace return
+`WORKSPACE_MISSING` when no workspace is open.
 
 ### App
 
@@ -243,20 +269,20 @@ state. Errors: `create`, `open-folder` and `open-recent` can return any workspac
 Service: `apps/desktop/src/main/services/node-ipc-services.ts`, which calls the domain
 `KnowledgeNodeService` and `TagService`.
 
-| Channel                | Purpose                                                    | Request                                                              | Response                                                                  |
-| ---------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `nodes:list`           | One page of the Library.                                   | `{ sort, limit (1–200), cursor?, tagIds? (≤ 20) }`                   | `{ items: NodeSummary[], nextCursor, totalCount }`                        |
-| `nodes:get`            | Load a node for the detail panel.                          | `{ nodeId }`                                                         | `NodeView`                                                                |
-| `nodes:create`         | Create a node (revision 1, empty note).                    | `{ title, summary? }`                                                | `NodeView`                                                                |
-| `nodes:update`         | Autosave: change title, summary and/or note.               | `{ nodeId, expectedRevision, changes: { title?, summary?, note? } }` | `NodeView` with the new revision                                          |
-| `nodes:duplicate`      | Copy title (as `<title> (copy)`), summary, note and tags.  | `{ nodeId }`                                                         | `NodeView` of the copy                                                    |
-| `nodes:preview-delete` | Count what deleting a node would affect.                   | `{ nodeId }`                                                         | `{ relationships, referencingNotes, mapPlacements, attachments }`         |
-| `nodes:delete`         | Delete a node and its managed attachment files.            | `{ nodeId, expectedRevision }`                                       | `{ deleted: true }`                                                       |
-| `nodes:lookup`         | Title lookup for node pickers.                             | `{ text (≤ 200), limit? (1–50, default 8), excludeNodeIds? (≤ 50) }` | `{ items: { id, title }[] }`                                              |
-| `nodes:backlinks`      | Notes that link to this node ("Linked from").              | `{ nodeId }`                                                         | `{ items: { sourceNodeId, sourceTitle, label, excerpt, occurrences }[] }` |
-| `nodes:resolve-links`  | Current titles of wikilink targets that still exist.       | `{ nodeIds (≤ 1,000) }`                                              | `{ items: { id, title }[] }`                                              |
-| `nodes:add-tag`        | Assign a tag by label, creating it if needed (idempotent). | `{ nodeId, label }`                                                  | `{ tags: TagSummary[] }`                                                  |
-| `nodes:remove-tag`     | Remove a tag from a node (idempotent).                     | `{ nodeId, tagId }`                                                  | `{ tags: TagSummary[] }`                                                  |
+| Channel                | Purpose                                                     | Request                                                              | Response                                                                  |
+| ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `nodes:list`           | One page of the Library.                                    | `{ sort, limit (1–200), cursor?, tagIds? (≤ 20) }`                   | `{ items: NodeSummary[], nextCursor, totalCount }`                        |
+| `nodes:get`            | Load a node for the detail panel.                           | `{ nodeId }`                                                         | `NodeView`                                                                |
+| `nodes:create`         | Create a node (revision 1, empty note), optionally on maps. | `{ title, summary?, addToMaps? }`                                    | `NodeView`                                                                |
+| `nodes:update`         | Autosave: change title, summary and/or note.                | `{ nodeId, expectedRevision, changes: { title?, summary?, note? } }` | `NodeView` with the new revision                                          |
+| `nodes:duplicate`      | Copy title (as `<title> (copy)`), summary, note and tags.   | `{ nodeId }`                                                         | `NodeView` of the copy                                                    |
+| `nodes:preview-delete` | Count what deleting a node would affect.                    | `{ nodeId }`                                                         | `{ relationships, referencingNotes, mapPlacements, attachments }`         |
+| `nodes:delete`         | Delete a node and its managed attachment files.             | `{ nodeId, expectedRevision }`                                       | `{ deleted: true }`                                                       |
+| `nodes:lookup`         | Title lookup for node pickers.                              | `{ text (≤ 200), limit? (1–50, default 8), excludeNodeIds? (≤ 50) }` | `{ items: { id, title }[] }`                                              |
+| `nodes:backlinks`      | Notes that link to this node ("Linked from").               | `{ nodeId }`                                                         | `{ items: { sourceNodeId, sourceTitle, label, excerpt, occurrences }[] }` |
+| `nodes:resolve-links`  | Current titles of wikilink targets that still exist.        | `{ nodeIds (≤ 1,000) }`                                              | `{ items: { id, title }[] }`                                              |
+| `nodes:add-tag`        | Assign a tag by label, creating it if needed (idempotent).  | `{ nodeId, label }`                                                  | `{ tags: TagSummary[] }`                                                  |
+| `nodes:remove-tag`     | Remove a tag from a node (idempotent).                      | `{ nodeId, tagId }`                                                  | `{ tags: TagSummary[] }`                                                  |
 
 `sort` is `updated-desc`, `created-desc` or `title-asc`. `cursor` is the opaque `nextCursor` of the
 previous page (keyset pagination). `tagIds` keeps only nodes that carry all the given tags, and
@@ -468,6 +494,17 @@ Limits: the contract accepts titles and labels up to 1,000 characters, coordinat
 messages: map titles 1–200 characters, connector labels up to 200 characters (empty means none),
 new node titles as for `nodes:create`, a zoom from 0.05 to 8, and no control characters.
 
+`MapView` also carries `relationships`: the semantic relationships whose two nodes are both on the
+map (`{ id, sourceNodeId, targetNodeId, typeLabel, directionality }`). They are derived when the
+map is read, never stored on the map, and never change its hierarchy or positions; the editor
+draws them as their own kind of line and skips any already shown by a linked connector.
+
+`nodes:create` accepts `addToMaps: [{ mapId, parentPlacementId | null }]` (at most 50 maps,
+duplicates ignored). The node and its placements are created in one transaction: each map gets
+one placement of the same node at a free spot near its other items (under the given parent in a
+hierarchical map); a node already on a map is left in place. If any placement is rejected (for
+example `NOT_FOUND` for a parent that no longer exists), nothing is created.
+
 Errors:
 
 - `NOT_FOUND`: unknown map, item, connector or node, including IDs from another workspace.
@@ -605,3 +642,98 @@ Errors:
 - `VALIDATION_FAILED`: a date that is not a real calendar date, a start date after the end date, a
   window that does not end after it starts, a malformed cursor, an invalid reflection, title or
   learning date, or a title on an event that is not a milestone.
+
+### Export and import
+
+Service: `apps/desktop/src/main/services/transfer-ipc-services.ts`, which calls
+`apps/desktop/src/main/portability/` (`export-workspace.ts`, `export-markdown.ts`,
+`import-workspace.ts`). Schemas: `packages/contracts/src/transfer.ts`. See
+[architecture.md](architecture.md#export-and-import) and
+[ADR-0011](adr/0011-export-import.md) for the archive format and the import rules.
+
+| Channel                    | Purpose                                                                                  | Request                                   | Response                                                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `transfer:export-zip`      | Ask where to save (native dialog), then write the lossless ZIP archive of the workspace. | `{}`                                      | `{ status: 'cancelled' }` or `{ status: 'exported', fileName, counts, warnings }`                                                    |
+| `transfer:export-markdown` | Ask where to save, then write the readable Markdown export (a ZIP of `.md` files).       | `{}`                                      | `{ status: 'cancelled' }` or `{ status: 'exported', fileName, nodes, attachments, warnings }`                                        |
+| `transfer:preview-import`  | Ask for an archive, validate all of it and describe the import. Changes nothing.         | `{}`                                      | `{ status: 'cancelled' }` or `{ status: 'ready', importToken, fileName, source, summary, warnings, previousImports, sameWorkspace }` |
+| `transfer:apply-import`    | Perform a previewed import.                                                              | `{ importToken (UUID), acceptDuplicate }` | `{ summary }`                                                                                                                        |
+| `transfer:discard-import`  | Forget a previewed import (the user cancelled after the preview).                        | `{ importToken (UUID) }`                  | `{ discarded: true }`                                                                                                                |
+
+**Exports.** The save dialog proposes `<workspace name> <YYYY-MM-DD>.mmap.zip` or
+`<workspace name> <YYYY-MM-DD> Markdown.zip` in Documents. `counts` has the number of nodes, tags,
+relationship types, relationships, maps, placements, connections, timeline events and attachments
+written. `warnings` are English sentences for the user, for example attachments left out because
+their file is missing from the workspace folder or no longer matches its checksum. `fileName` is
+the chosen file's name only.
+
+**Two-step import.** `transfer:preview-import` validates the whole archive (see
+[architecture.md](architecture.md#import)) and keeps it open in the main process under a random
+`importToken`. Only one import is pending at a time: a new preview discards the previous one, and
+a token stops working after 10 minutes, when another workspace is open, or once it was applied or
+discarded. `source` has `workspaceName`, `exportedAt` and `appVersion` from the archive's
+manifest. `summary` counts what would be added: `nodes`, `newTags`, `reusedTags`,
+`newRelationshipTypes`, `reusedRelationshipTypes`, `relationships`, `maps`, `placements`,
+`connections`, `timelineEvents` and `attachments`. `warnings` lists, for example, relationship
+types renamed because their direction differs, links to nodes outside the archive, and
+attachments that are not imported. `previousImports` holds the UTC times of earlier imports of the
+same archive into this workspace (empty if never); `sameWorkspace` is true when the archive was
+exported from the open workspace.
+
+**Duplicates.** When `previousImports` is not empty, `transfer:apply-import` requires
+`acceptDuplicate: true`, meaning the user saw the warning and chose to import again; otherwise it
+returns `DUPLICATE` and the import stays pending. Archives are recognised by the export ID in
+their manifest, so a new export of the same data is not a duplicate.
+
+Errors:
+
+- `WORKSPACE_MISSING`: no workspace is open (all channels except `transfer:discard-import`, which
+  always succeeds).
+- `TRANSFER_FAILED`: the export file or an imported attachment could not be written (disk full,
+  no permission).
+- `ARCHIVE_INVALID`, `ARCHIVE_UNSAFE`, `ARCHIVE_TOO_LARGE`, `ARCHIVE_TOO_NEW`,
+  `ARCHIVE_CHECKSUM_MISMATCH`: the archive was refused by `preview-import`, or an attachment's
+  bytes did not match during `apply-import`. Nothing was changed.
+- `VALIDATION_FAILED`: the archive is well-formed but inconsistent (for example a relationship to
+  a node that is not in it, a hierarchy cycle, an invalid title or note), or holds notes from a
+  newer note schema.
+- `IMPORT_EXPIRED`: `apply-import` with an unknown, expired or replaced token.
+- `DUPLICATE`: `apply-import` of an archive imported before, without `acceptDuplicate`.
+
+### Backups
+
+Service: `apps/desktop/src/main/services/backup-ipc-services.ts`, which calls `BackupService`
+(`apps/desktop/src/main/backups/backup-service.ts`). Schemas: `packages/contracts/src/backups.ts`.
+See [architecture.md](architecture.md#backups-and-restore) and the
+[backup and restore runbook](runbooks/backup-and-restore.md).
+
+| Channel                           | Purpose                                                                                    | Request                            | Response                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------------------ |
+| `backups:get-status`              | Destination, retention, last success and failure, and the snapshots of the workspace.      | `{}`                               | `BackupStatus`                                               |
+| `backups:create-now`              | Take a backup now (Settings › Back up now).                                                | `{}`                               | `BackupStatus`                                               |
+| `backups:choose-destination`      | Pick the backup folder in a native dialog; cancelling changes nothing.                     | `{}`                               | `BackupStatus`                                               |
+| `backups:use-default-destination` | Go back to the default folder, `<userData>/backups`.                                       | `{}`                               | `BackupStatus`                                               |
+| `backups:set-retention`           | Set how many daily and weekly snapshots to keep, then prune.                               | `{ daily (0–60), weekly (0–104) }` | `BackupStatus`                                               |
+| `backups:restore`                 | Replace the open workspace's content with one of its snapshots, after a safety backup.     | `{ snapshotId }` (1–64 chars)      | `{ state: WorkspaceState }`                                  |
+| `backups:restore-from-folder`     | Pick a snapshot folder in a native dialog and restore it as a new workspace, then open it. | `{}`                               | `{ status: 'cancelled' }` or `{ status: 'restored', state }` |
+
+`BackupStatus` has `destination` (the backup folder, for display), `isDefaultDestination`,
+`sameDriveAsWorkspace` (the destination is on the workspace's drive, so a drive failure would lose
+both), `retention` (`daily`, `weekly`), `running`, `lastSuccessAt` (the newest snapshot on disk,
+or `null`), `lastFailure` (`{ at, message }` of the last failed backup since the app started, or
+`null`) and `snapshots`, newest first: `id`, `createdAt`, `attachmentCount`, `missingAttachments`
+(files missing or changed in the workspace when the snapshot was taken) and `databaseBytes`.
+
+`backups:create-now` does not fail when the backup fails: the failure is recorded and returned in
+`lastFailure`, as for the automatic daily backup. Backup operations run one at a time.
+
+Errors:
+
+- `WORKSPACE_MISSING`: no workspace is open (every channel except `restore-from-folder`).
+- `BACKUP_FAILED`: the safety backup before a restore could not be written.
+- `BACKUP_DAMAGED`: `restore` with a snapshot ID that is not (or no longer) in the list, or a
+  snapshot whose database or files do not match their checksums; `restore-from-folder` with a
+  folder that is not a complete backup.
+- `ARCHIVE_TOO_NEW`: the backup was made by a newer mmap version.
+- `RESTORE_FAILED`: the restored workspace could not be put in place or opened, a file in the
+  workspace folder is in use, or `restore-from-folder` was given a backup of the open workspace
+  (restore it from the list instead). The workspace is unchanged.

@@ -637,3 +637,45 @@ describe('review regressions', () => {
     await expect(maps.listMaps()).resolves.toMatchObject([{ title: 'Renamed', revision: 2 }]);
   });
 });
+
+describe('semantic relationships on maps', () => {
+  it('shows relationships between nodes on the map and follows their changes', async () => {
+    const { maps, relationships, nodes } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B']);
+    const outside = await nodes.create({ title: 'Not on the map' });
+    const a = placementOf(view, 'A').nodeId;
+    const b = placementOf(view, 'B').nodeId;
+    const types = await relationships.listTypes();
+    const dependsOn = types.find((type) => type.label === 'depends on')!;
+    const relatedTo = types.find((type) => type.label === 'related to')!;
+
+    // Created elsewhere (for example in the node panel): shown on reading the map.
+    const created = await relationships.create({
+      sourceNodeId: a,
+      targetNodeId: b,
+      typeId: dependsOn.id,
+    });
+    await relationships.create({ sourceNodeId: a, targetNodeId: outside.id, typeId: dependsOn.id });
+    view = await maps.getMap(view.map.id);
+    expect(view.relationships).toEqual([
+      {
+        id: created.id,
+        sourceNodeId: a,
+        targetNodeId: b,
+        typeLabel: 'depends on',
+        directionality: 'directed',
+      },
+    ]);
+    // Showing it adds nothing to the map: the other node is not placed, no connector is created.
+    expect(view.placements).toHaveLength(2);
+    expect(view.connections).toEqual([]);
+
+    // Edited and deleted elsewhere: the map shows the current state.
+    await relationships.update(created.id, { typeId: relatedTo.id });
+    expect((await maps.getMap(view.map.id)).relationships).toMatchObject([
+      { typeLabel: 'related to', directionality: 'undirected' },
+    ]);
+    await relationships.delete(created.id);
+    expect((await maps.getMap(view.map.id)).relationships).toEqual([]);
+  });
+});

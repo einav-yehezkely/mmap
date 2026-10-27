@@ -313,13 +313,21 @@ function MapLegend({ isHierarchy }: { isHierarchy: boolean }) {
       <p className="font-medium text-foreground">On this map</p>
       {isHierarchy && (
         <p>
-          <span aria-hidden="true">── </span>Solid lines: hierarchy. It organizes this map only and
-          does not create relationships.
+          <span aria-hidden="true">└─ </span>Gray angled lines: hierarchy. It organizes this map
+          only and does not create relationships.
         </p>
       )}
       <p>
         <span aria-hidden="true">- → </span>Dashed arrows: map connectors. They are visual only; a
         type in brackets means the connector shows an existing relationship.
+      </p>
+      <p>
+        <span aria-hidden="true" className="text-[var(--relationship-line)]">
+          ⌒{' '}
+        </span>
+        Colored curved lines: relationships between nodes on this map, with their type (an arrow
+        when the relationship has a direction). Every map with both nodes shows them; edit them on
+        the node.
       </p>
       <p>
         {isHierarchy

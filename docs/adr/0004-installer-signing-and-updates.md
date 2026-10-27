@@ -67,3 +67,39 @@ off by default and will name the folders affected, consistent with PRD §5.1 del
   an installer. Rejected.
 - **No auto-update, manual download only.** Simpler, but PRD §3 includes updates in version 1
   and users would run unpatched builds. Rejected.
+
+## Amendment (2026-10-27, Phase 5)
+
+**Done: signing configuration and release check.**
+
+- `apps/desktop/electron-builder.yml` sets `win.signtoolOptions`: SHA-256 signatures
+  (`signingHashAlgorithms: [sha256]`) with an RFC 3161 timestamp from
+  `http://timestamp.digicert.com`, so signatures stay valid after the certificate expires.
+  electron-builder signs the executables and the installer when a certificate is supplied
+  through the environment variables `CSC_LINK` (the certificate file or its base64 content) and
+  `CSC_KEY_PASSWORD`. Nothing secret is committed. Without these variables builds stay unsigned.
+- `apps/desktop/scripts/verify-signature.ps1` is the release check: it fails unless both
+  `release/mmap-setup-*.exe` and `release/win-unpacked/mmap.exe` have a `Valid` Authenticode
+  signature with a timestamp.
+- The executable, installer and uninstaller carry the mmap icon (`resources/icon.ico`).
+- Procedure: [packaging runbook](../runbooks/packaging.md#code-signing).
+
+**Still open.**
+
+- **Certificate.** None is available, so every current build is unsigned, the check fails on it,
+  and release stays blocked. The certificate type (for example OV or EV) and key storage (file,
+  hardware token or cloud-hosted key) are still to be chosen. Assumption: a key that cannot be
+  exported as a file (hardware token, cloud signing service) will need a different signing
+  configuration than `CSC_LINK`; record it here when chosen.
+- **Update feed host and electron-updater.** Not implemented, because no host for the update feed
+  has been chosen; `publish` stays `null` and the app makes no update checks. The requirements
+  above (signature verification, checks visible in Settings and possible to turn off, no workspace
+  content sent) still apply when it is added.
+- **Clean-machine verification** of install, offline launch, upgrade and uninstall with data
+  preserved has not been done.
+
+**Until then, updates are manual.** A user installs a newer version by running its installer over
+the existing installation. Workspaces (under `%APPDATA%\mmap\workspaces` or a chosen folder),
+`settings.json` and backups (`%APPDATA%\mmap\backups` by default) are outside the install
+directory and are kept, because `deleteAppDataOnUninstall` is `false`. The first opening of an
+older workspace by a newer build takes a pre-migration backup before upgrading it (ADR-0007).

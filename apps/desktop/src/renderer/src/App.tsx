@@ -10,15 +10,14 @@ import { useEffect, useRef, useState } from 'react';
 import logoUrl from './assets/mmap-logo.png';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
-import { errorMessage, unwrap } from './lib/ipc';
 import { GraphView } from './graph/graph-view';
 import { HomeView } from './home/home-view';
 import { cn } from './lib/utils';
 import { MapsView } from './maps/maps-view';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
 import { LibraryView } from './nodes/library-view';
+import { NewNodeDialog } from './nodes/new-node-dialog';
 import { NodeDetailPanel } from './nodes/node-detail-panel';
-import { notifyNodesChanged } from './nodes/node-events';
 import { SearchView } from './nodes/search-view';
 import { TimelineView } from './timeline/timeline-view';
 import { SettingsView } from './views/settings-view';
@@ -50,7 +49,10 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
   /** A mind map to open from another view (e.g. the graph); the counter remounts the maps view. */
   const [mapRequest, setMapRequest] = useState<{ mapId: string; request: number } | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
+  /** The map being edited in the Mind Maps view, preselected when creating a node there. */
+  const [editedMapId, setEditedMapId] = useState<string | null>(null);
+  /** Open "New node" dialog, with the map to preselect. */
+  const [newNode, setNewNode] = useState<{ preselectedMapId: string | null } | null>(null);
   const [searchText, setSearchText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInput = useRef<HTMLInputElement>(null);
@@ -78,17 +80,13 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  /** Creating a node is always an explicit action (PRD §5.6); it opens straight away. */
-  const createNode = async () => {
-    setCreateError(null);
-    try {
-      const node = await unwrap(window.mmap.nodes.create({ title: 'Untitled node' }));
-      notifyNodesChanged();
-      setOpenNodeId(node.id);
-    } catch (error) {
-      setCreateError(errorMessage(error));
-    }
-  };
+  /**
+   * Creating a node is always an explicit action (PRD §5.6): the dialog asks for a title and,
+   * optionally, mind maps to add it to (the map being edited is preselected). The new node opens
+   * straight away.
+   */
+  const createNode = () =>
+    setNewNode({ preselectedMapId: activeView === 'maps' ? editedMapId : null });
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -154,15 +152,20 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
               }}
             />
           </div>
-          <Button onClick={() => void createNode()}>
+          <Button onClick={createNode}>
             <Plus aria-hidden="true" />
             New node
           </Button>
         </header>
-        {createError && (
-          <p role="alert" className="border-b px-6 py-2 text-sm text-destructive">
-            {createError}
-          </p>
+        {newNode !== null && (
+          <NewNodeDialog
+            preselectedMapId={newNode.preselectedMapId}
+            onClose={() => setNewNode(null)}
+            onCreated={(nodeId) => {
+              setNewNode(null);
+              setOpenNodeId(nodeId);
+            }}
+          />
         )}
         {workspace.cloudSyncProvider && (
           <div className="border-b px-6 py-2">
@@ -186,7 +189,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                   setActiveView('maps');
                 }}
                 onNavigate={setActiveView}
-                onCreateNode={() => void createNode()}
+                onCreateNode={createNode}
                 onFocusSearch={() => searchInput.current?.focus()}
               />
             )}
@@ -196,7 +199,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                 timeZone={workspace.timezone}
                 selectedNodeId={openNodeId}
                 onOpenNode={setOpenNodeId}
-                onCreateNode={() => void createNode()}
+                onCreateNode={createNode}
               />
             )}
             {activeItem?.id === 'maps' && (
@@ -205,6 +208,7 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
                 initialMapId={mapRequest?.mapId ?? null}
                 timeZone={workspace.timezone}
                 onOpenNode={setOpenNodeId}
+                onOpenMapChange={setEditedMapId}
               />
             )}
             {activeView === 'search' && (

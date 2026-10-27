@@ -1,6 +1,6 @@
 # Packaging configuration (see docs/adr/0004-installer-signing-and-updates.md).
-# Phase 0 produces an UNSIGNED NSIS installer for Windows x64. Code signing and signed update
-# feeds are Phase 5 release gates and must be configured before any public release.
+# Builds an NSIS installer for Windows x64. It is signed only when a certificate is supplied
+# (see win.signtoolOptions); unsigned builds are for internal testing and must not be released.
 appId: app.mmap.desktop
 productName: mmap
 copyright: Copyright © 2026 mmap contributors

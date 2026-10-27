@@ -18,6 +18,8 @@
   --accent-foreground: oklch(0.21 0.02 265);
   --destructive: oklch(0.5 0.2 27);
   --ring: oklch(0.55 0.18 265);
+  /* Semantic relationship lines on maps (contrast ≥ 3:1 on the background). */
+  --relationship-line: oklch(0.5 0.16 300);
   --radius: 0.5rem;
   color-scheme: light;
 }
@@ -36,6 +38,7 @@
     --accent-foreground: oklch(0.96 0.005 265);
     --destructive: oklch(0.7 0.18 27);
     --ring: oklch(0.75 0.12 265);
+    --relationship-line: oklch(0.74 0.13 300);
     color-scheme: dark;
   }
 }
@@ -259,4 +262,14 @@
 
 .react-flow__edge.mmap-connector-line .react-flow__edge-path {
   stroke-dasharray: 6 4;
+}
+
+/* Semantic relationships between nodes on a map: solid, colored, not editable on the map. */
+.react-flow__edge.mmap-relationship-line .react-flow__edge-path {
+  stroke: var(--relationship-line);
+  stroke-width: 1.75;
+}
+
+.react-flow__edge.mmap-relationship-line .react-flow__edge-text {
+  fill: var(--relationship-line);
 }

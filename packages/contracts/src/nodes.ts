@@ -76,7 +76,18 @@ export const nodeContracts = {
     response: nodeViewSchema,
   },
   create: {
-    request: z.strictObject({ title: titleInput, summary: summaryInput.optional() }),
+    request: z.strictObject({
+      title: titleInput,
+      summary: summaryInput.optional(),
+      /**
+       * Mind maps to add the new node to ("Add to Mind Maps"), each optionally under a parent
+       * placement (hierarchical maps). The node and all placements are created together.
+       */
+      addToMaps: z
+        .array(z.strictObject({ mapId: z.uuid(), parentPlacementId: z.uuid().nullable() }))
+        .max(50)
+        .optional(),
+    }),
     response: nodeViewSchema,
   },
   update: {

@@ -7,7 +7,7 @@
  * sizes are bounded here as a first line of defense; the domain validates them again.
  */
 
-import { MAP_MODES, PLACEMENT_COLORS } from '@mmap/domain';
+import { MAP_MODES, PLACEMENT_COLORS, RELATIONSHIP_DIRECTIONALITIES } from '@mmap/domain';
 import { z } from 'zod';
 
 /** Largest number of placements a single request may touch (PRD §9: up to 500 per map). */
@@ -66,6 +66,18 @@ export const mapViewSchema = z.strictObject({
   }),
   placements: z.array(placementViewSchema).readonly(),
   connections: z.array(mapConnectionViewSchema).readonly(),
+  /** Semantic relationships between nodes on the map; shown, never stored as map data. */
+  relationships: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        sourceNodeId: z.uuid(),
+        targetNodeId: z.uuid(),
+        typeLabel: z.string(),
+        directionality: z.enum(RELATIONSHIP_DIRECTIONALITIES),
+      }),
+    )
+    .readonly(),
 });
 
 const parentAssignmentSchema = z.strictObject({

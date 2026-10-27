@@ -16,6 +16,7 @@ import type {
   RelationshipId,
   WorkspaceId,
 } from '../ids';
+import type { RelationshipDirectionality } from '../knowledge/relationship-rules';
 import type { Revision } from './repositories';
 
 export const MAP_MODES = ['freeform', 'hierarchical'] as const;
@@ -95,6 +96,21 @@ export interface MapConnectionWithRelationship extends MapConnectionRecord {
   readonly relationshipTypeLabel: string | null;
 }
 
+/**
+ * A semantic relationship whose two nodes are both on a map. Maps show these (PRD §4.2: the
+ * relationship belongs to the nodes, so every map with both nodes shows it), but they are not map
+ * data: they are derived each time the map is read, never stored as connectors, and never change
+ * the hierarchy or positions.
+ */
+export interface MapRelationship {
+  readonly id: RelationshipId;
+  /** For undirected relationships, the endpoint with the lower ID. */
+  readonly sourceNodeId: NodeId;
+  readonly targetNodeId: NodeId;
+  readonly typeLabel: string;
+  readonly directionality: RelationshipDirectionality;
+}
+
 export interface MapRepository {
   listMaps(workspaceId: WorkspaceId): Promise<readonly MindMapSummary[]>;
   findMap(workspaceId: WorkspaceId, mapId: MapId): Promise<MindMapRecord | null>;
@@ -117,5 +133,7 @@ export interface MapRepository {
     mapId: MapId,
   ): Promise<readonly MapConnectionWithRelationship[]>;
   insertConnection(record: MapConnectionRecord): Promise<void>;
+  /** Semantic relationships whose source and target are both placed on the map. */
+  listRelationships(workspaceId: WorkspaceId, mapId: MapId): Promise<readonly MapRelationship[]>;
   deleteConnection(workspaceId: WorkspaceId, connectionId: MapConnectionId): Promise<void>;
 }

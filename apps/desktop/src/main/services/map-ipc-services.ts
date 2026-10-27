@@ -54,6 +54,13 @@ export function toMapViewDto(view: MapView): MapViewDto {
       relationshipId: connection.relationshipId,
       relationshipTypeLabel: connection.relationshipTypeLabel,
     })),
+    relationships: view.relationships.map((relationship) => ({
+      id: relationship.id,
+      sourceNodeId: relationship.sourceNodeId,
+      targetNodeId: relationship.targetNodeId,
+      typeLabel: relationship.typeLabel,
+      directionality: relationship.directionality,
+    })),
   };
 }
 

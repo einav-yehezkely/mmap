@@ -2,10 +2,11 @@
 
 This page explains how the code is organized, how a request travels from the UI to the storage
 engine, how the Phase 1 features (workspaces, nodes, notes, tags, attachments), the Phase 2
-features (relationships, wikilinks and backlinks, search), the Phase 3 features (mind maps) and
-the Phase 4 features (knowledge graph, learning timeline) work, and how the security baseline from
+features (relationships, wikilinks and backlinks, search), the Phase 3 features (mind maps), the
+Phase 4 features (knowledge graph, learning timeline) and the Phase 5 features (Home, export and
+import, backups and restore) work, and how the security baseline from
 [ADR-0003](adr/0003-electron-version-and-security-baseline.md) is implemented. It describes the
-code on branch `phase-4-graph-timeline`; later phases are listed separately at the end. It is a
+code on branch `phase-5-portability`; remaining work is listed at the end. It is a
 reviewer-level overview: follow the file references for details.
 
 ## Packages and dependency rules
@@ -13,21 +14,23 @@ reviewer-level overview: follow the file references for details.
 The repository is an npm-workspaces monorepo
 ([ADR-0001](adr/0001-monorepo-and-module-boundaries.md)).
 
-| Package                   | Responsibility                                                                                                                                                                                                                                                                         |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, map hierarchy and tree layout, labels, attachment file-type policy, timeline sessions and timezone conversion, graph limits, application services |
-| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                                                                                         |
-| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup, repositories, FTS5 search index, graph query and graph positions                                                                                                                      |
-| `apps/desktop`            | Electron main process (workspaces, attachment store, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                                                                                              |
+| Package                   | Responsibility                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/domain`         | IDs, clock, error model, ports, and the rules: node fields, note documents, wikilink references and link policy, relationship rules, map hierarchy and tree layout, labels, attachment file-type policy, timeline sessions and timezone conversion, graph limits, archive format, import planning, Markdown export, backup schedule and retention, application services |
+| `packages/contracts`      | IPC channel names, zod schemas per channel, result envelope, renderer API type                                                                                                                                                                                                                                                                                          |
+| `packages/storage-sqlite` | `node:sqlite` connection settings, migration runner, schema, write coordinator, verified backup and database inspection, repositories, FTS5 search index, graph query and graph positions, workspace snapshot reader and import history                                                                                                                                 |
+| `apps/desktop`            | Electron main process (workspaces, attachment store, ZIP reading and writing, export and import, backup snapshots, IPC services), preload bridge, React renderer, packaging, smoke test                                                                                                                                                                                 |
 
 Application services live in `packages/domain/src/application/` (`workspace-service.ts`,
 `knowledge-node-service.ts`, `tag-service.ts`, `attachment-service.ts`,
-`relationship-service.ts`, `map-service.ts`, `graph-service.ts`, `timeline-service.ts`). They
+`relationship-service.ts`, `map-service.ts`, `graph-service.ts`, `timeline-service.ts`,
+`import-service.ts`). They
 depend only on ports (`packages/domain/src/ports/`), so the same
 services run against SQLite today and could run against another adapter later. The SQLite
 implementations of those ports are in `packages/storage-sqlite/src/repositories/`, the search
-port (`ports/search.ts`) is implemented in `packages/storage-sqlite/src/search/`, and the graph
-port (`ports/graph.ts`) in `packages/storage-sqlite/src/graph/`. All of them are
+port (`ports/search.ts`) is implemented in `packages/storage-sqlite/src/search/`, the graph
+port (`ports/graph.ts`) in `packages/storage-sqlite/src/graph/`, and the portability port
+(`ports/portability.ts`) in `packages/storage-sqlite/src/portability/`. All of them are
 wired per open workspace in `createWorkspaceServices`
 (`apps/desktop/src/main/workspaces/open-workspace.ts`).
 
@@ -98,7 +101,10 @@ mmap follows Electron's standard three-part model, with the renderer treated as 
 Build configuration is in `apps/desktop/electron.vite.config.ts`. Every library and every
 `@mmap/*` package is bundled, so the packaged app contains no `node_modules`. The preload script is
 CommonJS because sandboxed preload scripts cannot be ES modules. All SQLite and file work runs in
-the main process; there is no worker thread yet.
+the main process; there is no worker thread yet. Most operations are short, but a large import is
+not: importing 10,000 nodes keeps the main process busy for about 8 seconds (developer machine),
+during which the window does not respond. The export's snapshot read and the integrity checks of
+backups and restores are synchronous SQLite calls as well, and block for shorter times.
 
 Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 
@@ -108,20 +114,32 @@ Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 4. Create the `WorkspaceManager` and take Electron's single-instance lock; a second launch
    focuses the existing window.
 5. After `ready`: remove the default menu in packaged builds, harden the session, serve the
-   renderer from `app://` and image previews from `mmap-attachment://`, open the last workspace
-   (`workspaces.startup()`), register IPC handlers, then create the window.
+   renderer from `app://` and image previews from `mmap-attachment://`, start the hourly backup
+   check (`BackupService.start`), open the last workspace (`workspaces.startup()`, which triggers
+   the daily backup check through `onWorkspaceOpened`), register IPC handlers, then create the
+   window.
 
-On quit, `before-quit` is delayed until `WorkspaceManager.close()` has flushed queued writes,
-checkpointed the WAL and released the workspace lock.
+On quit, `before-quit` stops the backup timer, waits for a backup that is still running (it reads
+the database that is about to close), and is then delayed until `WorkspaceManager.close()` has
+flushed queued writes, checkpointed the WAL and released the workspace lock.
 
-### Current scope (Phases 1 to 4)
+### Current scope (Phases 1 to 5)
 
 The renderer (`apps/desktop/src/renderer/src/App.tsx`) shows a workspace gate: while no workspace
 is open, `WorkspaceSetupView` explains why and offers create, open and recent workspaces. Once a
-workspace is open, the `Workbench` shows the five navigation areas from PRD §6
+workspace is open, the `Workbench` shows the five navigation areas from PRD §6, preceded by Home
 (`src/renderer/src/navigation.ts`). The `Workbench` is rendered with `key={workspace.id}`, so
 switching workspaces discards all view state of the previous one.
 
+- **Home** (`home/home-view.tsx`, pure helpers in `home/home-model.ts`): the first navigation item
+  and the view the app opens on (Phase 5; not one of the PRD's five areas). A greeting by the time
+  of day in the workspace timezone, today's date, quick actions (New node, Search, Mind maps,
+  Knowledge graph), "Continue where you left off" (the six most recently edited notes from
+  `nodes:list` sorted by update), up to five mind maps from `maps:list`, the six latest timeline
+  entries, and a footer with note and map counts, the last activity and the backup status from
+  `backups:get-status` (a button to Settings). Each part loads on its own, so one failing call
+  never empties the page; the page reloads on `notifyNodesChanged`. A workspace without nodes
+  shows three "Get started" steps instead of the lists.
 - **Library** (`nodes/library-view.tsx`): every node with three sort orders, tag filters
   (`nodes/tag-filter-bar.tsx`, shared with search), "Load more" paging and totals.
 - **Search** (`nodes/search-view.tsx`): reached from the search box in the header, not from the
@@ -144,7 +162,9 @@ switching workspaces discards all view state of the previous one.
   [Learning timeline](#learning-timeline)). The node panel's "Mark as reviewed…" button opens
   `timeline/review-dialog.tsx`.
 - **Settings** (`views/settings-view.tsx`): workspace name, location and switching, timezone
-  (`views/timezone-setting.tsx`), attachment size limit, diagnostics.
+  (`views/timezone-setting.tsx`), attachment size limit, backups (`views/backup-settings.tsx`),
+  export and import (`views/export-import-settings.tsx`), diagnostics. After a restore the window
+  reloads, so every view shows the restored data.
 
 Views that show data owned by other nodes (relationships, backlinks, search results, open maps,
 the graph, the timeline) reload when
@@ -155,7 +175,7 @@ The renderer's top level is wrapped in an error boundary (`components/error-boun
 
 ## Request flow: one IPC call end to end
 
-This is the full path of `app:get-info`, the pattern every channel follows. The other 71 channels
+This is the full path of `app:get-info`, the pattern every channel follows. The other 83 channels
 are listed in [ipc-contracts.md](ipc-contracts.md#channel-reference).
 
 1. **Renderer.** `SettingsView` (`src/renderer/src/views/settings-view.tsx`) calls
@@ -181,7 +201,7 @@ are listed in [ipc-contracts.md](ipc-contracts.md#channel-reference).
    `z.strictObject`, so a service bug cannot leak an extra field. A mismatch is logged and
    returned as `INTERNAL_ERROR`.
 8. **Envelope.** The handler resolves with `{ ok: true, data }` or `{ ok: false, error }`. A thrown
-   `DomainError` or `WorkspaceError` becomes its code and message; any other error is logged in
+   `DomainError`, `WorkspaceError` or `TransferError` becomes its code and message; any other error is logged in
    redacted form and returned as `INTERNAL_ERROR` with a generic message.
 9. **Renderer again.** `unwrap()` (`src/renderer/src/lib/ipc.ts`) returns the data or throws an
    `IpcFailure`; `SettingsView` renders a table on success or the error message in a
@@ -205,6 +225,9 @@ PRD §5.1 and [ADR-0005](adr/0005-workspace-location-and-supported-filesystems.m
   .lock                 process lock while the workspace is open
 ```
 
+Daily backups are not stored here but in a separate backup folder (see
+[Backups and restore](#backups-and-restore)).
+
 The manifest lets "open folder" tell a workspace from a random directory before touching any
 database file, and keeps the workspace's identity when the folder is copied. Its `workspaceId` must
 match the `workspaces` row in the database. A new workspace is only created in a folder that does
@@ -219,8 +242,9 @@ the display name with Windows-safe rules (`toWorkspaceFolderName` in
 ### Machine settings
 
 `app-settings.ts` keeps `settings.json` in the Electron profile folder (`userData`), never in a
-workspace: the last opened workspace path, up to 10 recent workspaces, and the
-`maxAttachmentMegabytes` preference (default 20). Writes are atomic. A damaged settings file is
+workspace: the last opened workspace path, up to 10 recent workspaces, the
+`maxAttachmentMegabytes` preference (default 20), and `backups` (`destination`, `null` for the
+default `<userData>/backups`; `daily` and `weekly` retention, default 7 and 4). Writes are atomic. A damaged settings file is
 renamed to `settings.json.damaged-<timestamp>` and defaults are used, so it never stops startup.
 
 ### Opening, startup and missing workspaces
@@ -520,7 +544,11 @@ References are derived data (PRD §14 "Editor/reference divergence"). Whenever a
   text block (paragraph, heading, list item, table cell), cut at word boundaries with ellipses.
 - The repository deletes all rows of the source node and inserts the new ones with
   `INSERT … SELECT … WHERE EXISTS`, so only references whose target exists in this workspace are
-  stored. Links to deleted or foreign nodes stay in the note JSON only.
+  stored. Links to deleted or foreign nodes stay in the note JSON only. The delete is written as
+  `WHERE source_node_id = ? AND +workspace_id = ?` so that SQLite uses the primary key: with a
+  plain `workspace_id = ?` it chose the `(workspace_id, target_node_id)` index and scanned every
+  reference of the workspace on every save (found in Phase 5 by the import benchmark; guarded by a
+  query-plan test in `note-references.test.ts`).
 - A removed link therefore disappears from the target's backlinks with the save that removed it.
   A title or summary change without a note change leaves the references alone.
 
@@ -1201,6 +1229,228 @@ Responses carry the stored content type, `X-Content-Type-Options: nosniff`,
 registered as standard and secure but not fetchable from scripts. The renderer CSP allows it only
 in `img-src` (`'self' data: blob: mmap-attachment:`).
 
+## Export and import
+
+PRD §5.11 and [ADR-0011](adr/0011-export-import.md). Code: `packages/domain/src/portability/`
+(`archive-format.ts`, `export-archive.ts`, `import-plan.ts`, `markdown-export.ts`),
+`packages/domain/src/application/import-service.ts`, `packages/domain/src/ports/portability.ts`,
+`packages/storage-sqlite/src/portability/`, `apps/desktop/src/main/portability/` and
+`apps/desktop/src/main/services/transfer-ipc-services.ts`. The UI is Settings › Export and import
+(`views/export-import-settings.tsx`).
+
+### Layers
+
+| Layer          | Code                                                                                                                                            | Responsibility                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain         | `archive-format.ts`, `export-archive.ts`, `import-plan.ts`, `markdown-export.ts`                                                                | The archive's JSON types; snapshot → archive data; validating and planning an import (new IDs, rewritten references, merged labels); note → Markdown |
+| Domain service | `ImportService` (`import-service.ts`)                                                                                                           | Reads what the planner needs from the destination; writes a plan in one transaction and records the import                                           |
+| Storage        | `SqliteWorkspaceSnapshotReader`, `SqliteImportHistoryRepository`                                                                                | One consistent read of every exportable record; import history in `transfer_jobs`                                                                    |
+| Desktop main   | `zip-reader.ts`, `zip-writer.ts`, `archive-schema.ts`, `export-workspace.ts`, `export-markdown.ts`, `import-workspace.ts`, `transfer-errors.ts` | Safe ZIP reading (`yauzl`) and atomic ZIP writing (`yazl`), schema checks, attachment files, error codes                                             |
+| IPC            | `transfer-ipc-services.ts`                                                                                                                      | Native dialogs, the pending import and its token, DTOs                                                                                               |
+
+### ZIP export
+
+1. `SqliteWorkspaceSnapshotReader.read` runs every query synchronously inside one read
+   transaction on the reader connection. In WAL mode that transaction sees one committed state,
+   and because nothing is awaited in between, no other statement uses the reader meanwhile.
+   Writers are not blocked; edits saved during the export are simply not in it. Staged
+   attachments (copies in progress) are left out.
+2. `checkAttachmentFiles` resolves each attachment's managed file and hashes it. A file that is
+   missing, or no longer matches the checksum recorded when it was attached, is left out together
+   with its metadata, and a warning says how many; the archive never vouches for bytes it cannot
+   verify.
+3. `toArchiveData` maps the records field by field (no workspace IDs, revisions, derived plain
+   text or stored paths; notes embedded as JSON objects). The manifest lists the data file and
+   every attachment file with size and SHA-256, plus counts.
+4. `ZipWriter` compresses the manifest and data and stores attachments uncompressed (they are
+   mostly compressed formats already). Every entry gets the export time as its file time. The
+   archive is written to `<destination>.<uuid>.partial`, flushed, and renamed over the chosen
+   name only when complete, so a failed export never leaves a truncated file or replaces an older
+   archive. Disk-full and permission failures become `TRANSFER_FAILED` with a readable message.
+
+The archive layout is described in [data-model.md](data-model.md#export-archive-and-backup-layouts).
+
+### Import
+
+An import has two steps, so that the user sees what will happen before anything changes.
+
+**Preview** (`prepareImport`, `transfer:preview-import`) validates the whole package:
+
+1. `ZipReader.open` reads the complete central directory before inflating anything: the archive
+   file (4 GiB), the number of entries (200,000) and the declared total uncompressed size (8 GiB)
+   are bounded, so a zip bomb is rejected unopened. `yauzl` runs with `strictFileNames`
+   (absolute paths, backslashes and `..` refused) and `validateEntrySizes`; on top of that, names
+   with control characters, colons (drive letters), empty or `.` segments, names longer than 512
+   characters, and names that repeat, also in another letter case (they would collide on
+   Windows), are refused, as are encrypted entries and symbolic links. While an entry is read,
+   its actual bytes are counted against its own limit.
+2. The layout is strict: only `manifest.json`, `data/workspace.json` and
+   `attachments/<canonical UUID>`, each listed in the manifest with the same size, nothing
+   missing and nothing extra.
+3. The manifest (at most 64 MiB) and the data file (at most 256 MiB) are parsed with strict zod
+   schemas (`archive-schema.ts`: unknown fields refused, strings and arrays bounded, numbers
+   finite). The format version is checked before the rest of the manifest, so an archive from a
+   newer mmap gets `ARCHIVE_TOO_NEW` with "Update mmap to import it" instead of a schema error.
+   The data file's checksum and the counts must match the manifest.
+4. The attachment policy (`classifyAttachment`, the same as for attaching a file) is applied to
+   each attachment's name, size and actual leading bytes. Executables and files above this
+   computer's size limit are not imported (a warning gives the count and reason), and the MIME
+   type comes from the policy, not from the archive.
+5. `planImport` (domain) checks consistency and plans the records, below.
+
+The prepared import, including the open `ZipReader`, stays in the main process under a random
+token, so what is applied is exactly what was previewed and the archive cannot be swapped in
+between. Only one import is pending; a new preview, another open workspace or 10 minutes of
+inactivity discard it (`IMPORT_EXPIRED`).
+
+**Planning** (`planImport`, pure domain code, no storage):
+
+- **New records, new IDs.** Every node, tag, relationship type, relationship, map, placement,
+  connector, timeline event and attachment gets a new ID from an explicit mapping. Archive IDs are
+  never written, so an archive cannot address or overwrite records that exist already.
+- **References rewritten.** Wikilinks and attachment blocks inside note JSON (the rewritten note
+  is validated again with `parseNoteDocument`), relationship endpoints, placement parents and
+  connector ends. Undirected relationships are re-ordered into canonical order for the new IDs.
+  Placements are ordered parents first, because the database checks the parent as each row is
+  inserted; a placement that never becomes ready means a hierarchy cycle.
+- **Labels merged.** A tag whose label (case- and spacing-insensitive) already exists is reused.
+  A relationship type is reused when its label and direction match; when only the label matches,
+  the imported type is created as "`<label> (imported)`" (or "(imported 2)", …) with a warning, so
+  the direction is preserved. Imported types are never built-in.
+- **Links outside the archive** (a wikilink to a node that was not exported) get a fresh, unused
+  target ID: they show as unresolved links with their label and can never point at an unrelated
+  node here. A skipped attachment is likewise shown as missing in the note.
+- **Validation.** Repeated IDs, references to records that are not in the archive,
+  self-relationships, duplicate relationships (including reversed undirected ones), a node placed
+  twice on one map, hierarchy cycles, connectors linked to a relationship between other nodes,
+  invalid dates, and titles, labels, descriptions and reflections that fail the normal input rules
+  all throw `VALIDATION_FAILED` before anything is written. Notes from a newer note schema get an
+  "Update mmap" message.
+- **Imported history.** Timeline events are stored with `is_imported = 1` and the origin
+  "`<workspace name> (exported YYYY-MM-DD)`", so they never count as new learning (PRD §5.9).
+  Graph positions are imported for the new node IDs.
+
+**Apply** (`applyImport`, `transfer:apply-import`):
+
+1. Each planned attachment is extracted into a new temporary folder under a name chosen by mmap
+   (never derived from the archive), its size and SHA-256 compared with the archive's, and then
+   stored with `FileAttachmentStore.importFile`, which verifies the copy again before moving it
+   into the attachments folder.
+2. `ImportService.apply` writes everything in one write transaction: types, tags, nodes, tag
+   assignments, relationships, note references rebuilt from the imported notes (after all nodes
+   exist, so links among them resolve), maps, placements, connectors, attachments, timeline
+   events, graph positions, and the `transfer_jobs` row that records the import.
+3. If anything fails, the files stored so far are removed and the error is returned; nothing of
+   the import becomes visible. A crash between the two steps leaves only unreferenced files,
+   which startup reconciliation removes.
+
+**Duplicates.** The preview reports earlier imports of the same archive (by its export ID) from
+`transfer_jobs`, and an archive exported from the open workspace gets a warning that importing it
+adds a second copy. `transfer:apply-import` refuses a known archive with `DUPLICATE` unless the
+request says `acceptDuplicate: true`.
+
+### Markdown export
+
+`exportWorkspaceMarkdown` reads the same snapshot and writes one ZIP: `README.md` (what the export
+contains, and that the ZIP export is the restore format), `nodes/<Title> (<first 8 ID
+characters>).md` per node, and `attachments/<first 8 ID characters> <name>` for each attachment
+whose file exists. `nodeToMarkdown` (domain) writes front matter with JSON-string values (valid
+YAML that a title cannot break: `id`, `title`, `summary`, `tags`, `created`, `updated`), the title
+as a heading, the summary in italics, the note as Markdown (headings, bold, italic, strike,
+underline as `<u>`, inline code and links, nested bullet, ordered and task lists, quotes, code
+fences longer than any backtick run in the code, GitHub-style tables whose spanning cells are
+padded with empty cells, `$…$` and `$$…$$` math, attachments as links or images to
+`../attachments/…`), wikilinks as `[[<file name>|<label>]]`, and a Relationships section
+(`explains → [[B]]` outgoing, `[[A]] explains → this note` incoming, `related to — [[C]]`
+undirected). Markdown characters in text are escaped. File names replace characters that are
+invalid on Windows or break wikilinks, avoid reserved device names and are bounded in length. The
+export leaves out maps and timeline history and cannot be imported; this is deliberate (PRD
+§5.11).
+
+## Backups and restore
+
+PRD §9 and [ADR-0006](adr/0006-backup-policy.md). Code:
+`apps/desktop/src/main/backups/snapshot-store.ts` (files on disk),
+`apps/desktop/src/main/backups/backup-service.ts` (schedule, settings, status, restore),
+`packages/domain/src/backups/retention.ts` (pure rules), `packages/storage-sqlite/src/backup.ts`
+(`createVerifiedBackup`, `inspectDatabaseFile`), the restore steps in `WorkspaceManager`, and
+`apps/desktop/src/main/services/backup-ipc-services.ts`. The UI is Settings › Backups
+(`views/backup-settings.tsx`). Operator steps are in the
+[backup and restore runbook](runbooks/backup-and-restore.md).
+
+### Taking a snapshot
+
+`createSnapshot` writes into `<destination>/<workspace ID>/` (layout in
+[data-model.md](data-model.md#export-archive-and-backup-layouts)):
+
+1. A new folder `snapshots/.partial-<random>`. The snapshot name is the UTC time; if a snapshot
+   of the same millisecond exists (for example the daily backup and "Back up now"), the time is
+   moved forward by 1 ms until the name is free.
+2. `createVerifiedBackup` copies the database with SQLite's online backup API through the
+   workspace's **writer** connection, so writes made during the copy are part of the image and
+   the backup never has to restart while the user keeps editing, then runs
+   `PRAGMA integrity_check` on the copy.
+3. `inspectDatabaseFile` opens the copy read-only and returns its workspace and committed
+   attachments. Taking the attachment list from the copy, not from the live database, guarantees
+   that a snapshot's files match its database.
+4. Each attachment file is copied into `files/<first two hex characters>/<sha256>` through a
+   temporary file, flushed, and checked against its recorded SHA-256; a file already stored with
+   the same content is reused. A file that is missing or changed in the workspace is counted in
+   `missingAttachments`, never stored under a wrong checksum.
+5. `backup.json` is written atomically, and the folder is renamed to its final name. Listing
+   ignores anything that is not a complete snapshot with a valid manifest.
+
+Any failure removes the partial folder and becomes `BACKUP_FAILED` with a readable reason (disk
+full, no permission, folder or drive not available).
+
+### Schedule, retention and status
+
+`BackupService` runs one backup operation at a time (a promise queue) and never blocks the user:
+
+- `onWorkspaceOpened` calls `backUpIfDue`, which takes a snapshot when the newest one is not from
+  today's calendar day in the workspace timezone (`isBackupDue`). An hourly timer repeats the
+  check, so a session left open overnight still gets its daily backup. **Back up now** always
+  takes one.
+- After every successful backup, and when retention changes, `snapshotsToKeep` keeps the newest
+  snapshot of each of the `daily` most recent days that have one and of each of the `weekly` most
+  recent ISO weeks (in the workspace timezone), and always the newest snapshot overall. The rest
+  are deleted, then attachment files no remaining snapshot uses, and `.partial-` folders older
+  than a day. Deletion failures are ignored and retried next time.
+- The status reports the destination, whether it is the default, whether it is on the same
+  volume as the workspace (compared with `stat().dev` on the nearest existing folder; unknown
+  counts as the same drive, so the warning errs on the safe side), the retention, the snapshots,
+  the last success (the newest snapshot on disk) and the last failure. The last failure is kept
+  in memory only; a failure is logged and shown, never thrown at whoever opened the workspace.
+
+The default destination is `<userData>/backups` (`%APPDATA%\mmap\backups`), on the same drive as
+the default workspaces folder. Any other folder is chosen in a native folder dialog and stored in
+`settings.json`. Unlike workspaces, network folders are not refused as backup destinations.
+
+### Restoring
+
+Both kinds of restore first build a complete workspace folder from the snapshot with
+`buildWorkspaceFromSnapshot`, which verifies everything before the folder is used: the manifest
+schema and format version, the schema version (a backup from a newer mmap is `ARCHIVE_TOO_NEW`),
+the database copy's SHA-256, its integrity and that it holds the manifest's workspace, and every
+attachment's SHA-256. Stored attachment paths must have the attachment store's generated form, so
+a tampered manifest cannot write outside the new folder. A new workspace manifest is written, and
+the folder is removed again on any failure.
+
+- **Restore the open workspace** (`WorkspaceManager.restoreCurrent`): build and verify the restored
+  folder next to the workspace (`<folder>.restoring-<id>`) while the workspace stays open; take a
+  safety backup of the current state; close the workspace, rename its folder to
+  `<folder>.before-restore-<id>`, rename the restored folder into its place and open it (migrations
+  run with the usual pre-migration backup if the snapshot is from an older version); then move the
+  old folder to the Recycle Bin. If the swap fails, the restored folder is removed, the original
+  is moved back and opened again, and `RESTORE_FAILED` is returned: the workspace is unchanged.
+- **Restore from a backup folder** (`WorkspaceManager.restoreAsNew`), for a new computer or a lost
+  drive: the user picks a snapshot folder; it is restored as "`<name> (restored)`" (or `(2)`, …)
+  under the default workspaces folder and opened. Restoring the open workspace's own backup this
+  way is refused, because two folders would claim the same workspace ID.
+
+The renderer reloads after a restore. The pre-migration backups in `<workspace>/recovery`
+(see [Write coordinator](#write-coordinator)) are separate and unchanged.
+
 ## External links
 
 Links in notes are limited to absolute `http`, `https` and `mailto` URLs in three places: the
@@ -1233,38 +1483,44 @@ This maps each part of the baseline in ADR-0003 and PRD §8 to the code that imp
 | Search input and output       | User text is reduced to quoted FTS5 words or an escaped `LIKE` pattern, so it can never act as query syntax; word count and length are bounded; cursors are accepted only in the exact form the service issued. Snippets cross the bridge as plain-text segments and are rendered as text. See [Search](#search).                                                                                                                                                                                               |
 | Attachments                   | Executables refused by extension and content; generated storage names; traversal and junction checks on every stored path; re-check before opening; previews limited to raster images of the open workspace. See [Attachments](#attachments).                                                                                                                                                                                                                                                                   |
 | External links                | Re-validated in the main process before `shell.openExternal`; only after a user gesture. See [External links](#external-links).                                                                                                                                                                                                                                                                                                                                                                                 |
+| Imported archives             | Central directory checked before inflating: size and count limits, strict names (no traversal, absolute or drive paths, control characters, case-insensitive repeats), no links or encrypted entries, actual bytes counted. Strict layout and schemas, checksums, format version first. All data validated by the domain planner with the user-input rules; new IDs for everything; attachment policy re-applied to the bytes; nothing extracted to a path from the archive. See [Import](#import).             |
+| Backups and restore           | Online backup API, never a file copy of a live database; integrity check and checksums on backup and again on restore; stored paths in a backup manifest must have the generated form; snapshots appear only when complete; restore swaps folders only after full verification and rolls back on failure. See [Backups and restore](#backups-and-restore).                                                                                                                                                      |
 | Workspace isolation           | One open workspace at a time; every repository query is scoped by `workspace_id`, including search, which joins the workspace-less FTS index back to `knowledge_nodes`; composite foreign keys reject cross-workspace relationships, references, tags and map placements; the renderer workbench and recovery copies are keyed by workspace ID.                                                                                                                                                                 |
 | Redacted logging              | `src/main/logging.ts` logs only the operation, the error class name and its code. Error messages are dropped because lower layers can embed titles or paths; stack traces appear only in unpackaged builds. IPC payloads are never logged.                                                                                                                                                                                                                                                                      |
 | Database file hardening       | `packages/storage-sqlite/src/connection.ts`: extension loading off, `trusted_schema = OFF`, double-quoted string literals off, foreign keys on and verified.                                                                                                                                                                                                                                                                                                                                                    |
 | Packaged binary               | Electron fuses in `apps/desktop/electron-builder.yml`. See the [packaging runbook](runbooks/packaging.md#electron-fuses).                                                                                                                                                                                                                                                                                                                                                                                       |
 | No network                    | The main process makes no network calls, and CSP blocks remote requests from the renderer. The smoke test runs with a dead proxy to prove the app works offline.                                                                                                                                                                                                                                                                                                                                                |
 
-Not implemented yet: the release security test suite (Phase 5) and safe handling of imported
-archives (Phase 5).
+Security tests for archives and backups exist (`archive-security.test.ts`,
+`backup-service.test.ts`; see [testing.md](testing.md)). Not done yet: code signing of the
+installer and executables (configured, no certificate) and signature-verified updates (not
+implemented); see [ADR-0004](adr/0004-installer-signing-and-updates.md).
 
 ## Where future phases plug in
 
 - **Graph actions.** Creating a relationship from the graph (PRD §5.5) can reuse the node panel's
   relationship form; the graph view only needs to reload afterwards, which `notifyNodesChanged`
   already does.
-- **Maps in export and import (Phase 5).** Placements, hierarchy, connectors and viewports must be
-  exported and re-mapped to new IDs on import. Hierarchical layouts need no export because they
-  are computed.
-- **Import (Phase 5).** Imported raw or Markdown text with `[[Title]]` links will need its own
-  resolution step that asks the user when a title is ambiguous (PRD §5.4); the editor never
-  resolves links by title.
-- **Timeline in export and import (Phase 5).** Timeline records must be exported; imported events
-  must be written with `is_imported = 1` and an `import_origin`, never as new activity (PRD §5.9).
-  The timeline view already shows an "Imported" badge for them.
-- **Heavy work off the main thread.** Database work, including search, maps and graph queries,
-  currently runs on the main process thread, and the hierarchical map layout and the Cytoscape
-  graph layout run in the renderer. Archives and large queries in later phases should move to a
-  worker; the `TransactionRunner` port
-  is asynchronous so the coordinator can move with them.
+- **Markdown or raw-text import** (outside version 1, PRD §5.11). Text with `[[Title]]` links would
+  need its own resolution step that asks the user when a title is ambiguous (PRD §5.4); the editor
+  and the ZIP import never resolve links by title.
+- **Merging imports.** Import always adds copies with new IDs. Updating records that came from an
+  earlier import would need a stored mapping from archive IDs to local IDs, which `transfer_jobs`
+  does not keep.
+- **Heavy work off the main thread.** Database work, including search, maps, graph queries,
+  export, import and backups, currently runs on the main process thread, and the hierarchical map
+  layout and the Cytoscape graph layout run in the renderer. Importing 10,000 nodes blocks the
+  main process for about 8 seconds. Imports and large queries should move to a worker; the
+  `TransactionRunner` port is asynchronous so the coordinator can move with them.
+- **Progress and cancellation.** Export, import, backup and restore are single request and
+  response calls today. Long-running operations should report progress and allow cancellation
+  (PRD §7.2); `transfer_jobs` already has `kind`, `state`, `progress` and `idempotency_key`
+  columns for this, but is used only as the import history.
+- **Updates.** electron-updater with signature verification needs an update feed host first
+  ([ADR-0004](adr/0004-installer-signing-and-updates.md)); its checks must be visible in Settings
+  and possible to turn off.
 - **New IPC channels.** Each feature adds channels through the contract catalogue
-  ([ipc-contracts.md](ipc-contracts.md)). Long-running operations will additionally need progress,
-  cancellation and idempotency keys (PRD §7.2); `transfer_jobs` in the schema already has
-  `progress` and `idempotency_key` columns for this.
+  ([ipc-contracts.md](ipc-contracts.md)).
 
 ## Future server adapter seam
 

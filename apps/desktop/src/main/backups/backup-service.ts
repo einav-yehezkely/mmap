@@ -26,6 +26,7 @@ import { isBackupDue, snapshotsToKeep } from '@mmap/domain';
 import { TransferError } from '../portability/transfer-errors';
 import type { BackupSettings, SettingsStore } from '../workspaces/app-settings';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
+import { WorkspaceError } from '../workspaces/workspace-errors';
 import type { WorkspaceManager } from '../workspaces/workspace-manager';
 import {
   buildWorkspaceFromSnapshot,
@@ -245,7 +246,7 @@ export class BackupService {
   private requireWorkspace(): OpenWorkspace {
     const workspace = this.dependencies.workspaces.current;
     if (workspace === null) {
-      throw new TransferError('BACKUP_FAILED', 'No workspace is open.');
+      throw new WorkspaceError('WORKSPACE_MISSING', 'No workspace is open.');
     }
     return workspace;
   }

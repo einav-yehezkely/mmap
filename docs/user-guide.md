@@ -4,11 +4,33 @@ mmap is a private knowledge base for Windows. You write down ideas, concepts and
 **nodes**, give each one a rich note, tag them, attach files, connect them with typed
 **relationships**, link to other nodes from inside a note, arrange nodes on **mind maps**, explore
 everything in the **knowledge graph**, look back on your activity in the **timeline**, and
-search everything you wrote. Everything stays in a folder on your computer. mmap works without an internet connection, has no
-account, and sends nothing anywhere.
+search everything you wrote. Everything stays in a folder on your computer, mmap backs it up
+every day, and you can export it to a single file to move or keep it. mmap works without an
+internet connection, has no account, and sends nothing anywhere.
 
 This guide covers what the current version can do. Features that are planned but not available
 yet are listed at the end.
+
+## Home
+
+mmap opens on **Home**, the first item in the sidebar. It shows where you left off and what you
+can do next:
+
+- A greeting with today's date and the name of the open workspace. The time of day and the date
+  follow the workspace's [timezone](#timezone).
+- **Quick actions**: **New node** (start a new note), **Search** (jump to the search box; also
+  **Ctrl+K**), **Mind maps** and **Knowledge graph**.
+- **Continue where you left off**: the six notes you edited most recently, with how long ago.
+  Click one to open it; **All notes** opens the Library.
+- **Mind maps**: your most recently changed maps. Click one to open it; **All maps** opens Mind
+  Maps.
+- **Recent activity**: the latest entries from the [timeline](#timeline); **Timeline** opens it.
+- A line at the bottom with the number of notes and maps, when you were last active, and the
+  backup status: "Backed up 2 hours ago", "No backup yet", or "The last backup failed — check
+  Settings". Click it to go to Settings.
+
+In a new, empty workspace, Home shows three steps under **Get started** instead: write your first
+note, link ideas together, and see the big picture on mind maps and the graph.
 
 ## Workspaces
 
@@ -91,7 +113,8 @@ where it is so you can delete it yourself.
 
 **Settings › Workspace › Delete workspace…** shows the folder that will be removed and asks you
 to type the workspace name. The folder is moved to the **Recycle Bin**, so you can restore it
-from there until you empty the bin. Copies of the folder you made elsewhere are not affected.
+from there until you empty the bin. Copies of the folder you made elsewhere, backups and exports
+are not affected (see [Deleting data and backups](#deleting-data-and-backups)).
 If the folder cannot be moved to the Recycle Bin, nothing is deleted and the workspace opens
 again.
 
@@ -107,8 +130,15 @@ and attached files. Several nodes can have the same title.
 
 ### Creating and finding nodes
 
-- Click **New node** at the top of the window. A node called "Untitled node" is created and opens
-  on the right. Type its real title.
+- Click **New node** at the top of the window (or on Home, or in the Library). Type a title (it
+  can be changed later; an empty title becomes "Untitled node") and click **Create node**. The new
+  node opens on the right.
+- **Add to Mind Maps** in the same window is optional: tick one or more maps to place the node on
+  them right away, or tick none to keep it only in the Library. If you open the window while a
+  map is open, that map is already ticked. In a hierarchy map, choose where it goes with **Place
+  under** (an existing item, or **Top level** for a new root). One node is created and shown on
+  every map you ticked; it is placed at a free spot near the map's other items, never on top of
+  one. Relationships it has with nodes already on those maps appear there straight away.
 - The **Library** lists every node in the workspace with its last update time and tags. Choose
   **Sort by**: Recently updated, Recently created, or Title (A–Z). Click **Load more** to see more
   nodes. Click a node to open it.
@@ -391,6 +421,20 @@ are already on the map are not offered.
 
 In a freeform map, new items appear to the right of the existing ones. In a hierarchy, **Add
 child** adds the new item under the selected one, and **Add top-level** adds it at the top level.
+
+### Relationships on maps
+
+A map shows the relationships between the nodes on it as **colored curved lines** labeled with
+the relationship type, with an arrow when the relationship has a direction (for example "Energy
+depends on Heat" points from Energy to Heat; "related to" has no arrow). This happens wherever
+the relationship was made, in the node panel, the Library or the graph, and every map that has
+both nodes shows it. Changes appear as soon as they are saved: changing the type or deleting the
+relationship updates every map.
+
+These lines belong to the nodes, not to the map. They never move items or change a hierarchy,
+and they cannot be removed from a map; change or delete the relationship on the node instead. If
+only one of the two nodes is on a map, nothing is drawn and the other node is not added. A
+relationship that a map connector already shows (a connector linked to it) is drawn only once.
 
 ### Freeform maps
 
@@ -768,8 +812,9 @@ its learning date if it has one, otherwise the recorded time. An editing session
 and at the time it started: a session that began before the **From** day is not shown, even if it
 continued into it.
 
-Entries marked **Imported** come from imported history. Importing is not available yet, so you
-will not see them today.
+Entries marked **Imported** come from a workspace you [imported](#importing-a-zip-export). They
+show what happened in the other workspace, at the times it happened there, and are kept apart
+from your own activity in this workspace.
 
 ### Timezone
 
@@ -896,18 +941,158 @@ scan for viruses. Use your usual antivirus protection.
 
 ## Backups
 
-**Backups and exports are not available yet. To back up a workspace, quit mmap and copy the
-closed workspace folder** (for example to an external drive). To use the copy, open it with
-**Open existing workspace folder…**.
+mmap backs up the open workspace **once a day**, automatically: the first time you open it on a
+day, and again a day later if you leave mmap running. A backup is a complete copy of the
+workspace (notes, nodes, tags, relationships, maps, timeline and attached files) taken while you
+keep working. Everything about backups is in **Settings**, section **Backups**.
 
-The only automatic copy mmap makes today is a safety copy of the database before a newer version
-of mmap upgrades a workspace's storage format. It is placed in the workspace's `recovery` folder.
-This is not a general backup.
+### Checking your backups
 
-The first time this version opens a workspace created by an earlier version, it makes such a
-copy and upgrades the workspace (so that notes can contain links to nodes, the knowledge graph
-can remember where nodes are, and the timeline can hold milestones and learning dates). After that, earlier versions of mmap can no longer open the
-workspace; they report that the workspace was created by a newer version and change nothing.
+At the top of the section you see **Last backup:** with its time, or **No backup yet.** If the
+last backup failed, a red message says when and why (for example that the disk is full or the
+backup folder's drive is not connected). The Home page shows the same status.
+
+**Backups of this workspace** lists every backup with its time, its size and its number of
+attached files. "(N missing at backup time)" means N attached files were missing from the
+workspace folder, or had been changed outside mmap, when that backup was taken; they are not in
+it.
+
+**Back up now** takes a backup immediately, for example before a big change.
+
+### Where backups are kept
+
+**Backup folder** shows where backups go. By default this is `%APPDATA%\mmap\backups` on your
+computer, which is on the **same drive** as your workspaces. mmap then shows a warning: if that
+drive fails, the workspace and its backups are lost together. To protect against that, click
+**Change folder…** and choose a folder on another drive, such as an external disk, then click
+**Back up now**. **Use the default folder** switches back. Backups that are already in the old
+folder stay there.
+
+Avoid network folders and folders synced by OneDrive, Dropbox or similar programs for backups.
+
+### How many backups are kept
+
+By default mmap keeps one backup for each of the last **7 days** and one for each of the last
+**4 weeks** (the newest of each), and always the newest backup. Older ones are deleted
+automatically. To change this, enter new numbers under **How many backups to keep** (**Daily**
+0–60, **Weekly** 0–104) and click **Save**.
+
+### Going back to an earlier state
+
+1. In **Backups of this workspace**, click **Restore…** next to the backup you want.
+2. Read the message and click **Restore**.
+
+The workspace is replaced by the backup. Changes made after that backup are no longer in the
+workspace, but they are not lost: mmap first makes a backup of the current state, which appears
+in the list, so you can restore it to return. The current workspace folder is moved to the
+**Recycle Bin**. The window then reloads and shows the restored workspace.
+
+Before anything is replaced, mmap checks that the backup is complete and undamaged. If it is not,
+or if something goes wrong while swapping (for example because another program has a file in
+the workspace folder open), you see a message and the workspace stays as it was.
+
+### Restoring on a new computer or after losing a drive
+
+If the workspace folder is gone but you still have the backup folder (for example on an external
+disk):
+
+1. Install and start mmap.
+2. In **Settings**, **Backups**, click **Restore from a backup folder…**.
+3. In the backup folder, open the folder named after the workspace's ID, then `snapshots`, and
+   choose one of the folders inside it. They are named by date and time (in UTC), for example
+   `2026-10-27T09-15-00-123Z`; the newest is usually the one you want.
+
+mmap checks the backup, restores it as a new workspace called **`<name> (restored)`** in the
+default mmap folder, and opens it. This does not work for a backup of the workspace that is open
+right now; use **Restore…** in the list for that.
+
+Step-by-step instructions for these cases, and what mmap checks, are in the
+[backup and restore runbook](runbooks/backup-and-restore.md).
+
+### Safety copies before upgrades
+
+Separately from daily backups, when a newer version of mmap upgrades a workspace's storage format,
+it first saves a copy of the database in the workspace's `recovery` folder. After an upgrade,
+earlier versions of mmap can no longer open the workspace; they report that the workspace was
+created by a newer version and change nothing.
+
+### Deleting data and backups
+
+Deleting a node, or deleting a workspace, does not delete its backups, exports you saved, or
+copies made by Windows (File History, System Restore) or by you. Deleted content remains in
+backups until they are deleted by the rules above. Uninstalling mmap also leaves the backup folder
+in place. To remove a workspace's backups, delete its folder (named after the workspace ID)
+inside the backup folder yourself.
+
+## Export and import
+
+**Settings**, section **Export and import**, has three buttons. Each asks you where to save or
+which file to open.
+
+### Exporting a workspace (ZIP)
+
+**Export workspace (ZIP)…** saves the complete workspace in one file, for example
+`My Knowledge 2026-10-27.mmap.zip`: all nodes and notes, tags, relationships and their types,
+mind maps with their layout, the timeline, where nodes sit in the knowledge graph, and every
+attached file. Use it to move a workspace to another computer, to keep a copy somewhere else, or
+to combine workspaces. It contains only your workspace data, not your settings.
+
+You can keep working while it is written. When it is done, mmap says how many nodes, maps and
+attachments it exported. If an attached file is missing from the workspace folder or was changed
+outside mmap, it is left out and a warning says so.
+
+### Exporting as Markdown
+
+**Export as Markdown…** saves a ZIP file of plain-text Markdown files that other programs can
+read, for example `My Knowledge 2026-10-27 Markdown.zip`:
+
+- one file per node in `nodes`, named after its title, starting with the node's ID, title,
+  summary, tags and dates;
+- the note with its formatting, lists, checklists, quotes, code, tables and math (as LaTeX
+  between `$…$` and `$$…$$`);
+- links to other nodes written as `[[file name|link text]]`, and the node's relationships in a
+  list at the end;
+- attached files in `attachments`, linked from the notes.
+
+Mind maps, the timeline and some formatting (for example merged table cells) are not part of the
+Markdown export, and **mmap cannot import Markdown**. To move or restore a workspace, use the ZIP
+export.
+
+### Importing a ZIP export
+
+**Import from an export…** adds the contents of a ZIP export to the **open** workspace.
+
+1. Choose the `.mmap.zip` file. mmap checks the whole file first and changes nothing yet.
+2. A preview shows the workspace it came from, when it was exported, and what will be added:
+   nodes, relationships, mind maps and map items, timeline entries, attachments, and how many
+   tags and relationship types are new or already exist here. Warnings, if any, are listed below.
+3. Click **Import**, or close the dialog to cancel.
+
+What to expect:
+
+- **Everything is added as new items.** Nothing already in the workspace is changed or replaced.
+  Importing an export of this same workspace adds a second copy of everything; the preview warns
+  you.
+- **Tags and relationship types with the same name are shared.** A tag that already exists here
+  is reused. A relationship type is reused if it has the same name and direction; if the
+  direction differs, the imported one is named "… (imported)" and the preview says so.
+- **Timeline entries** from the export are marked **Imported** in the timeline.
+- **Links to nodes that were not in the export** stay in the notes as unresolved links, which you
+  can [repair](#unresolved-links-and-repair).
+- **Attached files are checked again.** Programs and scripts, and files larger than this
+  computer's [size limit](#size-limit), are not imported; the preview says how many and why, and
+  the notes show them as missing.
+- **Importing the same file twice.** If you imported this file into this workspace before, the
+  preview says when, and you must tick **Import it again anyway** before **Import** works. A new
+  export of the same workspace counts as a different file.
+- **All or nothing.** If the file is damaged, was changed, is not an mmap export, or something
+  fails while importing, you see a message and nothing is added. A file exported by a newer
+  version of mmap cannot be imported until you update mmap.
+
+A preview stays available for 10 minutes. If you wait longer, or switch workspaces in between,
+choose the file again.
+
+A large import (thousands of nodes) can take several seconds, during which mmap does not respond.
 
 ## Not available yet
 
@@ -915,9 +1100,7 @@ These features are planned for later versions:
 
 - **Editing a relationship's explanation** after it was added, and **creating relationships from
   the graph**.
-- In the graph: **map regions** (an outline around each map's nodes) and **collapsing a map**
-  into one summary node, which are being built now; **dragging from one node to another to
-  connect them**; **keyboard use of the drawing itself** (use the List tab); undoing
+- In the graph: **dragging from one node to another to connect them**; **keyboard use of the drawing itself** (use the List tab); undoing
   **Rearrange**; and clearing expanded neighbors without leaving the graph. Labels of two lines
   between the same nodes can overlap; the node panel and the List name each one.
 - **Filtering search results by relationship type** (the graph has this filter).
@@ -927,6 +1110,9 @@ These features are planned for later versions:
 - On mind maps: **labels on connectors**, **linking a connector to a relationship**, **dragging
   an item onto another to change its parent**, a **search or sort** for the list of maps, and
   more colors.
-- **Export, import and backups** inside the app. Until then, quit mmap and copy the workspace
-  folder to back it up.
 - **More than one window.**
+- **Automatic updates.** To update mmap, run the installer of the newer version; your workspaces,
+  settings and backups are kept.
+- **Merging an import** into existing nodes: importing always adds copies.
+- **Importing Markdown** files.
+- **A progress bar and a cancel button** for long exports, imports and backups.

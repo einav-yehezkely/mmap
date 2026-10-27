@@ -163,8 +163,26 @@ export function MapCanvas({
   );
   const derivedEdges = useMemo<Edge[]>(
     () =>
-      model.lines.map((line) =>
-        line.kind === 'hierarchy'
+      model.lines.map((line): Edge => {
+        if (line.kind === 'relationship') {
+          // Semantic relationships: shown, never edited or removed here (edit them on the node).
+          // A curved line keeps them apart from straight-cornered hierarchy lines.
+          return {
+            id: line.id,
+            source: line.source,
+            target: line.target,
+            type: 'default',
+            label: line.label ?? undefined,
+            ariaLabel: `Relationship: ${line.label ?? ''}${line.directed === true ? '' : ' (no direction)'}`,
+            selectable: false,
+            deletable: false,
+            className: 'mmap-relationship-line',
+            ...(line.directed === true
+              ? { markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--relationship-line)' } }
+              : {}),
+          };
+        }
+        return line.kind === 'hierarchy'
           ? {
               id: line.id,
               source: line.source,
@@ -182,8 +200,8 @@ export function MapCanvas({
               ariaLabel: line.label === null ? 'Connector' : `Connector: ${line.label}`,
               markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
               className: 'mmap-connector-line',
-            },
-      ),
+            };
+      }),
     [model],
   );
 

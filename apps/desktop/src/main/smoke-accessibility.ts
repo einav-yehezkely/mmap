@@ -4,8 +4,8 @@
  *
  * axe-core is not part of the app. The smoke runner passes the path of its script (from the
  * development dependencies) with `--smoke-axe=<path>`; this check injects it into the renderer
- * and runs the WCAG 2.0/2.1/2.2 A and AA rules on each view: Home, Library with the node editor
- * open, Mind Maps, the Knowledge Graph and its list, the Timeline and its list, and Settings.
+ * and runs the WCAG 2.0/2.1/2.2 A and AA rules on each view: Home, the New node dialog, Library
+ * with the node editor open, Mind Maps, the Knowledge Graph and its list, the Timeline and its list, and Settings.
  * Rendering in the real app means color contrast is computed from the actual theme.
  *
  * Automated rules find roughly a third of accessibility problems; the manual keyboard and
@@ -29,12 +29,13 @@ const clickNav = (label: string) =>
 const clickButton = (label: string) =>
   `[...document.querySelectorAll('main button, header button, aside button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click();`;
 
+const clickDialogButton = (label: string) =>
+  `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click();`;
+
 const VIEWS: readonly ViewStep[] = [
   { name: 'Home', open: clickNav('Home') },
-  {
-    name: 'Library with the node editor',
-    open: `${clickNav('Library')} ${clickButton('New node')}`,
-  },
+  { name: 'New node dialog', open: `${clickNav('Library')} ${clickButton('New node')}` },
+  { name: 'Library with the node editor', open: clickDialogButton('Create node') },
   { name: 'Mind Maps', open: `${clickButton('Close node')} ${clickNav('Mind Maps')}` },
   { name: 'Knowledge Graph', open: clickNav('Knowledge Graph') },
   { name: 'Knowledge Graph list', open: clickButton('List') },
