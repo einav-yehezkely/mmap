@@ -409,8 +409,12 @@ with a short legend below it.
   the corner of the canvas. The third button there (fit view) shows the whole map.
 - mmap remembers where you panned and zoomed for each map. A map you open for the first time is
   fitted into view.
-- **Open a node** by double-clicking it on the canvas, or by selecting it in the outline and
-  pressing Enter or **Open**. It opens in the node panel, the same one as in the Library.
+- **Preview a node** by double-clicking it on the canvas, or by selecting it in the outline and
+  pressing Enter or **Open**. Its note opens read-only beside the map, with its formatting,
+  formulas and attachments. Click a node link in the preview to preview that node. To change the
+  note, select the **pencil** in the preview's top corner: the node panel opens, the same one as
+  in the Library. Escape or **×** closes the preview.
+- When a panel beside the map leaves little room, the outline moves below the map.
 
 ### Adding nodes to a map
 

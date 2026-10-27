@@ -315,7 +315,10 @@ function LoadedMapEditor({
     );
 
   return (
-    <div className="flex h-full min-h-[520px] flex-col gap-3" onKeyDown={onEditorKeyDown}>
+    <div
+      className="@container flex h-full min-h-[520px] flex-col gap-3"
+      onKeyDown={onEditorKeyDown}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
@@ -394,8 +397,9 @@ function LoadedMapEditor({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-3">
-        <div className="relative min-w-0 flex-1 rounded-md border">
+      {/* When a panel beside the map leaves it narrow, the outline moves below the canvas. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 @3xl:flex-row">
+        <div className="relative min-h-80 min-w-0 flex-1 rounded-md border">
           {noticeVisible && undoStack.length > 0 && (
             <div
               role="status"
@@ -430,7 +434,7 @@ function LoadedMapEditor({
             onViewportChange={document.saveViewport}
           />
         </div>
-        <aside className="flex w-72 shrink-0 flex-col gap-3">
+        <aside className="flex w-full shrink-0 flex-col gap-3 @3xl:w-72">
           <MapOutline
             view={view}
             selectedPlacementId={selectedId}
@@ -517,7 +521,7 @@ function MapLegend({ isHierarchy }: { isHierarchy: boolean }) {
             <li>
               Click a connector, then × or Delete to remove it; drag its round end to move it.
             </li>
-            <li>Ctrl+Z undoes connector changes. Double-click an item to open it.</li>
+            <li>Ctrl+Z undoes connector changes. Double-click an item to preview its note.</li>
           </>
         )}
       </ul>
