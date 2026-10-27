@@ -242,60 +242,10 @@ export async function runSmokeTest(
   );
   checks.push(
     await check(
-      'double-clicking a map item previews its note; the pencil opens the editor',
+      'double-clicking a map item previews its note (freeform and hierarchy); the pencil opens the editor',
       async () => {
-        const outcome = (await window.webContents.executeJavaScript(`
-        (async () => {
-          const { nodes, maps } = window.mmap;
-          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-          const until = async (predicate, timeoutMs) => {
-            const start = performance.now();
-            while (performance.now() - start < timeoutMs) {
-              if (predicate()) return true;
-              await wait(20);
-            }
-            return false;
-          };
-          const buttonWithText = (text) =>
-            [...document.querySelectorAll('button')].find((button) => button.textContent.includes(text));
-          const press = (element, what) => {
-            if (!element) throw new Error(what + ' not found');
-            element.click();
-          };
-          const node = (await nodes.create({ title: 'Smoke preview item' })).data;
-          await nodes.update({ nodeId: node.id, expectedRevision: node.revision, changes: { note: { type: 'doc',
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Preview body text' }] }] } } });
-          let view = (await maps.create({ title: 'Smoke preview map' })).data;
-          view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
-            nodeId: node.id, x: 0, y: 0 })).data;
-          // Leave Mind Maps first, so its list loads again with the new map.
-          press(buttonWithText('Home'), 'Home');
-          await wait(300);
-          press(buttonWithText('Mind Maps'), 'Mind Maps');
-          // Clicked from inside the wait: Home also lists recent maps, and the list re-renders as it loads.
-          const opened = await until(() => {
-            const button = document.querySelector('main')?.textContent.includes('New map') ? buttonWithText('Smoke preview map') : undefined;
-            button?.click();
-            return Boolean(button);
-          }, 3000);
-          if (!opened) return 'map list did not show the map';
-          if (!(await until(() => document.querySelector('.react-flow__node'), 3000))) return 'map item not shown';
-          document.querySelector('.react-flow__node').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-          const previewNote = () => document.querySelector('aside .note-content');
-          if (!(await until(() => previewNote()?.textContent.includes('Preview body text'), 3000))) return 'preview did not show the note';
-          if (previewNote().getAttribute('contenteditable') !== 'false') return 'preview note is editable';
-          if (document.querySelector('[aria-label="Formatting"]')) return 'preview shows the editing toolbar';
-          press(document.querySelector('button[aria-label="Edit note"]'), 'pencil');
-          if (!(await until(() => document.querySelector('aside [aria-label="Formatting"]'), 3000))) return 'pencil did not open the editor';
-          const editable = () => document.querySelector('aside .note-content')?.getAttribute('contenteditable') === 'true';
-          if (!(await until(editable, 3000))) return 'editor note is not editable';
-          press(document.querySelector('button[aria-label="Close node"]'), 'Close node');
-          press(buttonWithText('All maps'), 'All maps');
-          await maps.delete({ mapId: view.map.id });
-          return 'ok';
-        })()`)) as string;
-        if (outcome !== 'ok') {
-          throw new Error(outcome);
+        for (const mode of ['freeform', 'hierarchical'] as const) {
+          await previewByDoubleClick(window, mode);
         }
       },
     ),
@@ -377,6 +327,96 @@ export async function runSmokeTest(
   }
 
   return { passed: checks.every((item) => item.passed), checks };
+}
+
+/**
+ * Opens a map in the given mode, double-clicks an item with real mouse input (synthetic events
+ * would skip React Flow's own double-click zoom, which is what hid the event in hierarchy maps),
+ * and checks the read-only preview and the pencil's switch to the editor.
+ */
+async function previewByDoubleClick(
+  window: BrowserWindow,
+  mode: 'freeform' | 'hierarchical',
+): Promise<void> {
+  const run = (code: string) => window.webContents.executeJavaScript(code) as Promise<string>;
+  const helpers = `
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const until = async (predicate, timeoutMs) => {
+      const start = performance.now();
+      while (performance.now() - start < timeoutMs) {
+        if (predicate()) return true;
+        await wait(20);
+      }
+      return false;
+    };
+    const buttonWithText = (text) =>
+      [...document.querySelectorAll('button')].find((button) => button.textContent.includes(text));
+    const press = (element, what) => {
+      if (!element) throw new Error(what + ' not found');
+      element.click();
+    };`;
+  const title = 'Smoke preview ' + mode;
+  const opened = await run(`(async () => {
+    ${helpers}
+    const { nodes, maps } = window.mmap;
+    const node = (await nodes.create({ title: ${JSON.stringify(title)} })).data;
+    await nodes.update({ nodeId: node.id, expectedRevision: node.revision, changes: { note: { type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Preview body text' }] }] } } });
+    const view = (await maps.create({ title: ${JSON.stringify(title)}, mode: ${JSON.stringify(mode)} })).data;
+    await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision, nodeId: node.id, x: 0, y: 0 });
+    window.__smokePreviewMap = view.map.id;
+    // Leave Mind Maps first, so its list loads again with the new map.
+    press(buttonWithText('Home'), 'Home');
+    await wait(300);
+    press(buttonWithText('Mind Maps'), 'Mind Maps');
+    // Clicked from inside the wait: Home also lists recent maps, and the list re-renders as it loads.
+    const shown = await until(() => {
+      const button = document.querySelector('main')?.textContent.includes('New map') ? buttonWithText(${JSON.stringify(title)}) : undefined;
+      button?.click();
+      return Boolean(button);
+    }, 3000);
+    if (!shown) return 'map list did not show the map';
+    if (!(await until(() => document.querySelector('.react-flow__node'), 3000))) return 'map item not shown';
+    // The map fits itself into view after opening; click only once the item has stopped moving.
+    let point = null;
+    let stillFor = 0;
+    const settled = await until(() => {
+      const box = document.querySelector('.react-flow__node').getBoundingClientRect();
+      const next = { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+      stillFor = point !== null && point.x === next.x && point.y === next.y ? stillFor + 1 : 0;
+      point = next;
+      return stillFor >= 15 && document.elementFromPoint(next.x, next.y)?.closest('.react-flow__node') !== null;
+    }, 5000);
+    if (!settled) return 'map item did not settle under the pointer';
+    return JSON.stringify(point);
+  })()`);
+  if (!opened.startsWith('{')) throw new Error(`${mode}: ${opened}`);
+  const { x, y } = JSON.parse(opened) as { x: number; y: number };
+  const mouse = (type: 'mouseDown' | 'mouseUp' | 'mouseMove', clickCount: number) =>
+    window.webContents.sendInputEvent({ type, x, y, button: 'left', clickCount });
+  mouse('mouseMove', 0);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  mouse('mouseDown', 1);
+  mouse('mouseUp', 1);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  mouse('mouseDown', 2);
+  mouse('mouseUp', 2);
+  const outcome = await run(`(async () => {
+    ${helpers}
+    const previewNote = () => document.querySelector('aside .note-content');
+    if (!(await until(() => previewNote()?.textContent.includes('Preview body text'), 3000))) return 'double-click did not open the preview';
+    if (previewNote().getAttribute('contenteditable') !== 'false') return 'preview note is editable';
+    if (document.querySelector('[aria-label="Formatting"]')) return 'preview shows the editing toolbar';
+    press(document.querySelector('button[aria-label="Edit note"]'), 'pencil');
+    if (!(await until(() => document.querySelector('aside [aria-label="Formatting"]'), 3000))) return 'pencil did not open the editor';
+    const editable = () => document.querySelector('aside .note-content')?.getAttribute('contenteditable') === 'true';
+    if (!(await until(editable, 3000))) return 'editor note is not editable';
+    press(document.querySelector('button[aria-label="Close node"]'), 'Close node');
+    press(buttonWithText('All maps'), 'All maps');
+    await window.mmap.maps.delete({ mapId: window.__smokePreviewMap });
+    return 'ok';
+  })()`);
+  if (outcome !== 'ok') throw new Error(`${mode}: ${outcome}`);
 }
 
 export function writeSmokeReport(report: SmokeTestReport, reportPath: string | undefined): void {

@@ -43,7 +43,16 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
 
 import { cn } from '../lib/utils';
 import { buildCanvasModel } from './map-model';
@@ -417,8 +426,21 @@ export function MapCanvas({
     onRemove(placementIds, connectionIds);
   };
 
+  // Double-clicking an item opens it. Caught on the way down: in hierarchy mode items cannot be
+  // dragged, so React Flow lets its double-click zoom take the event first, and onNodeDoubleClick
+  // never fired. Stopping it here also keeps the map from zooming in under the open item.
+  const onDoubleClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('button, .react-flow__handle') !== null) return;
+    const id = target.closest('.react-flow__node')?.getAttribute('data-id');
+    const node = id ? nodes.find((candidate) => candidate.id === id) : undefined;
+    if (node === undefined) return;
+    event.stopPropagation();
+    onOpenNode(node.data.placement.nodeId);
+  };
+
   return (
-    <div className="h-full" onKeyDown={onKeyDown}>
+    <div className="h-full" onKeyDown={onKeyDown} onDoubleClickCapture={onDoubleClickCapture}>
       <ReactFlow<PlacementFlowNode, Edge>
         nodes={nodes}
         edges={edges}
@@ -467,7 +489,6 @@ export function MapCanvas({
           }
           reconnected.current = true;
         }}
-        onNodeDoubleClick={(_event, node) => onOpenNode(node.data.placement.nodeId)}
         deleteKeyCode={null}
         nodesDraggable={isFreeform}
         nodesConnectable={isFreeform}
