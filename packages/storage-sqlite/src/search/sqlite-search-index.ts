@@ -20,6 +20,7 @@
 import {
   clampPageSize,
   DomainError,
+  type MapId,
   type NodeId,
   type RelationshipTypeId,
   type SearchHit,
@@ -86,8 +87,11 @@ export class SqliteSearchIndex implements SearchIndex {
     text: string,
     limit: number,
     excludeNodeIds: readonly NodeId[] = [],
+    excludeOnMapId?: MapId,
   ): Promise<readonly TitleMatch[]> {
-    return runAsync(() => this.lookupTitlesNow(workspaceId, text, limit, excludeNodeIds));
+    return runAsync(() =>
+      this.lookupTitlesNow(workspaceId, text, limit, excludeNodeIds, excludeOnMapId),
+    );
   }
 
   private searchNow(query: SearchQuery): SearchResultPage {
@@ -150,13 +154,22 @@ export class SqliteSearchIndex implements SearchIndex {
     text: string,
     limit: number,
     excludeNodeIds: readonly NodeId[],
+    excludeOnMapId: MapId | undefined,
   ): readonly TitleMatch[] {
     const needle = Array.from(text.trim()).slice(0, MAX_LOOKUP_TEXT_LENGTH).join('');
     if (needle.length === 0) {
       return [];
     }
     const escaped = escapeLikePattern(needle);
-    const excluded = excludeFilter(excludeNodeIds);
+    const excluded = combine(
+      excludeFilter(excludeNodeIds),
+      excludeOnMapId === undefined
+        ? { sql: '', parameters: [] }
+        : {
+            sql: 'AND id NOT IN (SELECT node_id FROM map_placements WHERE workspace_id = ? AND map_id = ?)',
+            parameters: [workspaceId, excludeOnMapId],
+          },
+    );
 
     // Group 0 = title starts with the text, group 1 = text occurs elsewhere in the title.
     return this.connections

@@ -120,6 +120,8 @@ export const nodeContracts = {
       text: z.string().max(200),
       limit: z.number().int().min(1).max(50).optional(),
       excludeNodeIds: z.array(nodeIdSchema).max(50).optional(),
+      /** Leaves out the nodes already on this map, however many (the map's "Add" dialog). */
+      excludeOnMapId: z.uuid().optional(),
     }),
     response: z.strictObject({
       items: z.array(z.strictObject({ id: nodeIdSchema, title: z.string() })).readonly(),

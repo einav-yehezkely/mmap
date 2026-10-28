@@ -29,13 +29,14 @@ export function createNodeIpcServices(manager: WorkspaceManager): Pick<IpcServic
     'nodes:list': ({ sort, limit, cursor, tagIds = [] }) =>
       services().nodes.list({ sort, page: { limit, cursor }, tagIds: tagIds as TagId[] }),
     'nodes:get': ({ nodeId }) => services().nodes.get(nodeId as NodeId),
-    'nodes:lookup': async ({ text, limit = 8, excludeNodeIds = [] }) => ({
+    'nodes:lookup': async ({ text, limit = 8, excludeNodeIds = [], excludeOnMapId }) => ({
       items: (
         await services().search.lookupTitles(
           requireWorkspace().id,
           text,
           limit,
           excludeNodeIds as NodeId[],
+          excludeOnMapId as MapId | undefined,
         )
       ).map((match) => ({ id: match.nodeId, title: match.title })),
     }),

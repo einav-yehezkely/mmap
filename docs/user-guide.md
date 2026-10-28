@@ -456,6 +456,11 @@ are already on the map are not offered.
 In a freeform map, new items appear to the right of the existing ones. In a hierarchy, **Add
 child** adds the new item under the selected one, and **Add top-level** adds it at the top level.
 
+To put an item that is **already on the map** under another one, select the new parent, click **Add
+child**, and type the item's title: it is listed as "already on this map; moves here". Choosing it
+moves the item, with everything under it, below the selected one. (A node appears only once on a
+map, so it is moved rather than added twice.)
+
 ### Relationships on maps
 
 A map shows the relationships between the nodes on it as **colored curved lines** labeled with

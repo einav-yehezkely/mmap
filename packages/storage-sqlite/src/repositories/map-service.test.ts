@@ -22,6 +22,7 @@ import {
 } from '@mmap/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { SqliteSearchIndex } from '../search/sqlite-search-index';
 import type { SqliteConnections } from '../sqlite-connections';
 import { openWorkspaceDatabase } from '../workspace-database';
 import { SqliteKnowledgeNodeRepository } from './sqlite-knowledge-node-repository';
@@ -578,6 +579,24 @@ describe('connectors', () => {
     await expect(
       maps.setConnectionLabel(view.map.id, view.map.revision, connectionId, 'gone'),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('finding nodes to add to a map', () => {
+  it('leaves out the nodes already on that map, however many (regression: the list was capped)', async () => {
+    const { maps, nodes } = services(WORKSPACE_A);
+    const titles = Array.from({ length: 60 }, (_, index) => `Planet ${index}`);
+    const view = await placeNew(maps, await maps.createMap('Solar system'), titles);
+    const other = await maps.createMap('Other map');
+    const unplaced = await nodes.create({ title: 'Planet Nine' });
+    const search = new SqliteSearchIndex(connections);
+
+    const onThisMap = await search.lookupTitles(WORKSPACE_A, 'planet', 50, [], view.map.id);
+    expect(onThisMap.map((match) => match.nodeId)).toEqual([unplaced.id]);
+    // Another map, or none, leaves everything in.
+    expect(await search.lookupTitles(WORKSPACE_A, 'planet', 50, [], other.map.id)).toHaveLength(50);
+    // A map of another workspace changes nothing.
+    expect(await search.lookupTitles(WORKSPACE_B, 'planet', 50, [], view.map.id)).toEqual([]);
   });
 });
 
