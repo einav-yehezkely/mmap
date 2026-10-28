@@ -1066,7 +1066,18 @@ computes two things the canvas draws:
   expands its map; **Expand all** in the status line expands every map. Summaries are not knowledge
   nodes: their positions are derived and never saved.
 
-Not implemented: creating relationships from the graph.
+#### Adding a relationship from the graph
+
+PRD §5.5 ("from a node detail panel or graph action"). The side panel's **Add relationship** opens
+`AddRelationshipForm` from `relationships/node-relationships.tsx`, the same form as in the node
+panel, with the selected node as one end. While it is open (`relatingFor` in `graph-view.tsx`
+matches the selection), choosing a node on the canvas or with **Find** fills the other end
+(`pickedOther`) instead of changing the selection; Find still centers the node, and a click on
+the empty canvas changes nothing. The form's node picker does the same from the keyboard. The form
+adopts a picked node by adjusting its state during render (not in an effect), so the type,
+direction and explanation typed so far are kept. After the relationship is created,
+`notifyNodesChanged` reloads the graph, the side panel and every other open view. Dragging from
+one node to another is not offered.
 
 ### List: the accessible alternative
 

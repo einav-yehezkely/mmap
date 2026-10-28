@@ -108,6 +108,101 @@ export async function checkGraphRendering(
  * Marks a node as reviewed and adds a milestone through the bridge, checks the window query, and
  * finds both markers on the visual timeline.
  */
+/**
+ * PRD §5.5 "graph action": in the Knowledge Graph, select a node, open "Add relationship", choose
+ * the other node with Find, clear it, choose it again by clicking it on the canvas (real mouse
+ * input at the position Cytoscape reports for it), and save. The relationship must exist
+ * afterwards, and the selection must not have moved to the other node.
+ */
+export async function checkGraphRelationship(window: BrowserWindow): Promise<void> {
+  const run = (code: string) => window.webContents.executeJavaScript(code) as Promise<string>;
+  const helpers = `
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const until = async (predicate, timeoutMs) => {
+      const start = performance.now();
+      while (performance.now() - start < timeoutMs) {
+        if (predicate()) return true;
+        await wait(20);
+      }
+      return false;
+    };
+    const buttonWithText = (text) =>
+      [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === text);
+    const press = (element, what) => {
+      if (!element) throw new Error(what + ' not found');
+      element.click();
+    };
+    const find = async (title) => {
+      const box = document.querySelector('input[placeholder="Find in graph"]');
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setValue.call(box, title);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      if (!(await until(() => buttonWithText(title), 3000))) throw new Error('Find did not list ' + title);
+      press(buttonWithText(title), 'Find result ' + title);
+    };`;
+  const prepared = await run(`(async () => {
+    ${helpers}
+    const { nodes } = window.mmap;
+    const source = (await nodes.create({ title: 'Smoke graph source' })).data;
+    const target = (await nodes.create({ title: 'Smoke graph target' })).data;
+    window.__smokeRelation = { source: source.id, target: target.id };
+    press(buttonWithText('Home'), 'Home');
+    await wait(300);
+    press(buttonWithText('Knowledge Graph'), 'Knowledge Graph');
+    if (!(await until(() => document.querySelector('input[placeholder="Find in graph"]'), 5000))) return 'graph view not shown';
+    await wait(1000);
+    await find('Smoke graph source');
+    if (!(await until(() => document.querySelector('aside[aria-label="Selected node"]')?.textContent.includes('Smoke graph source'), 3000))) return 'source not selected';
+    press(buttonWithText('Add relationship'), 'Add relationship');
+    if (!(await until(() => document.querySelector('section[aria-label="Add a relationship"] form'), 3000))) return 'form not shown';
+    await find('Smoke graph target');
+    const chip = () => document.querySelector('button[aria-label="Choose a different node instead of Smoke graph target"]');
+    if (!(await until(chip, 3000))) return 'Find did not choose the other node';
+    if (!document.querySelector('aside[aria-label="Selected node"]')?.textContent.includes('Smoke graph source')) return 'Find changed the selection while relating';
+    press(chip(), 'clear chosen node');
+    if (!(await until(() => !chip(), 3000))) return 'chosen node not cleared';
+    await wait(800);
+    // Cytoscape draws on a canvas; it registers itself on its container (\`_cyreg\`), which gives
+    // the target's position on screen.
+    const container = document.querySelector('div[role="img"][aria-label^="Knowledge graph."]');
+    const cy = container?._cyreg?.cy;
+    if (!cy) return 'canvas not found';
+    const position = cy.getElementById(window.__smokeRelation.target).renderedPosition();
+    const box = container.getBoundingClientRect();
+    return JSON.stringify({ x: Math.round(box.x + position.x), y: Math.round(box.y + position.y) });
+  })()`);
+  if (!prepared.startsWith('{')) throw new Error(prepared);
+  const target = JSON.parse(prepared) as { x: number; y: number };
+  window.webContents.sendInputEvent({ type: 'mouseMove', ...target });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  window.webContents.sendInputEvent({
+    type: 'mouseDown',
+    ...target,
+    button: 'left',
+    clickCount: 1,
+  });
+  window.webContents.sendInputEvent({ type: 'mouseUp', ...target, button: 'left', clickCount: 1 });
+  const outcome = await run(`(async () => {
+    ${helpers}
+    const chip = () => document.querySelector('button[aria-label="Choose a different node instead of Smoke graph target"]');
+    if (!(await until(chip, 3000))) return 'clicking the node on the graph did not choose it';
+    if (!document.querySelector('aside[aria-label="Selected node"] h2')?.textContent.includes('Smoke graph source')) return 'the click changed the selection while relating';
+    const form = document.querySelector('section[aria-label="Add a relationship"] form');
+    press([...form.querySelectorAll('button[type="submit"]')][0], 'save');
+    if (!(await until(() => !document.querySelector('section[aria-label="Add a relationship"]'), 3000))) return 'form did not close after saving';
+    const { source, target } = window.__smokeRelation;
+    const related = (await window.mmap.relationships.listForNode({ nodeId: source })).data.items;
+    if (!related.some((item) => new Set([item.source.id, item.target.id]).has(target))) return 'relationship not saved';
+    for (const nodeId of [source, target]) {
+      const node = (await window.mmap.nodes.get({ nodeId })).data;
+      await window.mmap.nodes.delete({ nodeId, expectedRevision: node.revision });
+    }
+    press(buttonWithText('Home'), 'Home');
+    return 'ok';
+  })()`);
+  if (outcome !== 'ok') throw new Error(outcome);
+}
+
 export async function checkTimeline(window: BrowserWindow): Promise<void> {
   const outcome = (await window.webContents.executeJavaScript(`
     (async () => {

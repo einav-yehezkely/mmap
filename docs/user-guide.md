@@ -592,6 +592,14 @@ Above the graph:
 
 The line under the graph repeats what the lines mean.
 
+### Adding a relationship from the graph
+
+Select a node, then press **Add relationship** in the panel on the right. Choose the type, then the
+other node: click it on the graph, find it with **Find in graph**, or type its title in the form.
+Clicking nodes on the graph does not change the selection while the form is open. Add an
+explanation if you like, and press **Add relationship**. The new line appears at once. **Cancel**
+or Escape closes the form.
+
 ### Where nodes are placed
 
 The graph remembers where nodes are. The first time you open it, mmap arranges the graph for you
@@ -1119,9 +1127,8 @@ changes you make to notes are saved once the import has finished.
 
 These features are planned for later versions:
 
-- **Editing a relationship's explanation** after it was added, and **creating relationships from
-  the graph**.
-- In the graph: **dragging from one node to another to connect them**; **keyboard use of the drawing itself** (use the List tab); undoing
+- In the graph: **dragging from one node to another to connect them** (use **Add relationship**
+  in the side panel); **keyboard use of the drawing itself** (use the List tab); undoing
   **Rearrange**; and clearing expanded neighbors without leaving the graph. Labels of two lines
   between the same nodes can overlap; the node panel and the List name each one.
 - **Filtering search results by relationship type** (the graph has this filter).
