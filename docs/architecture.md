@@ -846,7 +846,12 @@ type), so editing the note never stores the type name in it.
 
 Editing on the canvas (`map-canvas.tsx`, `map-editor.tsx`), freeform mode only:
 
-- **Drawing.** `ConnectionMode.Loose` lets either dot of an item start or end a connector, and
+- **Drawing.** Each item has a dot on all four sides (all source handles, `left`, `right`,
+  `top`, `bottom`). Connectors and relationship lines attach to the sides that face each other
+  (`facingSides` in `map-model.ts`: the larger gap between the two boxes, horizontal or vertical,
+  decides), computed from the current positions so lines follow a dragged item; hierarchy lines
+  stay right-to-left. Nothing about sides is stored. `ConnectionMode.Loose` lets any dot start or
+  end a connector, and
   `onConnect` orients it away from the item the drag started on (with the left dot, React Flow
   reports that item as the target). A dashed line in the accent color follows the pointer.
 - **Selecting, removing, moving.** The custom `ConnectorEdge` has a 24 px interaction stroke;

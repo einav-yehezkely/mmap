@@ -479,8 +479,11 @@ relationship that a map connector already shows (a connector linked to it) is dr
 
 - **Move** an item by dragging it, or select it and use the arrow keys. Positions are saved
   automatically.
-- **Draw a connector** by dragging from either dot on an item's edge to another item. Connectors
-  are dashed arrows from the item where you started. They may form loops.
+- **Draw a connector** by dragging from any of the four dots around an item (left, right, top or
+  bottom) to another item. Connectors are dashed arrows from the item where you started. They may
+  form loops. Each line attaches to the sides that face each other: side to side when the items
+  are next to each other, top to bottom when one is below the other, and it follows when you move
+  an item.
 - Connectors are pictures on this map only. They never create relationships between the nodes.
 - **Write a note on a connector**: click the connector, then the speech-bubble button on it. Type
   the note (up to 200 characters, in any language) and press Enter, or click elsewhere. Escape

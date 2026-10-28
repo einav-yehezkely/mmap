@@ -9,6 +9,7 @@ import {
   buildCanvasModel,
   buildOutlineRows,
   connectorLabel,
+  facingSides,
   findParentLoops,
   nextFreeformPosition,
   parentChoices,
@@ -355,5 +356,24 @@ describe('parentChoices', () => {
       ['Item b', 1],
       ['Item c', 0],
     ]);
+  });
+});
+
+describe('facingSides', () => {
+  const box = (x: number, y: number) => ({ x, y, width: 160, height: 40 });
+
+  it('joins items side by side at their facing left and right sides', () => {
+    expect(facingSides(box(0, 0), box(300, 20))).toEqual({ from: 'right', to: 'left' });
+    expect(facingSides(box(300, 20), box(0, 0))).toEqual({ from: 'left', to: 'right' });
+  });
+
+  it('joins items one above the other at bottom and top, even when offset sideways', () => {
+    // 100 to the right but 150 lower: the gap below is larger than the gap beside.
+    expect(facingSides(box(0, 0), box(100, 150))).toEqual({ from: 'bottom', to: 'top' });
+    expect(facingSides(box(100, 150), box(0, 0))).toEqual({ from: 'top', to: 'bottom' });
+  });
+
+  it('uses left and right for overlapping items', () => {
+    expect(facingSides(box(0, 0), box(20, 10))).toEqual({ from: 'right', to: 'left' });
   });
 });
