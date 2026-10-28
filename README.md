@@ -65,7 +65,8 @@ What works in the app today:
   ranked first, highlighted snippets, tag filters and paging.
 - **Mind maps.** Create, rename, duplicate and delete maps that place existing or new nodes; the
   same node can sit on many maps and always shows its current content. Freeform maps with
-  dragging, connectors, pan and zoom; hierarchical maps with automatic tree layout, reordering,
+  dragging, connectors with notes and undo, pan and zoom, and a read-only note preview on
+  double-click; hierarchical maps with automatic tree layout, reordering,
   indenting and collapsing; a reviewed switch from freeform to hierarchy that keeps freeform
   positions; colors; and a keyboard-accessible outline. Deleting a map or removing an item never
   deletes nodes, and map hierarchy never creates relationships.

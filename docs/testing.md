@@ -21,8 +21,8 @@ architecture project. All run on plain Node 24; none of them start Electron. Tes
 | `desktop`        | `apps/desktop/src/**/*.test.ts`            | Security and IPC (renderer location, origins, CSP, `app://` paths, IPC handler); workspace manager; attachment file store, preview resolver and attachment services with real files; external links; Phase 2, map, graph and timeline channel handlers; the autosave state machine; the editor/schema contract; wikilink rendering; the map, graph and timeline view models; the timeline axis (windows, ticks, marker layout); stable graph placement; the Phase 1 acceptance test; export and import round trip, hostile archives, Markdown export; backups and restore; the Home page helpers. | 310 (+2 skipped) |
 | `architecture`   | `tests/**/*.test.ts`                       | Module boundary scan driven by `tooling/architecture-rules.mjs` (the same rules ESLint uses), plus a test of the import extractor itself.                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 6                |
 
-The total on branch `phase-5-portability` is **1,140 passing tests in 67 files, plus two benchmark
-files (4 tests) that are skipped by default**: 69 files, 1,144 tests. The skipped files are the
+The total on `main` (2026-10-28) is **1,148 passing tests in 67 files, plus two benchmark
+files (4 tests) that are skipped by default**: 69 files, 1,152 tests. The skipped files are the
 [search benchmark](#search-benchmark) (`storage-sqlite`) and the
 [portability benchmark](#portability-benchmark) (`desktop`). Earlier totals: Phase 4 ended with
 1,053 in 57 files (1,007 in 54 before the timeline redesign), Phase 3 with 882 in 45 files, Phase 2
@@ -206,7 +206,10 @@ fails if any check fails, the exit code is not 0, or 120 seconds pass.
 | backup taken and restorable                                       | `smoke-backups.ts`: creates a node, takes a backup with `BackupService.backUpNow` (no failure allowed), finds it as the newest snapshot, and rebuilds a complete workspace folder from it in a scratch folder with `buildWorkspaceFromSnapshot`, the verified path every restore uses (checksums, integrity, workspace identity), without swapping out the workspace the other checks use.                                                                                                                                                                                                                                  |
 | primary views pass automated WCAG 2.2 AA checks                   | `smoke-accessibility.ts`: runs axe-core on eight views of the real app (see [Accessibility check](#accessibility-check)) and fails on any violation, listing the rule, impact and elements. Runs only when `--smoke-axe` is given, which `smoke-packaged.mjs` always does.                                                                                                                                                                                                                                                                                                                                                  |
 
-There are 17 checks. The attachment check bypasses `attachments:add`, because adding a file through
+| double-clicking a map item previews its note (freeform and hierarchy); the pencil opens the editor | For a freeform and a hierarchical map: opens the map from the list, waits until the item stops moving (the map fits itself into view), double-clicks it with real mouse input (`sendInputEvent`; a synthetic event would skip React Flow's double-click zoom), and checks that the preview shows the note, is not editable and has no toolbar, and that the pencil opens the editor with an editable note. |
+| a note written on a connector is saved, shown and undone | Selects a connector on the canvas, opens the note box with its button (focused), saves a note with Enter, finds it on the line and in `maps:get`, and checks that **Undo** removes it. |
+
+There are 19 checks. The attachment check bypasses `attachments:add`, because adding a file through
 the bridge needs a native dialog; the full add flow is covered by `attachment-ipc-services.test.ts`
 and the acceptance test instead. The 200-placement check measured 37 ms from the click to 200
 rendered items with the packaged build on a developer machine (2026-10-27); the PRD target still
@@ -331,14 +334,19 @@ process thread, so the app does not respond for those seconds.
 The packaged smoke check "primary views pass automated WCAG 2.2 AA checks"
 (`apps/desktop/src/main/smoke-accessibility.ts`) injects axe-core 4.14.0 into the renderer of the
 packaged app and runs the rules tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` and `wcag22aa`
-on eight views, opened by clicking the real navigation: Home; the Library with the node editor
-open (a new node); Mind Maps; the Knowledge Graph and its List tab; the Timeline and its List tab;
-and Settings. Because it runs in the real app with the production theme, color contrast is
+on nine views, opened by clicking the real navigation: Home; the New node dialog; the Library with
+the node editor open (a new node); Mind Maps; the Knowledge Graph and its List tab; the Timeline
+and its List tab; and Settings. Every view is scanned twice, in the light and in the dark theme
+(`nativeTheme.themeSource`); after each switch the window is reloaded and the check waits until
+`prefers-color-scheme` matches, because colors already on screen lag behind a live switch. Because it runs in the real app with the production theme, color contrast is
 computed from the actual colors. axe-core is a development dependency and is not shipped:
 `smoke-packaged.mjs` resolves `axe-core/axe.min.js` and passes its path with `--smoke-axe=<path>`.
 
-All eight views pass. The first run found one violation, an `aria-controls` attribute on the
-graph's **Find in graph** box that pointed at an element that was not rendered; it was fixed.
+All views pass in both themes. The first run found one violation, an `aria-controls` attribute on
+the graph's **Find in graph** box that pointed at an element that was not rendered; it was fixed.
+Later, CI (which runs in the light theme) found the amber "partial results" warnings below 4.5:1
+on white, which local runs in the dark theme had missed; they now use `amber-700`, and the
+two-theme scan exists so that such a problem shows up locally too.
 
 Automated rules find only part of the accessibility problems. Not yet done, and required before
 release (PRD §6, acceptance criterion 14), is a manual pass of the primary flows:
@@ -414,7 +422,7 @@ These are required by PRD §11 but are not covered yet. Do not assume they are.
 
 ## Added after the Phase 2 review
 
-- `packages/contracts/src/catalogue.test.ts`: every IPC channel (44 then, 61 since Phase 3, 72 since Phase 4, 84 since Phase 5) rejects hostile payloads —
+- `packages/contracts/src/catalogue.test.ts`: every IPC channel (44 then, 61 since Phase 3, 72 since Phase 4, 84 since Phase 5, 87 now) rejects hostile payloads —
   raw SQL text, arrays, objects with unexpected properties such as paths, `null` and numbers.
 - `apps/desktop/src/main/services/phase2-ipc-services.test.ts`: the relationship, relationship-type,
   lookup, backlinks, link-resolution and search channel handlers against a real workspace,
