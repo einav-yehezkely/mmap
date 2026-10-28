@@ -44,7 +44,8 @@ type ConnectorChange =
   | { readonly kind: 'added'; readonly connectionId: string }
   | { readonly kind: 'removed'; readonly connectors: readonly ConnectorSnapshot[] }
   | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot }
-  | { readonly kind: 'noted'; readonly connectionId: string; readonly previous: string | null };
+  | { readonly kind: 'noted'; readonly connectionId: string; readonly previous: string | null }
+  | { readonly kind: 'linked'; readonly connectionId: string; readonly previous: string | null };
 
 const UNDO_LIMIT = 20;
 /** How long the "Undo" notice stays; Ctrl+Z keeps working afterwards. */
@@ -55,6 +56,7 @@ const CHANGE_TEXT: Record<ConnectorChange['kind'], string> = {
   removed: 'Connector removed.',
   moved: 'Connector moved.',
   noted: 'Connector note saved.',
+  linked: 'Connector link changed.',
 };
 
 export interface MapEditorProps {
@@ -164,6 +166,19 @@ function LoadedMapEditor({
     [apply],
   );
 
+  const linkConnector = useCallback(
+    (connectionId: string, relationshipId: string | null) =>
+      apply((mapId, expectedRevision) =>
+        window.mmap.maps.setConnectionRelationship({
+          mapId,
+          expectedRevision,
+          connectionId,
+          relationshipId,
+        }),
+      ),
+    [apply],
+  );
+
   const snapshotOf = (connectionId: string): ConnectorSnapshot | null => {
     const connection = view.connections.find((item) => item.id === connectionId);
     return connection === undefined
@@ -195,8 +210,11 @@ function LoadedMapEditor({
       case 'noted':
         await writeConnectorNote(change.connectionId, change.previous);
         break;
+      case 'linked':
+        await linkConnector(change.connectionId, change.previous);
+        break;
     }
-  }, [undoStack, createConnector, deleteConnector, writeConnectorNote]);
+  }, [undoStack, createConnector, deleteConnector, writeConnectorNote, linkConnector]);
 
   /** Ctrl+Z anywhere in the editor, except while typing in a field. */
   const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -312,6 +330,14 @@ function LoadedMapEditor({
     const previous = view.connections.find((item) => item.id === connectionId)?.label ?? null;
     void writeConnectorNote(connectionId, label).then((ok) => {
       if (ok) remember({ kind: 'noted', connectionId, previous });
+    });
+  };
+
+  const onConnectorRelationship = (connectionId: string, relationshipId: string | null) => {
+    const previous =
+      view.connections.find((item) => item.id === connectionId)?.relationshipId ?? null;
+    void linkConnector(connectionId, relationshipId).then((ok) => {
+      if (ok) remember({ kind: 'linked', connectionId, previous });
     });
   };
 
@@ -452,6 +478,7 @@ function LoadedMapEditor({
             onRemove={onRemove}
             onReconnect={onReconnect}
             onConnectorLabel={onConnectorLabel}
+            onConnectorRelationship={onConnectorRelationship}
             onViewportChange={document.saveViewport}
           />
         </div>

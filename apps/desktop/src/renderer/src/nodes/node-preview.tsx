@@ -1,6 +1,7 @@
 /**
- * A read-only preview of a node's note, beside the current view (Mind Maps opens items this way
- * when they are double-clicked). The pencil button in the corner switches to the node editor.
+ * A read-only preview of a node (summary, tags and note) beside the current view (Mind Maps opens
+ * items this way when they are double-clicked). The pencil button in the corner switches to the
+ * node editor.
  *
  * The preview re-reads the node when nodes change elsewhere, so it never shows stale text.
  */
@@ -77,6 +78,11 @@ export function NodePreview({ nodeId, onClose, onEdit, onOpenNode }: NodePreview
         {state.status === 'error' && (
           <p role="alert" className="text-sm text-destructive">
             {state.message}
+          </p>
+        )}
+        {node?.summary && (
+          <p dir="auto" className="text-muted-foreground">
+            {node.summary}
           </p>
         )}
         {node !== null && node.tags.length > 0 && (

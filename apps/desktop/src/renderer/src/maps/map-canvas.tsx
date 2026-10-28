@@ -42,7 +42,8 @@ import {
   type OnSelectionChangeParams,
   useReactFlow,
 } from '@xyflow/react';
-import { ChevronDown, ChevronRight, MessageSquareText, X } from 'lucide-react';
+import type { RelationshipViewDto } from '@mmap/contracts';
+import { ChevronDown, ChevronRight, Link2, MessageSquareText, X } from 'lucide-react';
 import {
   memo,
   useCallback,
@@ -54,6 +55,7 @@ import {
   type MouseEvent,
 } from 'react';
 
+import { unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
 import { buildCanvasModel } from './map-model';
 import { placementColorClass } from './placement-colors';
@@ -72,7 +74,16 @@ type PlacementFlowNode = Node<PlacementNodeData, 'placement'>;
 
 interface ConnectorEdgeData extends Record<string, unknown> {
   readonly connectionId: string;
+  /** Text shown on the line: the note and the linked relationship's type. */
   readonly label: string | null;
+  /** The connector's own note (what the note box edits). */
+  readonly note: string | null;
+  readonly relationshipId: string | null;
+  /** Nodes at the two ends, to offer the relationships between them. */
+  readonly sourceNodeId: string | null;
+  readonly targetNodeId: string | null;
+  /** Links the connector to a relationship between the same nodes, or unlinks it (null). */
+  readonly onLinkRelationship: (connectionId: string, relationshipId: string | null) => void;
   readonly onRemove: (connectionId: string) => void;
   /** Saves the connector's note; null removes it. */
   readonly onEditLabel: (connectionId: string, label: string | null) => void;
@@ -87,7 +98,9 @@ const MAX_CONNECTOR_NOTE_LENGTH = 200;
  * A map connector: dashed line with its note and, while selected, buttons to write the note and
  * to remove the connector. The invisible interaction stroke is wide so the thin line is easy to
  * click. The note is written in a small box on the line: Enter or clicking elsewhere saves,
- * Escape cancels, and a blank note removes it. Double-clicking a note edits it.
+ * Escape cancels, and a blank note removes it. Double-clicking a note edits it. The link button
+ * lists the relationships between the two nodes; choosing one shows its type on the connector
+ * (PRD §4.4). Linking never creates or changes a relationship.
  */
 const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlowEdge>) {
   const [path, labelX, labelY] = getBezierPath(props);
@@ -108,81 +121,185 @@ const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlow
     setEditing(false);
     if (text === null || data === undefined) return;
     const note = text.trim();
-    if (note !== (data.label ?? '')) data.onEditLabel(data.connectionId, note === '' ? null : note);
+    if (note !== (data.note ?? '')) data.onEditLabel(data.connectionId, note === '' ? null : note);
+  };
+  /** Relationships between the two nodes, while the link list is open ('loading' meanwhile). */
+  const [linkOptions, setLinkOptions] = useState<readonly RelationshipViewDto[] | 'loading' | null>(
+    null,
+  );
+  const openLinks = () => {
+    if (data === undefined || data.sourceNodeId === null || data.targetNodeId === null) return;
+    const ends = new Set([data.sourceNodeId, data.targetNodeId]);
+    setLinkOptions('loading');
+    unwrap(window.mmap.relationships.listForNode({ nodeId: data.sourceNodeId })).then(
+      (result) =>
+        setLinkOptions(
+          result.items.filter((item) => ends.has(item.source.id) && ends.has(item.target.id)),
+        ),
+      () => setLinkOptions([]),
+    );
+  };
+  const chooseLink = (relationshipId: string | null) => {
+    setLinkOptions(null);
+    if (data !== undefined && relationshipId !== data.relationshipId) {
+      data.onLinkRelationship(data.connectionId, relationshipId);
+    }
   };
   return (
     <>
       <BaseEdge id={props.id} path={path} markerEnd={props.markerEnd} interactionWidth={24} />
-      {(data?.label !== null || selected === true || editing) && data !== undefined && (
-        <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan absolute flex items-center gap-1"
-            style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              pointerEvents: 'all',
-            }}
-          >
-            {editing ? (
-              <input
-                ref={noteInput}
-                aria-label="Note on this connector"
-                placeholder="Write a note…"
-                dir="auto"
-                defaultValue={data.label ?? ''}
-                maxLength={MAX_CONNECTOR_NOTE_LENGTH}
-                className="h-7 w-48 rounded-md border bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    finish(event.currentTarget.value);
-                  } else if (event.key === 'Escape') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    finish(null);
-                  }
-                }}
-                onBlur={(event) => finish(event.currentTarget.value)}
-              />
-            ) : (
-              data.label !== null && (
-                <span
-                  className="max-w-48 rounded bg-background px-1 text-xs text-muted-foreground"
+      {(data?.label !== null || selected === true || editing || linkOptions !== null) &&
+        data !== undefined && (
+          <EdgeLabelRenderer>
+            <div
+              className="nodrag nopan absolute flex items-center gap-1"
+              style={{
+                transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+                pointerEvents: 'all',
+              }}
+            >
+              {editing ? (
+                <input
+                  ref={noteInput}
+                  aria-label="Note on this connector"
+                  placeholder="Write a note…"
                   dir="auto"
-                  title="Double-click to edit the note"
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    setEditing(true);
+                  defaultValue={data.note ?? ''}
+                  maxLength={MAX_CONNECTOR_NOTE_LENGTH}
+                  className="h-7 w-48 rounded-md border bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      finish(event.currentTarget.value);
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      finish(null);
+                    }
+                  }}
+                  onBlur={(event) => finish(event.currentTarget.value)}
+                />
+              ) : (
+                data.label !== null && (
+                  <span
+                    className="max-w-48 rounded bg-background px-1 text-xs text-muted-foreground"
+                    dir="auto"
+                    title="Double-click to edit the note"
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      setEditing(true);
+                    }}
+                  >
+                    {data.label}
+                  </span>
+                )
+              )}
+              {selected === true && !editing && (
+                <button
+                  type="button"
+                  aria-label={
+                    data.relationshipId === null
+                      ? 'Link this connector to a relationship'
+                      : 'Change the linked relationship'
+                  }
+                  aria-expanded={linkOptions !== null}
+                  title="Show a relationship on this connector"
+                  onClick={() => (linkOptions === null ? openLinks() : setLinkOptions(null))}
+                  className={cn(
+                    'flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    data.relationshipId !== null && 'border-primary text-primary',
+                  )}
+                >
+                  <Link2 aria-hidden="true" className="size-3.5" />
+                </button>
+              )}
+              {linkOptions !== null && (
+                <div
+                  role="dialog"
+                  aria-label="Show a relationship on this connector"
+                  className="absolute left-1/2 top-8 z-10 w-72 -translate-x-1/2 space-y-1 rounded-md border bg-background p-2 text-xs shadow-md"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.stopPropagation();
+                      setLinkOptions(null);
+                    }
                   }}
                 >
-                  {data.label}
-                </span>
-              )
-            )}
-            {selected === true && !editing && (
-              <button
-                type="button"
-                aria-label={data.label === null ? 'Add a note to this connector' : 'Edit the note'}
-                title={data.label === null ? 'Add a note' : 'Edit the note'}
-                onClick={() => setEditing(true)}
-                className="flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <MessageSquareText aria-hidden="true" className="size-3.5" />
-              </button>
-            )}
-            {selected === true && !editing && (
-              <button
-                type="button"
-                aria-label="Remove connector"
-                title="Remove connector (Delete)"
-                onClick={() => data.onRemove(data.connectionId)}
-                className="flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-destructive hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <X aria-hidden="true" className="size-3.5" />
-              </button>
-            )}
-          </div>
-        </EdgeLabelRenderer>
-      )}
+                  <p className="font-medium">Show a relationship on this connector</p>
+                  {linkOptions === 'loading' ? (
+                    <p className="text-muted-foreground">Loading…</p>
+                  ) : linkOptions.length === 0 ? (
+                    <p className="text-muted-foreground">
+                      These two notes have no relationship yet. Add one in a note&apos;s
+                      Relationships section, then link it here.
+                    </p>
+                  ) : (
+                    <ul className="space-y-0.5">
+                      {linkOptions.map((relationship) => (
+                        <li key={relationship.id}>
+                          <button
+                            type="button"
+                            aria-pressed={relationship.id === data.relationshipId}
+                            onClick={() => chooseLink(relationship.id)}
+                            className={cn(
+                              'w-full rounded px-2 py-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                              relationship.id === data.relationshipId && 'bg-accent font-medium',
+                            )}
+                          >
+                            <span dir="auto">{relationship.source.title}</span>{' '}
+                            {relationship.typeLabel}
+                            {relationship.directionality === 'directed' ? ' → ' : ' — '}
+                            <span dir="auto">{relationship.target.title}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex justify-end gap-1 pt-1">
+                    {data.relationshipId !== null && (
+                      <button
+                        type="button"
+                        onClick={() => chooseLink(null)}
+                        className="rounded px-2 py-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Remove the link
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setLinkOptions(null)}
+                      className="rounded px-2 py-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
+              {selected === true && !editing && (
+                <button
+                  type="button"
+                  aria-label={data.note === null ? 'Add a note to this connector' : 'Edit the note'}
+                  title={data.note === null ? 'Add a note' : 'Edit the note'}
+                  onClick={() => setEditing(true)}
+                  className="flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <MessageSquareText aria-hidden="true" className="size-3.5" />
+                </button>
+              )}
+              {selected === true && !editing && (
+                <button
+                  type="button"
+                  aria-label="Remove connector"
+                  title="Remove connector (Delete)"
+                  onClick={() => data.onRemove(data.connectionId)}
+                  className="flex size-6 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-destructive hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X aria-hidden="true" className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </EdgeLabelRenderer>
+        )}
     </>
   );
 });
@@ -277,6 +394,8 @@ export interface MapCanvasProps {
   readonly onViewportChange: (viewport: { x: number; y: number; zoom: number }) => void;
   /** Saves a connector's note; null removes it. */
   readonly onConnectorLabel: (connectionId: string, label: string | null) => void;
+  /** Links a connector to a relationship between the same nodes; null removes the link. */
+  readonly onConnectorRelationship: (connectionId: string, relationshipId: string | null) => void;
 }
 
 export function MapCanvas({
@@ -291,6 +410,7 @@ export function MapCanvas({
   onReconnect,
   onViewportChange,
   onConnectorLabel,
+  onConnectorRelationship,
 }: MapCanvasProps) {
   // Stable for the edge data (rebuilding every edge on each render would loop), while still
   // calling the latest handler.
@@ -310,11 +430,24 @@ export function MapCanvas({
     (connectionId: string, label: string | null) => latestOnLabel.current(connectionId, label),
     [],
   );
+  const latestOnLink = useRef(onConnectorRelationship);
+  useEffect(() => {
+    latestOnLink.current = onConnectorRelationship;
+  }, [onConnectorRelationship]);
+  const linkConnector = useCallback(
+    (connectionId: string, relationshipId: string | null) =>
+      latestOnLink.current(connectionId, relationshipId),
+    [],
+  );
   /** Item a new connector is being drawn from (see onConnect). */
   const connectFrom = useRef<string | null>(null);
   /** Whether the connector end being dragged landed on an item (see onReconnectEnd). */
   const reconnected = useRef(true);
   const model = useMemo(() => buildCanvasModel(view), [view]);
+  const nodeIdOf = useMemo(
+    () => new Map(view.placements.map((placement) => [placement.id, placement.nodeId])),
+    [view],
+  );
   const isFreeform = view.map.mode === 'freeform';
 
   // Finished position changes (drag end, arrow keys) waiting to be saved together.
@@ -375,12 +508,17 @@ export function MapCanvas({
               data: {
                 connectionId: line.id.slice('connector:'.length),
                 label: line.label,
+                note: line.connection?.label ?? null,
+                relationshipId: line.connection?.relationshipId ?? null,
+                sourceNodeId: nodeIdOf.get(line.source) ?? null,
+                targetNodeId: nodeIdOf.get(line.target) ?? null,
                 onRemove: removeConnector,
                 onEditLabel: editConnectorLabel,
+                onLinkRelationship: linkConnector,
               },
             };
       }),
-    [model, isFreeform, removeConnector, editConnectorLabel],
+    [model, isFreeform, removeConnector, editConnectorLabel, linkConnector, nodeIdOf],
   );
 
   // React Flow works on local copies (selection, measured sizes, positions while dragging). When

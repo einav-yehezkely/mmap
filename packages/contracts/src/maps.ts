@@ -207,6 +207,18 @@ export const mapContracts = {
     request: z.strictObject({ ...structural, connectionId: z.uuid() }),
     response: mapViewSchema,
   },
+  /**
+   * Links a connector to a relationship between the same two nodes (PRD §4.4); null removes the
+   * link. Never creates or changes a relationship.
+   */
+  setConnectionRelationship: {
+    request: z.strictObject({
+      ...structural,
+      connectionId: z.uuid(),
+      relationshipId: z.uuid().nullable(),
+    }),
+    response: mapViewSchema,
+  },
   /** Note on a connector; null or blank text removes it. */
   setConnectionLabel: {
     request: z.strictObject({

@@ -137,6 +137,8 @@ const api: MmapRendererApi = {
     removeConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRemoveConnection, request),
     setConnectionLabel: (request) =>
       ipcRenderer.invoke(IPC_CHANNELS.mapsSetConnectionLabel, request),
+    setConnectionRelationship: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.mapsSetConnectionRelationship, request),
     proposeHierarchy: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsProposeHierarchy, request),
     switchMode: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSwitchMode, request),
   },

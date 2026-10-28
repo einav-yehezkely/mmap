@@ -93,6 +93,7 @@ describe('buildCanvasModel', () => {
         source: id('d'),
         target: id('a'),
         label: null,
+        connection: view.connections[0],
       },
     ]);
   });

@@ -132,6 +132,7 @@ export interface MmapRendererApi {
     readonly addConnection: BridgeCall<'maps:add-connection'>;
     readonly removeConnection: BridgeCall<'maps:remove-connection'>;
     readonly setConnectionLabel: BridgeCall<'maps:set-connection-label'>;
+    readonly setConnectionRelationship: BridgeCall<'maps:set-connection-relationship'>;
     readonly proposeHierarchy: BridgeCall<'maps:propose-hierarchy'>;
     readonly switchMode: BridgeCall<'maps:switch-mode'>;
   };

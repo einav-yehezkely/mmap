@@ -459,6 +459,60 @@ describe('connectors', () => {
     });
   });
 
+  it('links an existing connector to a relationship of the same nodes, and unlinks it', async () => {
+    const { maps, relationships } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B', 'C']);
+    const [a, b, c] = ['A', 'B', 'C'].map((title) => placementOf(view, title));
+    const types = await relationships.listTypes();
+    const dependsOn = types.find((t) => t.label === 'depends on')!;
+    const relatedTo = types.find((t) => t.label === 'related to')!;
+    // Opposite direction to the connector: still the same two nodes.
+    const between = await relationships.create({
+      sourceNodeId: b!.nodeId,
+      targetNodeId: a!.nodeId,
+      typeId: dependsOn.id,
+    });
+    const elsewhere = await relationships.create({
+      sourceNodeId: a!.nodeId,
+      targetNodeId: c!.nodeId,
+      typeId: relatedTo.id,
+    });
+    view = await maps.addConnection(view.map.id, view.map.revision, {
+      sourcePlacementId: a!.id,
+      targetPlacementId: b!.id,
+      label: 'kept',
+    });
+    const connectionId = view.connections[0]!.id;
+
+    await expect(
+      maps.setConnectionRelationship(view.map.id, view.map.revision, connectionId, elsewhere.id),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    view = await maps.setConnectionRelationship(
+      view.map.id,
+      view.map.revision,
+      connectionId,
+      between.id,
+    );
+    expect(view.connections[0]).toMatchObject({
+      relationshipId: between.id,
+      relationshipTypeLabel: 'depends on',
+      label: 'kept',
+    });
+    // The relationship itself is unchanged.
+    expect(await relationships.listForNode(a!.nodeId)).toHaveLength(2);
+
+    view = await maps.setConnectionRelationship(view.map.id, view.map.revision, connectionId, null);
+    expect(view.connections[0]).toMatchObject({ relationshipId: null, label: 'kept' });
+
+    await expect(
+      maps.setConnectionRelationship(view.map.id, view.map.revision - 1, connectionId, null),
+    ).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    view = await maps.removeConnection(view.map.id, view.map.revision, connectionId);
+    await expect(
+      maps.setConnectionRelationship(view.map.id, view.map.revision, connectionId, between.id),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   it('removes connectors', async () => {
     const { maps } = services(WORKSPACE_A);
     let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B']);

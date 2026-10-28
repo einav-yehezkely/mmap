@@ -838,8 +838,11 @@ may form cycles; a connector from an item to itself is refused (`INVARIANT_VIOLA
 semantic relationship, but only one that connects exactly the same two nodes, in either direction
 (`VALIDATION_FAILED` otherwise). Referencing never creates a relationship, and deleting the
 relationship only clears the reference. The canvas shows the label and, for a referenced
-relationship, its type in brackets. The reference is available through `maps:add-connection`
-only; the canvas creates plain connectors.
+relationship, its type in brackets. On the canvas, a selected connector's link button lists the
+relationships between its two nodes (in either direction) and links or unlinks one through
+`maps:set-connection-relationship`; the service checks the same rule as `maps:add-connection`.
+The canvas keeps the connector's own note apart from the text shown on the line (note plus linked
+type), so editing the note never stores the type name in it.
 
 Editing on the canvas (`map-canvas.tsx`, `map-editor.tsx`), freeform mode only:
 
@@ -855,7 +858,8 @@ Editing on the canvas (`map-canvas.tsx`, `map-editor.tsx`), freeform mode only:
   leaving the box saves through `maps:set-connection-label`, Escape cancels, and blank text
   removes the label. Labels are normalized like other map text (whitespace collapsed, control
   characters refused, at most 200 characters).
-- **Undo.** The editor keeps the last 20 connector changes (added, removed, moved, note changed)
+- **Undo.** The editor keeps the last 20 connector changes (added, removed, moved, note or
+  linked relationship changed)
   and reverses the newest with Ctrl+Z or the **Undo** notice shown for 10 seconds after a change.
   Undoing a removal draws the connector again, so it gets a new ID.
 - **Opening items.** Double-clicks on items are caught on the wrapper in the capture phase. In
@@ -1510,7 +1514,11 @@ full, no permission, folder or drive not available).
   snapshot of each of the `daily` most recent days that have one and of each of the `weekly` most
   recent ISO weeks (in the workspace timezone), and always the newest snapshot overall. The rest
   are deleted, then attachment files no remaining snapshot uses, and `.partial-` folders older
-  than a day. Deletion failures are ignored and retried next time.
+  than a day. Deletion failures are ignored and retried next time. Shared attachment files are
+  removed only when every snapshot folder could be read: a snapshot that is unreadable for now
+  (an online-only file in a cloud folder while offline, a file locked by a virus scanner) still
+  needs its files. (Before this rule, such a snapshot's files could be deleted; regression test in
+  `backup-service.test.ts`.)
 - The status reports the destination, whether it is the default, whether it is on the same
   volume as the workspace (compared with `stat().dev` on the nearest existing folder; unknown
   counts as the same drive, so the warning errs on the safe side), the retention, the snapshots,

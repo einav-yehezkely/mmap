@@ -70,6 +70,7 @@ export const IPC_CHANNELS = {
   mapsSetCollapsed: 'maps:set-collapsed',
   mapsSetPlacementColor: 'maps:set-placement-color',
   mapsSetConnectionLabel: 'maps:set-connection-label',
+  mapsSetConnectionRelationship: 'maps:set-connection-relationship',
   mapsAddConnection: 'maps:add-connection',
   mapsRemoveConnection: 'maps:remove-connection',
   mapsProposeHierarchy: 'maps:propose-hierarchy',

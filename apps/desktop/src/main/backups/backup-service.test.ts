@@ -140,6 +140,57 @@ describe('daily backups', () => {
     expect(files).toHaveLength(1);
   });
 
+  it('keeps shared files while a snapshot cannot be read, e.g. offline in a cloud folder (regression)', async () => {
+    const { manager, backups } = startApp('app');
+    await manager.startup();
+    await backups.idle();
+    const workspace = manager.current!;
+    const node = await workspace.services.nodes.create({ title: 'Picture' });
+    const attachment = await addAttachment(manager, node.id, 'a.png');
+    clock = new Date('2026-10-28T09:00:00.000Z');
+    await backups.backUpIfDue(workspace);
+    const status = await backups.status();
+    const withFile = (await listSnapshots(status.destination, workspace.id))[0]!;
+    expect(withFile.attachmentCount).toBe(1);
+
+    // Later snapshots no longer use the file, and the one that does cannot be read right now.
+    await workspace.services.attachments.remove(attachment.id as AttachmentId);
+    const manifestPath = join(withFile.folder, 'backup.json');
+    const manifest = readFileSync(manifestPath, 'utf8');
+    writeFileSync(manifestPath, 'not readable now');
+    clock = new Date('2026-10-29T09:00:00.000Z');
+    await backups.backUpIfDue(workspace);
+
+    const filesFolder = join(status.destination, workspace.id, 'files');
+    const storedFiles = () =>
+      readdirSync(filesFolder, { recursive: true, withFileTypes: true }).filter((entry) =>
+        entry.isFile(),
+      );
+    expect(storedFiles()).toHaveLength(1);
+
+    // Readable again: the snapshot is listed and still restorable, with its file.
+    writeFileSync(manifestPath, manifest);
+    expect((await backups.status()).snapshots.map((snapshot) => snapshot.id)).toContain(
+      withFile.id,
+    );
+    expect(storedFiles()).toHaveLength(1);
+  });
+
+  it('recognizes a backup folder synced by OneDrive and backs up there normally', async () => {
+    const { manager, backups } = startApp('app');
+    await manager.startup();
+    await backups.idle();
+    expect((await backups.status()).cloudSyncProvider).toBeNull();
+
+    const status = await backups.setDestination(
+      join(sandbox, 'OneDrive - Personal', 'mmap backups'),
+    );
+    expect(status.cloudSyncProvider).toBe('OneDrive');
+    const after = await backups.backUpNow();
+    expect(after.snapshots).toHaveLength(1);
+    expect(after.lastFailure).toBeNull();
+  });
+
   it('takes two backups in the same millisecond under different names (regression)', async () => {
     const { manager, backups } = startApp('app');
     await manager.startup();

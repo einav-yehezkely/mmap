@@ -30,6 +30,7 @@ import { isTransferError, TransferError } from '../portability/transfer-errors';
 import type { BackupSettings, SettingsStore } from '../workspaces/app-settings';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
 import { WorkspaceError } from '../workspaces/workspace-errors';
+import { assessWorkspaceLocation } from '../workspaces/workspace-location';
 import type { WorkspaceManager } from '../workspaces/workspace-manager';
 import {
   buildWorkspaceFromSnapshot,
@@ -49,6 +50,8 @@ export interface BackupStatus {
   readonly isDefaultDestination: boolean;
   /** True when backups would be lost together with the workspace if its drive failed. */
   readonly sameDriveAsWorkspace: boolean;
+  /** Sync program whose folder holds the backups (name-based, as for workspaces), or null. */
+  readonly cloudSyncProvider: string | null;
   readonly retention: { readonly daily: number; readonly weekly: number };
   readonly running: boolean;
   readonly lastSuccessAt: string | null;
@@ -268,6 +271,7 @@ export class BackupService {
       destination,
       isDefaultDestination: settings.destination === null,
       sameDriveAsWorkspace: await onSameDrive(destination, workspace.paths.folder),
+      cloudSyncProvider: cloudSyncProviderOf(destination),
       retention: { daily: settings.daily, weekly: settings.weekly },
       running: this.running,
       lastSuccessAt: snapshots[0]?.createdAt ?? null,
@@ -345,4 +349,14 @@ async function onSameDrive(destination: string, workspaceFolder: string): Promis
   } catch {
     return true;
   }
+}
+
+/**
+ * The sync program whose folder holds `destination`, or null. Backups suit sync folders: a
+ * snapshot is complete before it gets its final name and never changes afterwards, and SQLite
+ * never writes there (`snapshot-store.ts`).
+ */
+function cloudSyncProviderOf(destination: string): string | null {
+  const assessment = assessWorkspaceLocation(destination);
+  return assessment.kind === 'cloud-sync-warning' ? assessment.provider : null;
 }

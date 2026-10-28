@@ -18,6 +18,11 @@ export const backupStatusSchema = z.strictObject({
   isDefaultDestination: z.boolean(),
   /** Backups on the workspace's own drive do not survive a failure of that drive. */
   sameDriveAsWorkspace: z.boolean(),
+  /**
+   * The sync program whose folder holds the backups (for example "OneDrive"), or null. Its copies
+   * in the cloud survive a failure of this computer's drive.
+   */
+  cloudSyncProvider: z.string().nullable(),
   retention: z.strictObject({
     daily: z.number().int().nonnegative(),
     weekly: z.number().int().nonnegative(),

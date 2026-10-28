@@ -197,6 +197,20 @@ export function createMapIpcServices(manager: WorkspaceManager): Pick<IpcService
           connectionId as MapConnectionId,
         ),
       ),
+    'maps:set-connection-relationship': async ({
+      mapId,
+      expectedRevision,
+      connectionId,
+      relationshipId,
+    }) =>
+      toMapViewDto(
+        await maps().setConnectionRelationship(
+          mapId as MapId,
+          expectedRevision,
+          connectionId as MapConnectionId,
+          relationshipId as RelationshipId | null,
+        ),
+      ),
     'maps:set-connection-label': async ({ mapId, expectedRevision, connectionId, label }) =>
       toMapViewDto(
         await maps().setConnectionLabel(

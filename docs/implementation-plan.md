@@ -272,8 +272,8 @@ the outline), and the node delete preview's map placement count is no longer alw
   deleted, but new ones can be drawn only in freeform mode.
 - **Relationship links on connectors have no UI.** The service and `maps:add-connection` accept
   a `relationshipId` (checked to connect the same two nodes), but the canvas always creates a
-  plain connector. Linking a connector to a relationship (PRD §4.4) therefore exists only in the
-  API. (Connector labels got a UI and `maps:set-connection-label` after Phase 5.)
+  plain connector. (After Phase 5: connector labels got a UI and `maps:set-connection-label`, and
+  linking got a UI and `maps:set-connection-relationship`, section 16.)
 - **The switch-to-hierarchy review offers limited choices.** For each item the dialog offers only
   the proposed parent (or the candidates of an ambiguous item) and "Top level". Any other parent
   has to be set afterwards in the outline.
@@ -588,3 +588,22 @@ removed and the copy in the backup folder matches its manifest; nothing but the 
 written next to it). Checked once in the packaged app with 5,000 nodes: **Back up now** showed the
 progress bar, Cancel was enabled and stopped it, "Backup cancelled" appeared, no snapshot was
 added and no failure recorded.
+
+## 16. Connectors linked to relationships; backups in sync folders (2026-10-28)
+
+- **PRD §4.4.** A selected connector's link button lists the relationships between its two nodes;
+  choosing one shows its type on the connector (and the separate relationship line is no longer
+  drawn), **Remove the link** unlinks it, and Ctrl+Z undoes either. New channel
+  `maps:set-connection-relationship` (90 in total), checked by the same rule as
+  `maps:add-connection`; it never creates or changes a relationship. Tests: `map-service.test.ts`
+  "links an existing connector to a relationship of the same nodes, and unlinks it"; the packaged
+  check "a connector note and a linked relationship are saved, shown and undone" (also checks that
+  the note box never starts with the linked type).
+- **Backup pruning fix.** Shared attachment files were removed when no _readable_ snapshot used
+  them, so a snapshot that was briefly unreadable (an online-only file in OneDrive while offline,
+  a file locked by a scanner) could lose its files. They are now removed only when every snapshot
+  folder could be read. Regression test in `backup-service.test.ts` (fails on the old code).
+- **Sync folders as backup destinations** are now the recommended way to keep an off-computer
+  copy. `backups:get-status` reports `cloudSyncProvider`, and Settings explains the cloud copy
+  (and suggests "Always keep on this device") instead of the "same drive" warning. The user guide
+  explains how to keep notes in OneDrive: the workspace stays local, backups go to OneDrive.
