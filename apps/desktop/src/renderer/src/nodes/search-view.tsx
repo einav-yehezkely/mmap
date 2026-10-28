@@ -1,13 +1,15 @@
 /**
  * Search results (PRD §5.8): ranked full-text matches over titles, summaries and note text, with
- * highlighted plain-text snippets, tag filters and paging. Highlights are rendered as <mark>
+ * highlighted plain-text snippets, tag and relationship-type filters, and paging. Highlights are rendered as <mark>
  * elements from snippet segments; stored text is never inserted as HTML.
  */
 
+import type { RelationshipTypeViewDto } from '@mmap/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '../components/ui/button';
 import { errorMessage, unwrap } from '../lib/ipc';
+import { RelationshipTypeFilterBar } from '../relationships/relationship-type-filter-bar';
 import { useNodesChanged } from './node-events';
 import { TagFilterBar, type TagOption } from './tag-filter-bar';
 
@@ -34,6 +36,8 @@ export function SearchView({
 }) {
   const [tagIds, setTagIds] = useState<readonly string[]>([]);
   const [tagOptions, setTagOptions] = useState<readonly TagOption[]>([]);
+  const [relationshipTypeIds, setRelationshipTypeIds] = useState<readonly string[]>([]);
+  const [types, setTypes] = useState<readonly RelationshipTypeViewDto[]>([]);
   const [results, setResults] = useState<Results | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -41,13 +45,22 @@ export function SearchView({
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      unwrap(window.mmap.search.query({ text: query, tagIds: [...tagIds], limit: PAGE_SIZE })),
+      unwrap(
+        window.mmap.search.query({
+          text: query,
+          tagIds: [...tagIds],
+          relationshipTypeIds: [...relationshipTypeIds],
+          limit: PAGE_SIZE,
+        }),
+      ),
       unwrap(window.mmap.tags.list()),
+      unwrap(window.mmap.relationshipTypes.list()),
     ]).then(
-      ([page, tags]) => {
+      ([page, tags, typeList]) => {
         if (cancelled) return;
         setResults(page);
         setTagOptions(tags.items);
+        setTypes(typeList.items);
         setError(null);
       },
       (caught: unknown) => {
@@ -57,7 +70,7 @@ export function SearchView({
     return () => {
       cancelled = true;
     };
-  }, [query, tagIds, reloadToken]);
+  }, [query, tagIds, relationshipTypeIds, reloadToken]);
 
   useNodesChanged(useCallback(() => setReloadToken((token) => token + 1), []));
 
@@ -68,6 +81,7 @@ export function SearchView({
         window.mmap.search.query({
           text: query,
           tagIds: [...tagIds],
+          relationshipTypeIds: [...relationshipTypeIds],
           limit: PAGE_SIZE,
           cursor: results.nextCursor,
         }),
@@ -84,6 +98,11 @@ export function SearchView({
         Search
       </h1>
       <TagFilterBar options={tagOptions} selected={tagIds} onChange={setTagIds} />
+      <RelationshipTypeFilterBar
+        types={types}
+        selected={relationshipTypeIds}
+        onChange={setRelationshipTypeIds}
+      />
 
       {error && (
         <p role="alert" className="text-sm text-destructive">

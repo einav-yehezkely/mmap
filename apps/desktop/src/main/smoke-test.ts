@@ -156,6 +156,11 @@ export async function runSmokeTest(
           if (!backlinks.ok || backlinks.data.items[0]?.sourceNodeId !== a.id) return 'backlink missing';
           const found = await search.query({ text: 'unicorn', limit: 10 });
           if (!found.ok || found.data.items[0]?.nodeId !== a.id) return 'search did not find the note';
+          const contradicts = types.find((t) => t.label === 'contradicts');
+          const byType = await search.query({ text: 'unicorn', relationshipTypeIds: [dependsOn.id], limit: 10 });
+          if (!byType.ok || byType.data.items[0]?.nodeId !== a.id) return 'relationship-type filter dropped the note';
+          const byOtherType = await search.query({ text: 'unicorn', relationshipTypeIds: [contradicts.id], limit: 10 });
+          if (!byOtherType.ok || byOtherType.data.totalCount !== 0) return 'relationship-type filter let an unrelated note through';
           const lookup = await nodes.lookup({ text: 'smoke target' });
           if (!lookup.ok || lookup.data.items[0]?.id !== b.id) return 'title lookup failed';
           await nodes.delete({ nodeId: a.id, expectedRevision: saved.data.revision });

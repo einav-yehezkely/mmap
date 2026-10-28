@@ -21,6 +21,7 @@ import {
   clampPageSize,
   DomainError,
   type NodeId,
+  type RelationshipTypeId,
   type SearchHit,
   type SearchIndex,
   type SearchQuery,
@@ -99,7 +100,10 @@ export class SqliteSearchIndex implements SearchIndex {
     }
 
     const database = this.connections.forRead();
-    const filter = tagFilter(query.workspaceId, query.tagIds);
+    const filter = combine(
+      tagFilter(query.workspaceId, query.tagIds),
+      relationshipTypeFilter(query.workspaceId, query.relationshipTypeIds ?? []),
+    );
     // Shared FROM/WHERE so the count and the page always agree on what matches.
     const matchingNodes = `
       FROM knowledge_nodes_fts
@@ -202,6 +206,37 @@ function tagFilter(workspaceId: WorkspaceId, tagIds: readonly TagId[]): SqlFragm
       GROUP BY node_id HAVING count(DISTINCT tag_id) = ?
     )`,
     parameters: [workspaceId, ...unique, unique.length],
+  };
+}
+
+/**
+ * SQL condition restricting matches to nodes with at least one relationship of any type in
+ * `typeIds`, as source or target. Both halves use the `(workspace_id, type_id, directionality)`
+ * index; a type from another workspace matches nothing.
+ */
+function relationshipTypeFilter(
+  workspaceId: WorkspaceId,
+  typeIds: readonly RelationshipTypeId[],
+): SqlFragment {
+  const unique = [...new Set(typeIds)];
+  if (unique.length === 0) {
+    return { sql: '', parameters: [] };
+  }
+  const types = placeholders(unique.length);
+  return {
+    sql: `AND n.id IN (
+      SELECT source_node_id FROM relationships WHERE workspace_id = ? AND type_id IN (${types})
+      UNION
+      SELECT target_node_id FROM relationships WHERE workspace_id = ? AND type_id IN (${types})
+    )`,
+    parameters: [workspaceId, ...unique, workspaceId, ...unique],
+  };
+}
+
+function combine(...fragments: readonly SqlFragment[]): SqlFragment {
+  return {
+    sql: fragments.map((fragment) => fragment.sql).join(' '),
+    parameters: fragments.flatMap((fragment) => fragment.parameters),
   };
 }
 

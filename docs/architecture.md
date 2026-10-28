@@ -147,7 +147,8 @@ switching workspaces discards all view state of the previous one.
   (`nodes/tag-filter-bar.tsx`, shared with search), "Load more" paging and totals.
 - **Search** (`nodes/search-view.tsx`): reached from the search box in the header, not from the
   sidebar (`ViewId` `search`). Typing switches to it; the query runs 250 ms after the last
-  keystroke or at once on Enter. Ctrl+K (Cmd+K) focuses the box from anywhere.
+  keystroke or at once on Enter. Ctrl+K (Cmd+K) focuses the box from anywhere. Tag chips and
+  relationship-type chips (`relationships/relationship-type-filter-bar.tsx`) narrow the results.
 - **Node detail panel** (`nodes/node-detail-panel.tsx`): title, summary, tags, relationships
   (`relationships/node-relationships.tsx`), rich note with wikilinks, attachments, backlinks
   (`nodes/node-backlinks.tsx`), the maps that show the node with "Add to mind maps…"
@@ -624,6 +625,18 @@ triggers of migration 1 in the same transaction as every node write. The tokeniz
 `unicode61 remove_diacritics 2`. The index has no `workspace_id`, so every query joins
 `knowledge_nodes` on `row_key` and filters by workspace; a match in another workspace is never
 counted, ranked or returned.
+
+Filters are SQL conditions on `n.id`, shared by the page query and the count query so both agree
+(`sqlite-search-index.ts`):
+
+- **Tags** (`tagIds`): nodes carrying **all** selected tags (`node_tags` grouped by node), the
+  same rule as the Library.
+- **Relationship types** (`relationshipTypeIds`, PRD §5.8): nodes with at least one relationship
+  of **any** selected type, as source or target (a `UNION` of both ends, each using the
+  `(workspace_id, type_id, directionality)` index). "Any", unlike tags, because a node rarely has
+  relationships of several chosen types at once. The Search view offers only types in use.
+
+Both are scoped by `workspace_id`, so an ID from another workspace matches nothing.
 
 ### Query building: user text never becomes FTS syntax
 

@@ -164,6 +164,8 @@ export const searchContracts = {
     request: z.strictObject({
       text: z.string().max(1_000),
       tagIds: z.array(z.uuid()).max(20).optional(),
+      /** Nodes with a relationship of any of these types (either end). */
+      relationshipTypeIds: z.array(z.uuid()).max(20).optional(),
       limit: z.number().int().min(1).max(100),
       cursor: z.string().max(200).optional(),
     }),
