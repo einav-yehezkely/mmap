@@ -17,7 +17,11 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       rolldownOptions: {
-        input: { index: resolve(import.meta.dirname, 'src/main/index.ts') },
+        input: {
+          index: resolve(import.meta.dirname, 'src/main/index.ts'),
+          // Worker thread for writing large imports (src/main/portability/import-writer.ts).
+          'import-worker': resolve(import.meta.dirname, 'src/main/workers/import-worker.ts'),
+        },
       },
     },
   },

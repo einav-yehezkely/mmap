@@ -21,8 +21,8 @@ architecture project. All run on plain Node 24; none of them start Electron. Tes
 | `desktop`        | `apps/desktop/src/**/*.test.ts`            | Security and IPC (renderer location, origins, CSP, `app://` paths, IPC handler); workspace manager; attachment file store, preview resolver and attachment services with real files; external links; Phase 2, map, graph and timeline channel handlers; the autosave state machine; the editor/schema contract; wikilink rendering; the map, graph and timeline view models; the timeline axis (windows, ticks, marker layout); stable graph placement; the Phase 1 acceptance test; export and import round trip, hostile archives, Markdown export; backups and restore; the Home page helpers. | 310 (+2 skipped) |
 | `architecture`   | `tests/**/*.test.ts`                       | Module boundary scan driven by `tooling/architecture-rules.mjs` (the same rules ESLint uses), plus a test of the import extractor itself.                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 6                |
 
-The total on `main` (2026-10-28) is **1,148 passing tests in 67 files, plus two benchmark
-files (4 tests) that are skipped by default**: 69 files, 1,152 tests. The skipped files are the
+The total on `main` (2026-10-28) is **1,157 passing tests in 68 files, plus two benchmark
+files (4 tests) that are skipped by default**: 70 files, 1,161 tests. The skipped files are the
 [search benchmark](#search-benchmark) (`storage-sqlite`) and the
 [portability benchmark](#portability-benchmark) (`desktop`). Earlier totals: Phase 4 ended with
 1,053 in 57 files (1,007 in 54 before the timeline redesign), Phase 3 with 882 in 45 files, Phase 2
@@ -326,8 +326,11 @@ Results measured on 2026-10-27 on a developer machine with system Node (not the 
 The import apply took 23.9 s before the note-reference fix in this phase: every imported note
 rebuilt its references with a `DELETE` that scanned all references of the workspace. The fix and
 its query-plan regression test are described in
-[data-model.md](data-model.md#note_references-notereference). The apply still runs on the main
-process thread, so the app does not respond for those seconds.
+[data-model.md](data-model.md#note_references-notereference). These benchmark numbers come from
+running the import in-process under Vitest. In the app the records are written in a worker
+thread; measured once in the packaged app with 5,000 nodes, the import took 4.2 s (3.8 s
+in-process) and the longest stall of the main process's event loop was 19 ms (3.8 s
+in-process).
 
 ## Accessibility check
 

@@ -17,6 +17,7 @@ import type { BrowserWindow } from 'electron';
 
 import { checkAttachmentPreview } from './smoke-attachments';
 import { checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
+import type { ImportRecordWriter } from './portability/import-writer';
 import { checkExportImport } from './smoke-transfer';
 import { checkBackupAndRestore } from './smoke-backups';
 import { checkAccessibility } from './smoke-accessibility';
@@ -57,6 +58,7 @@ export async function runSmokeTest(
   window: BrowserWindow,
   workspaces: WorkspaceManager,
   backups: BackupService,
+  importRecordWriter: ImportRecordWriter,
   axePath?: string,
 ): Promise<SmokeTestReport> {
   const checks: SmokeTestCheck[] = [];
@@ -363,7 +365,7 @@ export async function runSmokeTest(
     await check('workspace exported to ZIP and imported back', async () => {
       const directory = mkdtempSync(join(tmpdir(), 'mmap-smoke-transfer-'));
       try {
-        await checkExportImport(workspaces, directory);
+        await checkExportImport(workspaces, directory, importRecordWriter);
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }

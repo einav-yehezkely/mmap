@@ -100,11 +100,14 @@ mmap follows Electron's standard three-part model, with the renderer treated as 
 
 Build configuration is in `apps/desktop/electron.vite.config.ts`. Every library and every
 `@mmap/*` package is bundled, so the packaged app contains no `node_modules`. The preload script is
-CommonJS because sandboxed preload scripts cannot be ES modules. All SQLite and file work runs in
-the main process; there is no worker thread yet. Most operations are short, but a large import is
-not: importing 10,000 nodes keeps the main process busy for about 8 seconds (developer machine),
-during which the window does not respond. The export's snapshot read and the integrity checks of
-backups and restores are synchronous SQLite calls as well, and block for shorter times.
+CommonJS because sandboxed preload scripts cannot be ES modules. SQLite and file work runs in the
+main process, with one exception: the records of a ZIP import are written in a worker thread
+(`src/main/workers/import-worker.ts`, built as `out/main/import-worker.js` next to the main
+bundle; see [Import](#import)). Importing 5,000 nodes in the packaged app froze the main process
+for 3.8 s before; with the worker its longest stall was 19 ms. The other operations are short: the
+export's snapshot read and the integrity checks of backups and restores are synchronous SQLite
+calls too; on the 10,000-node dataset a whole export took 0.9 s and a backup 1.6 s (benchmark,
+developer machine), and only part of that blocks the main process.
 
 Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 
@@ -1386,6 +1389,21 @@ inactivity discard it (`IMPORT_EXPIRED`).
    assignments, relationships, note references rebuilt from the imported notes (after all nodes
    exist, so links among them resolve), maps, placements, connectors, attachments, timeline
    events, graph positions, and the `transfer_jobs` row that records the import.
+
+   In the app this runs in a **worker thread** (`portability/import-writer.ts`). `node:sqlite`
+   is synchronous and the awaits inside the transaction resolve at once, so on the main thread
+   the whole transaction ran without giving the event loop a turn, and the window stopped
+   responding. Now the main process holds the workspace's write queue with
+   `SqliteConnections.runExclusive` (queued transactions wait; reads continue under WAL), starts
+   a worker from the bundled `import-worker.js`, and posts it the plan (structured clone). The
+   worker opens its own connection to the database file, builds the same `ImportService` on the
+   SQLite repositories, runs `apply`, closes the connection without a checkpoint, and answers
+   with the outcome. Domain errors are sent back as name, code and message and rebuilt as
+   `DomainError`; other errors become plain errors (logged, reported as `INTERNAL_ERROR`). If the
+   thread dies, its open transaction is rolled back. Tests run the same writer in-process through
+   a separate connection (`round-trip.test.ts`); the packaged smoke check imports through the
+   real worker.
+
 3. If anything fails, the files stored so far are removed and the error is returned; nothing of
    the import becomes visible. A crash between the two steps leaves only unreferenced files,
    which startup reconciliation removes.
@@ -1555,11 +1573,13 @@ implemented); see [ADR-0004](adr/0004-installer-signing-and-updates.md).
 - **Merging imports.** Import always adds copies with new IDs. Updating records that came from an
   earlier import would need a stored mapping from archive IDs to local IDs, which `transfer_jobs`
   does not keep.
-- **Heavy work off the main thread.** Database work, including search, maps, graph queries,
-  export, import and backups, currently runs on the main process thread, and the hierarchical map
-  layout and the Cytoscape graph layout run in the renderer. Importing 10,000 nodes blocks the
-  main process for about 8 seconds. Imports and large queries should move to a worker; the
-  `TransactionRunner` port is asynchronous so the coordinator can move with them.
+- **Heavy work off the main thread.** Import writes run in a worker thread. Other database
+  work, including search, maps, graph queries, export and backups, runs on the main process
+  thread (search and graph queries are within the PRD's targets on the 10,000-node dataset;
+  a whole export took 0.9 s and a backup 1.6 s), and the hierarchical map
+  layout and the Cytoscape graph layout run in the renderer. If one of them grows, the same
+  pattern applies: hold the write queue with `runExclusive` (or read on a separate connection)
+  and run the work in a worker.
 - **Progress and cancellation.** Export, import, backup and restore are single request and
   response calls today. Long-running operations should report progress and allow cancellation
   (PRD §7.2); `transfer_jobs` already has `kind`, `state`, `progress` and `idempotency_key`

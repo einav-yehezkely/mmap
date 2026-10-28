@@ -480,8 +480,9 @@ copy the folder".
 - **Reference-machine performance.** All measurements above are developer-machine numbers (system
   Node or the unpacked build), not the installed build on the documented four-core, 16 GB, SSD
   computer.
-- **Worker thread** (carried from Phases 0 to 4). Large imports run on the main process thread:
-  importing 10,000 nodes keeps the app busy for about 8 seconds.
+- **Worker thread** (carried from Phases 0 to 4). Large imports ran on the main process thread
+  (importing 10,000 nodes kept the app busy for about 8 seconds). Done after Phase 5: import
+  writes run in a worker thread (see section 12).
 - **Accessibility.** Only automated checks have run. A manual keyboard and screen-reader pass is
   still needed, and the graph canvas itself is not keyboard-operable (the List tab is the
   alternative).
@@ -514,3 +515,25 @@ Merged as PR #9 ("Mind maps: note preview, hierarchy double-click, connector not
 
 Test suite: 1,148 passing tests in 67 files, plus two benchmark files (4 tests) skipped by
 default.
+
+## 12. Import writes in a worker thread (2026-10-28)
+
+PRD §9: "Keep the UI responsive with workers." The records of a ZIP import are written in a worker
+thread (`apps/desktop/src/main/workers/import-worker.ts`, `portability/import-writer.ts`) while
+the main process holds the workspace's write queue (`SqliteConnections.runExclusive`, new). The
+worker has its own connection and runs the same `ImportService.apply` transaction, so the
+all-or-nothing guarantee is unchanged.
+
+| Measurement (packaged app, 5,000 nodes) | Main thread before | Worker |
+| --------------------------------------- | ------------------ | ------ |
+| Import apply, total                     | 3.8 s              | 4.2 s  |
+| Longest stall of the main process       | 3.8 s              | 19 ms  |
+
+Tests: `sqlite-connections.test.ts` (runExclusive: another connection writes while transactions
+wait; failures release the queue; refused inside a transaction), `round-trip.test.ts` (the full
+round trip also through a separate connection with a structured-cloned job; a failure part-way
+leaves nothing and the workspace stays writable), `import-writer.test.ts` (errors across the
+thread boundary). The packaged smoke check "workspace exported to ZIP and imported back" imports
+through the real worker. Still on the main thread: export, backups and restore (on the 10,000-node
+dataset a whole export took 0.9 s, a backup 1.6 s and a restore 2.7 s; only part of that blocks),
+search and graph queries.

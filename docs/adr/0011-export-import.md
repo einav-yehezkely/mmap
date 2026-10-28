@@ -98,9 +98,9 @@ wikilink target IDs and attachment IDs ([ADR-0008](0008-wikilinks-and-note-schem
 - Duplicate detection is exact but narrow: a new export of the same data has a new export ID and
   is not recognised as a duplicate.
 - An archive that is inconsistent in any way is refused as a whole; there is no partial import.
-- Validation reads the whole data file into memory (bounded at 256 MiB) and the import runs on the
-  main process thread: about 8 seconds for 10,000 nodes on a developer machine, during which the
-  window does not respond. A worker thread and progress reporting are follow-up work.
+- Validation reads the whole data file into memory (bounded at 256 MiB). The import's records
+  are written in a worker thread (amendment of 2026-10-28), so the window keeps responding; there
+  is no progress reporting yet.
 - `formatVersion` must be raised whenever the archive layout or data shape changes; older builds
   then refuse newer archives with an actionable message.
 - Map viewports, placement coordinates, colors and collapse states, and graph positions are

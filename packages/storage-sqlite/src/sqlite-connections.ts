@@ -81,6 +81,24 @@ export class SqliteConnections implements TransactionRunner {
   }
 
   /**
+   * Holds the write queue's slot without opening a transaction on the writer, for work that
+   * writes through a separate connection to the same file (a worker thread, so a long import does
+   * not block the main process). Transactions requested meanwhile wait, so the other connection
+   * is the only writer; reads keep working (WAL). The work must commit or roll back its own
+   * transaction before it settles.
+   */
+  public runExclusive<Result>(work: () => Promise<Result>): Promise<Result> {
+    if (this.transactionContext.getStore() !== undefined) {
+      // Inside a transaction the writer holds the database lock, so another connection could
+      // never write: fail clearly instead of waiting for the busy timeout.
+      throw new Error('runExclusive cannot be used inside a transaction.');
+    }
+    const result = this.writeQueue.then(work, work);
+    this.writeQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  /**
    * Waits for queued transactions to finish, then closes both connections. Used when the
    * workspace is closed or the app quits, so pending saves are flushed (PRD §5.1).
    */

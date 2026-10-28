@@ -162,6 +162,77 @@ describe('SqliteConnections', () => {
   });
 });
 
+describe('runExclusive (writes through another connection)', () => {
+  it('lets a second connection write while transactions wait', async () => {
+    const connections = await open();
+    const order: string[] = [];
+    let finishExclusive!: () => void;
+    const exclusive = connections.runExclusive(async () => {
+      order.push('exclusive started');
+      const other = openDatabase(databasePath);
+      try {
+        other.exec('BEGIN IMMEDIATE;');
+        other
+          .prepare('INSERT INTO workspaces (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
+          .run(
+            nextTestId(),
+            'from the other connection',
+            '2026-10-26T12:00:00.000Z',
+            '2026-10-26T12:00:00.000Z',
+          );
+        other.exec('COMMIT;');
+      } finally {
+        other.close();
+      }
+      await new Promise<void>((resolve) => {
+        finishExclusive = resolve;
+      });
+      order.push('exclusive finished');
+    });
+    const queued = connections.runInTransaction(async () => {
+      order.push('transaction ran');
+    });
+    await tick();
+    await tick();
+    expect(order).toEqual(['exclusive started']);
+    // Reads keep working while the slot is held, and see the other connection's commit.
+    expect(countWorkspaces(connections)).toBe(1);
+
+    finishExclusive();
+    await exclusive;
+    await queued;
+    expect(order).toEqual(['exclusive started', 'exclusive finished', 'transaction ran']);
+  });
+
+  it('waits for a running transaction and keeps the queue alive after a failure', async () => {
+    const connections = await open();
+    const order: string[] = [];
+    const running = connections.runInTransaction(async () => {
+      await tick();
+      order.push('transaction');
+    });
+    const failing = connections.runExclusive(async () => {
+      order.push('exclusive');
+      throw new Error('worker failed');
+    });
+    await running;
+    await expect(failing).rejects.toThrow('worker failed');
+    await connections.runInTransaction(async () => {
+      order.push('after');
+    });
+    expect(order).toEqual(['transaction', 'exclusive', 'after']);
+  });
+
+  it('is refused inside a transaction', async () => {
+    const connections = await open();
+    await expect(
+      connections.runInTransaction(async () => {
+        await connections.runExclusive(async () => undefined);
+      }),
+    ).rejects.toThrow('runExclusive cannot be used inside a transaction.');
+  });
+});
+
 describe('openWorkspaceDatabase', () => {
   it('takes no backup for a brand-new database', async () => {
     const opened = await openWorkspaceDatabase(databasePath, { backupDirectory });

@@ -14,7 +14,8 @@
  *
  * `applyImport` then copies each attachment out of the archive into a temporary folder, checks
  * its bytes against the recorded checksum, stores it with the attachment store (which verifies
- * again and only then moves it into place), and writes every record in one transaction. If
+ * again and only then moves it into place), and writes every record in one transaction (in the
+ * app, in a worker thread: see `import-writer.ts`). If
  * anything fails, the files stored so far are removed: nothing of the import stays visible, and
  * completion is reported only after all files and records are in place. A crash in between
  * leaves only unreferenced files, which startup reconciliation removes.
@@ -48,6 +49,7 @@ import {
 import { describeRejection, extensionOf } from '../services/attachment-ipc-services';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
 import { parseArchiveData, parseArchiveManifest } from './archive-schema';
+import { writeImportInProcess, type ImportRecordWriter } from './import-writer';
 import { toWriteError, TransferError } from './transfer-errors';
 import { ZipReader, type ZipLimits } from './zip-reader';
 
@@ -148,7 +150,8 @@ export async function prepareImport(
 }
 
 /**
- * Applies a prepared import. Closes the archive in every case.
+ * Applies a prepared import. Closes the archive in every case. `writeRecords` writes the
+ * database records; the app passes the worker-thread writer, tests use the in-process default.
  *
  * @throws TransferError `ARCHIVE_CHECKSUM_MISMATCH` or `TRANSFER_FAILED`; storage errors pass
  *   through. On failure nothing of the import remains.
@@ -156,6 +159,7 @@ export async function prepareImport(
 export async function applyImport(
   workspace: OpenWorkspace,
   prepared: PreparedImport,
+  writeRecords: ImportRecordWriter = writeImportInProcess,
 ): Promise<void> {
   const { plan, reader } = prepared;
   const stored = new Map<AttachmentId, string>();
@@ -196,7 +200,7 @@ export async function applyImport(
       stored.set(attachment.id, file.relativePath);
       await rm(temporaryPath, { force: true });
     }
-    await workspace.services.importer.apply(plan, prepared.manifest.exportId, stored);
+    await writeRecords(workspace, plan, prepared.manifest.exportId, stored);
   } catch (error) {
     for (const relativePath of stored.values()) {
       await workspace.attachmentStore.remove(relativePath).catch(() => undefined);
