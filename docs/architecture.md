@@ -147,10 +147,24 @@ switching workspaces discards all view state of the previous one.
   keystroke or at once on Enter. Ctrl+K (Cmd+K) focuses the box from anywhere.
 - **Node detail panel** (`nodes/node-detail-panel.tsx`): title, summary, tags, relationships
   (`relationships/node-relationships.tsx`), rich note with wikilinks, attachments, backlinks
-  (`nodes/node-backlinks.tsx`), save status, recovery and conflict banners, duplicate and delete.
+  (`nodes/node-backlinks.tsx`), the maps that show the node with "Add to mind maps…"
+  (`nodes/node-maps.tsx`), save status, recovery and conflict banners, duplicate and delete. Two
+  layouts: `panel` beside the current view (Mind Maps, Search, the graph, the timeline) and
+  `page`, a full-width editor that replaces Home or the Library while it is open. In the page
+  layout the note gets the main column and the details sit in a side column from 900 px of editor
+  width (measured with a `ResizeObserver`), otherwise in a collapsed "Details" section below the
+  note. `App` keeps the replaced view mounted but hidden and restores its scroll position on "Back
+  to Home" / "Back to Library"; leaving after a failed save asks first.
+- **Node preview** (`nodes/node-preview.tsx`, `notes/note-view.tsx`): a read-only side panel that
+  Mind Maps opens on double-click. The note is drawn by a non-editable Tiptap instance with the
+  editor's extensions, so it looks exactly like the editor; node links open that node's preview
+  and web links go through `app:open-external-link`. The pencil button switches to the node
+  detail panel. The preview re-reads the node on `notifyNodesChanged`.
 - **Mind Maps** (`maps/maps-view.tsx`, `maps/map-editor.tsx`): the list of maps and the editor
   for one map, with the canvas, the outline and the dialogs (see [Mind maps](#mind-maps)).
-  Opening an item opens its node in the same detail panel as everywhere else.
+  Opening an item (double-click, Enter or **Open**) shows the node preview; its pencil opens the
+  same detail panel as everywhere else. The editor is a CSS container: below 48 rem of width (a
+  panel is open beside it) the outline moves under the canvas instead of squeezing it.
 - **Knowledge Graph** (`graph/graph-view.tsx`, `graph/graph-canvas.tsx`): toolbar and filters
   (including mind maps), the Cytoscape canvas with saved positions, a completeness statement, the
   side panel for the selected node, Focus mode and the List tab (see
@@ -394,7 +408,10 @@ PRD §5.3 and §8.
    underline, strike, code, lists, quotes, code blocks, undo), task lists, tables, inline and
    block math, the attachment node (`notes/attachment-node.ts`) and the wikilink node
    (`notes/wikilink-node.ts`, see [Wikilinks and backlinks](#wikilinks-and-backlinks)). Each
-   paragraph gets `dir="auto"` for bidirectional text.
+   paragraph gets `dir="auto"` for bidirectional text (Tiptap `textDirection: 'auto'`). The
+   **Right to left** toolbar button sets the selected blocks to `rtl`, or back to automatic; the
+   choice is stored as an optional `dir` attribute (see
+   [Note schema version 2](#note-schema-version-2)).
 2. **Normalization in the renderer.** On every change, the editor JSON is passed through
    `parseNoteDocument` before it reaches the autosave state machine. The draft is therefore
    identical to what will be stored, so autosave settles, and invalid content (for example a note
@@ -506,6 +523,13 @@ Identity is `targetNodeId`, never the label. The label is what the author sees a
 when the target is renamed. The parser requires a canonical lowercase UUID and a label of 1 to 300
 characters without control characters, and drops any other attribute (such as a cached title).
 Every version-1 document is a valid version-2 document, so old notes are read without conversion.
+
+Paragraphs, headings, quotes, lists, list items, task lists and task items may carry an optional
+`dir` attribute, `"rtl"` or `"ltr"`, set with the editor's direction button (for example a
+Hebrew paragraph that starts with an English word). Any other value, including the editor's
+`"auto"`, is dropped, so automatic direction is the default and is not stored. This needed no
+schema version change: a build that does not know the attribute drops it and shows the block in
+the automatic direction.
 
 ### Migration 2: a compatibility marker
 
@@ -798,8 +822,30 @@ may form cycles; a connector from an item to itself is refused (`INVARIANT_VIOLA
 semantic relationship, but only one that connects exactly the same two nodes, in either direction
 (`VALIDATION_FAILED` otherwise). Referencing never creates a relationship, and deleting the
 relationship only clears the reference. The canvas shows the label and, for a referenced
-relationship, its type in brackets. Today the canvas creates plain connectors only; the label and
-the reference are available through `maps:add-connection`.
+relationship, its type in brackets. The reference is available through `maps:add-connection`
+only; the canvas creates plain connectors.
+
+Editing on the canvas (`map-canvas.tsx`, `map-editor.tsx`), freeform mode only:
+
+- **Drawing.** `ConnectionMode.Loose` lets either dot of an item start or end a connector, and
+  `onConnect` orients it away from the item the drag started on (with the left dot, React Flow
+  reports that item as the target). A dashed line in the accent color follows the pointer.
+- **Selecting, removing, moving.** The custom `ConnectorEdge` has a 24 px interaction stroke;
+  when selected it shows round grips at both ends, a × button and a note button. Dragging an end
+  to another item replaces the connector with one between the new items (same label; the
+  relationship reference is kept only while it joins the same two nodes); dropping it on empty
+  canvas removes it. Delete or Backspace removes the selected connectors.
+- **Notes.** The note button (or double-clicking a note) opens a text box on the line; Enter or
+  leaving the box saves through `maps:set-connection-label`, Escape cancels, and blank text
+  removes the label. Labels are normalized like other map text (whitespace collapsed, control
+  characters refused, at most 200 characters).
+- **Undo.** The editor keeps the last 20 connector changes (added, removed, moved, note changed)
+  and reverses the newest with Ctrl+Z or the **Undo** notice shown for 10 seconds after a change.
+  Undoing a removal draws the connector again, so it gets a new ID.
+- **Opening items.** Double-clicks on items are caught on the wrapper in the capture phase. In
+  hierarchical mode items are not draggable, so React Flow does not mark them `nopan` and its
+  double-click zoom (d3-zoom, which stops the event) would otherwise take the event before
+  `onNodeDoubleClick` sees it.
 
 To keep visual structure and meaning apart (PRD §14), hierarchy lines are solid and cannot be
 selected, connectors are dashed with an arrow, and a legend in the editor explains both. Both use
@@ -1407,8 +1453,10 @@ full, no permission, folder or drive not available).
 
 `BackupService` runs one backup operation at a time (a promise queue) and never blocks the user:
 
-- `onWorkspaceOpened` calls `backUpIfDue`, which takes a snapshot when the newest one is not from
-  today's calendar day in the workspace timezone (`isBackupDue`). An hourly timer repeats the
+- `onWorkspaceOpened` calls `scheduleAfterOpen`, which runs `backUpIfDue` two minutes later
+  (`BACKUP_DELAY_AFTER_OPEN_MS`), so the backup never competes with the first screens.
+  `backUpIfDue` takes a snapshot when the newest one is not from today's calendar day in the
+  workspace timezone (`isBackupDue`). An hourly timer repeats the
   check, so a session left open overnight still gets its daily backup. **Back up now** always
   takes one.
 - After every successful backup, and when retention changes, `snapshotsToKeep` keeps the newest

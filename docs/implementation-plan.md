@@ -269,10 +269,10 @@ the outline), and the node delete preview's map placement count is no longer alw
   Moving an item under a distant parent takes several steps; there is no "move to…" picker.
 - **Connectors cannot be drawn in hierarchical mode.** Existing connectors are shown and can be
   deleted, but new ones can be drawn only in freeform mode.
-- **Connector labels and relationship links have no UI.** The service and `maps:add-connection`
-  accept a label and a `relationshipId` (checked to connect the same two nodes), but the canvas
-  always creates a plain connector without a label, and no channel changes a connector after it
-  was created. Linking a connector to a relationship (PRD §4.4) therefore exists only in the API.
+- **Relationship links on connectors have no UI.** The service and `maps:add-connection` accept
+  a `relationshipId` (checked to connect the same two nodes), but the canvas always creates a
+  plain connector. Linking a connector to a relationship (PRD §4.4) therefore exists only in the
+  API. (Connector labels got a UI and `maps:set-connection-label` after Phase 5.)
 - **The switch-to-hierarchy review offers limited choices.** For each item the dialog offers only
   the proposed parent (or the candidates of an ambiguous item) and "Top level". Any other parent
   has to be set afterwards in the outline.
@@ -452,7 +452,21 @@ copy the folder".
   `map-model.ts`; tests in `map-service.test.ts` and `map-model.test.ts`).
 - **"Add to Mind Maps" when creating a node.** The New node dialog creates one node and places it
   on the chosen maps in one transaction, at a free spot (`findFreePosition`) and, in hierarchies,
-  under a chosen parent; the open map is preselected (`node-create-with-maps.test.ts`).
+  under a chosen parent; the open map is preselected (`node-create-with-maps.test.ts`). The node
+  panel lists the node's maps and offers the same picker (`maps:list-for-node`, `maps:add-node`).
+- **Full-width node editor** from Home ("Continue where you left off") and the Library: the editor
+  replaces the view, details move to a side column or a collapsed section depending on the width,
+  and going back restores the view at the same scroll position (`node-detail-panel.tsx` `page`
+  layout, `App.tsx`).
+- **Connector editing on maps.** Either dot starts a connector and a dashed line follows the
+  pointer; a selected connector has grips to move its ends, a × button, and Delete; dropping an
+  end on empty canvas removes it; Ctrl+Z or the **Undo** notice reverses the last 20 connector
+  changes. The map help is a collapsed "How this map works" section in plain words.
+- **Right-to-left writing.** A toolbar button sets selected paragraphs to right-to-left; the note
+  schema keeps an optional `dir` attribute (`note-document.test.ts`, "text direction").
+- **Accessibility check in both themes.** CI (light theme) found an amber warning text below
+  4.5:1 that local runs (dark theme) missed; it was fixed, and the packaged check now scans every
+  view in both themes, reloading the window after each switch.
 
 ### Not yet done in Phase 5
 
@@ -478,3 +492,25 @@ copy the folder".
   only. `transfer_jobs` records only completed imports, not exports, backups or failed jobs.
 - **Backup destinations on network shares are not refused** (only workspaces are).
 - **Markdown export** leaves out maps and timeline history by design, and cannot be imported.
+
+## 11. After Phase 5 (2026-10-28)
+
+Merged as PR #9 ("Mind maps: note preview, hierarchy double-click, connector notes"):
+
+- **Note preview from maps.** Double-clicking a map item (or **Open** / Enter in the outline)
+  shows its note read-only beside the map, drawn by the editor's own extensions; the pencil in the
+  corner opens the node panel (`node-preview.tsx`, `note-view.tsx`).
+- **Double-click in hierarchy maps.** It did nothing there: items that cannot be dragged are not
+  marked `nopan`, so React Flow's double-click zoom took the event. The canvas now catches item
+  double-clicks in the capture phase, in both modes.
+- **Notes on connectors.** New channel `maps:set-connection-label` (87 channels); the `label`
+  column existed since migration 1, so no migration. Map-service tests cover writing, normalizing,
+  Hebrew text, removing, stale revisions, too-long notes and missing connectors.
+- **Narrow map editor.** With a panel beside the map, the outline moves under the canvas
+  (container query).
+- **Smoke test.** 19 packaged checks: new "double-clicking a map item previews its note (freeform
+  and hierarchy); the pencil opens the editor", with real mouse input, and "a note written on a
+  connector is saved, shown and undone".
+
+Test suite: 1,148 passing tests in 67 files, plus two benchmark files (4 tests) skipped by
+default.

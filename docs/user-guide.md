@@ -132,7 +132,8 @@ and attached files. Several nodes can have the same title.
 
 - Click **New node** at the top of the window (or on Home, or in the Library). Type a title (it
   can be changed later; an empty title becomes "Untitled node") and click **Create node**. The new
-  node opens on the right.
+  node opens: across the whole window when you are on Home or in the Library, otherwise on the
+  right.
 - **Add to Mind Maps** in the same window is optional: tick one or more maps to place the node on
   them right away, or tick none to keep it only in the Library. If you open the window while a
   map is open, that map is already ticked. In a hierarchy map, choose where it goes with **Place
@@ -142,6 +143,12 @@ and attached files. Several nodes can have the same title.
 - The **Library** lists every node in the workspace with its last update time and tags. Choose
   **Sort by**: Recently updated, Recently created, or Title (A–Z). Click **Load more** to see more
   nodes. Click a node to open it.
+- **Notes opened from Home or the Library fill the window**, so there is room to write. Tags,
+  relationships, maps, attachments and links sit beside the note, or under it in a collapsed
+  **Details** section when the window is narrow. **Back to Home** (or **Back to Library**)
+  returns you to the same place on the page. Changes are saved as you type; if the last save
+  failed, mmap asks before you leave.
+- **Add to mind maps…** in an open node lists the maps it is on and adds it to more maps.
 - To find a node by what it says, use the **search box** at the top of the window (see
   [Search](#search)).
 
@@ -216,6 +223,7 @@ The **Note** area under the tags and relationships is a rich text editor. Use th
 | Heading 1, Heading 2, Heading 3                  | Section headings                                                                         |
 | Bulleted list, Numbered list, Checklist          | Lists; checklist items have a box you can tick                                           |
 | Quote, Code block                                | Quoted text and blocks of code                                                           |
+| Right to left                                    | Writes the selected paragraphs right to left; press again for the automatic direction    |
 | Insert table                                     | Adds a table; inside a table you can add or remove rows and columns, or delete the table |
 | Inline formula, Display formula                  | Mathematics (see below)                                                                  |
 | Link to a node ([[)                              | Links to another node (see [Linking to other nodes](#linking-to-other-nodes))            |
@@ -245,6 +253,11 @@ Links to other nodes work differently; see [Linking to other nodes](#linking-to-
 Each paragraph takes its direction from its own text. You can write Hebrew or Arabic paragraphs
 and English paragraphs in the same note, and each is aligned correctly. Titles, summaries and tags
 work the same way.
+
+When a paragraph starts with a word in the other direction (for example a Hebrew sentence that
+begins with an English term), set its direction yourself: put the cursor in it, or select several
+paragraphs, and press **Right to left** in the toolbar. Press it again to go back to the automatic
+direction. The choice is saved with the note.
 
 ### Size
 
@@ -1114,7 +1127,7 @@ These features are planned for later versions:
 - In the timeline: **separate lanes per tag or topic**. Today all entries share one time axis.
 - **Changing the text of an existing node link.** Delete the link and insert it again with new
   **Link text**.
-- On mind maps: **labels on connectors**, **linking a connector to a relationship**, **dragging
+- On mind maps: **linking a connector to a relationship**, **dragging
   an item onto another to change its parent**, a **search or sort** for the list of maps, and
   more colors.
 - **More than one window.**
