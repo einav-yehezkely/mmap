@@ -44,6 +44,7 @@ import { createGraphTimelineIpcServices } from './services/graph-timeline-ipc-se
 import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
 import { BackupService } from './backups/backup-service';
+import { workerImportWriter } from './portability/import-writer';
 import {
   createBackupIpcServices,
   type BackupNativeInteractions,
@@ -87,6 +88,9 @@ registerAppSchemeAsPrivileged();
 guardAllWebContents(rendererLocation);
 
 const settings = createFileSettingsStore(app.getPath('userData'));
+// Large imports are written in a worker thread so the app keeps responding (PRD §9). The worker
+// is built next to this file (electron.vite.config.ts).
+const importRecordWriter = workerImportWriter(new URL('./import-worker.js', import.meta.url));
 const workspaces = new WorkspaceManager({
   settings,
   defaultWorkspacesRoot: join(app.getPath('userData'), 'workspaces'),
@@ -314,6 +318,7 @@ async function startApplication(): Promise<void> {
         native: transferInteractions,
         appVersion: app.getVersion(),
         ids: { newId: () => randomUUID() },
+        importRecordWriter,
       }),
       ...createBackupIpcServices(backups, backupInteractions),
       'preferences:get': () => workspaces.getPreferences(),
@@ -337,7 +342,13 @@ async function startApplication(): Promise<void> {
   });
 
   if (smokeTest) {
-    const report = await runSmokeTest(mainWindow, workspaces, backups, smokeAxePath(process.argv));
+    const report = await runSmokeTest(
+      mainWindow,
+      workspaces,
+      backups,
+      importRecordWriter,
+      smokeAxePath(process.argv),
+    );
     backups.stop();
     await backups.idle();
     await workspaces.close();

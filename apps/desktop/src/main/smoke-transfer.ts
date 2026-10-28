@@ -11,12 +11,14 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
+import type { ImportRecordWriter } from './portability/import-writer';
 import { createTransferIpcServices } from './services/transfer-ipc-services';
 import type { WorkspaceManager } from './workspaces/workspace-manager';
 
 export async function checkExportImport(
   workspaces: WorkspaceManager,
   scratchDirectory: string,
+  importRecordWriter: ImportRecordWriter,
 ): Promise<void> {
   const workspace = workspaces.current;
   if (workspace === null) throw new Error('No workspace is open.');
@@ -30,6 +32,8 @@ export async function checkExportImport(
     },
     appVersion: 'smoke',
     ids: { newId: () => randomUUID() },
+    // The app's writer, so the check proves the bundled worker thread runs in the packaged app.
+    importRecordWriter,
   });
 
   const title = `Smoke export ${randomUUID()}`;

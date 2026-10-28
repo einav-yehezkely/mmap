@@ -16,6 +16,7 @@ import { DomainError, type IdGenerator } from '@mmap/domain';
 import type { IpcServices } from '../ipc/register-ipc-handlers';
 import { exportWorkspaceMarkdown } from '../portability/export-markdown';
 import { exportWorkspaceArchive } from '../portability/export-workspace';
+import type { ImportRecordWriter } from '../portability/import-writer';
 import { applyImport, prepareImport, type PreparedImport } from '../portability/import-workspace';
 import { TransferError } from '../portability/transfer-errors';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
@@ -40,6 +41,8 @@ export interface TransferIpcDependencies {
   readonly appVersion: string;
   readonly ids: IdGenerator;
   readonly now?: () => Date;
+  /** Writes the import's records; the app passes the worker-thread writer. */
+  readonly importRecordWriter?: ImportRecordWriter;
 }
 
 interface PendingImport {
@@ -154,7 +157,7 @@ export function createTransferIpcServices(
         );
       }
       pending = null;
-      await applyImport(workspace, prepared);
+      await applyImport(workspace, prepared, dependencies.importRecordWriter);
       return { summary: prepared.plan.summary };
     },
 

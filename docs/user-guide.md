@@ -1112,7 +1112,8 @@ What to expect:
 A preview stays available for 10 minutes. If you wait longer, or switch workspaces in between,
 choose the file again.
 
-A large import (thousands of nodes) can take several seconds, during which mmap does not respond.
+A large import (thousands of nodes) can take several seconds. mmap keeps responding meanwhile;
+changes you make to notes are saved once the import has finished.
 
 ## Not available yet
 

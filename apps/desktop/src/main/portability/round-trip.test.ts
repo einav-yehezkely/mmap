@@ -18,6 +18,7 @@ import type { UtcTimestamp, WorkspaceSnapshot } from '@mmap/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAttachmentIpcServices } from '../services/attachment-ipc-services';
+import { writeImport, writeImportInProcess, type ImportRecordWriter } from './import-writer';
 import { createTransferIpcServices } from '../services/transfer-ipc-services';
 import { createFileSettingsStore } from '../workspaces/app-settings';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
@@ -49,7 +50,29 @@ function startApp(profile: string): WorkspaceManager {
   return manager;
 }
 
-function transfer(manager: WorkspaceManager, archivePath: string) {
+/**
+ * The worker thread's path without the thread: the records are written through a separate
+ * connection while the write queue is held, from a structured clone of the job, exactly as the
+ * worker receives it. (Vitest cannot start the bundled worker; the packaged smoke test does.)
+ */
+const writeLikeTheWorker: ImportRecordWriter = (workspace, plan, exportId, storedFiles) =>
+  workspace.connections.runExclusive(() =>
+    writeImport(
+      structuredClone({
+        databasePath: workspace.paths.database,
+        workspaceId: workspace.id,
+        plan,
+        exportId,
+        storedFiles: [...storedFiles],
+      }),
+    ),
+  );
+
+function transfer(
+  manager: WorkspaceManager,
+  archivePath: string,
+  importRecordWriter: ImportRecordWriter = writeImportInProcess,
+) {
   return createTransferIpcServices({
     currentWorkspace: () => manager.current,
     maxAttachmentBytes: () => Promise.resolve(20 * 1024 * 1024),
@@ -59,6 +82,7 @@ function transfer(manager: WorkspaceManager, archivePath: string) {
     },
     appVersion: 'test',
     ids: { newId: () => crypto.randomUUID() },
+    importRecordWriter,
   });
 }
 
@@ -206,7 +230,10 @@ function byTitle(snapshot: WorkspaceSnapshot) {
 }
 
 describe('workspace export and import (criterion 12)', () => {
-  it('round-trips every entity into a fresh workspace with new IDs', async () => {
+  it.each([
+    ['in the main process', writeImportInProcess],
+    ['through a separate connection, as in the worker thread', writeLikeTheWorker],
+  ])('round-trips every entity into a fresh workspace with new IDs (%s)', async (_, writer) => {
     const source = startApp('source');
     await source.startup();
     await buildSourceWorkspace(source);
@@ -235,7 +262,7 @@ describe('workspace export and import (criterion 12)', () => {
     await target.services.tags.assignToNode(existing.id, 'Thermo');
     await target.services.relationships.createType('explains', 'undirected');
 
-    const services = transfer(destination, archivePath);
+    const services = transfer(destination, archivePath, writer);
     const preview = await services['transfer:preview-import']({});
     if (preview.status !== 'ready') throw new Error('preview was cancelled');
     expect(preview).toMatchObject({
@@ -418,6 +445,45 @@ describe('workspace export and import (criterion 12)', () => {
       page: { limit: 10 },
     });
     expect(hits.items.map((hit) => hit.title)).toEqual(['Entropy']);
+  });
+
+  it('leaves nothing behind when the worker path fails part-way, and stays usable', async () => {
+    const source = startApp('source');
+    await source.startup();
+    await current(source).services.nodes.create({ title: 'First' });
+    await current(source).services.nodes.create({ title: 'Second' });
+    const archivePath = join(sandbox, 'two.mmap.zip');
+    await transfer(source, archivePath)['transfer:export-zip']({});
+
+    const destination = startApp('destination');
+    await destination.startup();
+    const target = current(destination);
+    await target.services.nodes.create({ title: 'Already here' });
+    // The second insert of the same node fails inside the worker's transaction.
+    const failing: ImportRecordWriter = (workspace, plan, exportId, storedFiles) =>
+      writeLikeTheWorker(
+        workspace,
+        { ...plan, nodes: [...plan.nodes, plan.nodes[0]!] },
+        exportId,
+        storedFiles,
+      );
+    const services = transfer(destination, archivePath, failing);
+    const preview = await services['transfer:preview-import']({});
+    if (preview.status !== 'ready') throw new Error('cancelled');
+    await expect(
+      services['transfer:apply-import']({
+        importToken: preview.importToken,
+        acceptDuplicate: false,
+      }),
+    ).rejects.toThrow();
+
+    const titles = (await target.services.snapshots.read(target.id)).nodes.map(
+      (node) => node.title,
+    );
+    expect(titles).toEqual(['Already here']);
+    // The write queue was released: ordinary saves work again.
+    await target.services.nodes.create({ title: 'After the failure' });
+    expect((await target.services.snapshots.read(target.id)).nodes).toHaveLength(2);
   });
 
   it('warns before importing the same archive again', async () => {
