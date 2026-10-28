@@ -7,6 +7,7 @@ export * from './envelope';
 export * from './graph-timeline';
 export * from './maps';
 export * from './nodes';
+export * from './operations';
 export * from './relationships';
 export * from './renderer-api';
 export * from './transfer';

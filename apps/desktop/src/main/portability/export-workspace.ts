@@ -29,6 +29,7 @@ import {
 } from '@mmap/domain';
 
 import type { OpenWorkspace } from '../workspaces/open-workspace';
+import { NO_PROGRESS, type Progress } from '../operations/operation-progress';
 import { ZipWriter } from './zip-writer';
 
 export interface ExportResult {
@@ -47,9 +48,13 @@ export async function exportWorkspaceArchive(
   workspace: OpenWorkspace,
   destinationPath: string,
   options: ExportOptions,
+  progress: Progress = NO_PROGRESS,
 ): Promise<ExportResult> {
+  progress.phase('Reading the workspace', null);
   const snapshot = await workspace.services.snapshots.read(workspace.id);
-  const { included, warnings } = await checkAttachmentFiles(workspace, snapshot);
+  progress.checkCancelled();
+  progress.phase('Checking attached files', snapshot.attachments.length);
+  const { included, warnings } = await checkAttachmentFiles(workspace, snapshot, progress);
   const data = toArchiveData({
     ...snapshot,
     attachments: snapshot.attachments.filter((attachment) => included.has(attachment.id)),
@@ -89,7 +94,11 @@ export async function exportWorkspaceArchive(
   for (const attachment of data.attachments) {
     zip.addFile(archiveAttachmentPath(attachment.id), included.get(attachment.id)!);
   }
-  await zip.writeTo(destinationPath);
+  progress.phase(
+    'Writing the archive',
+    dataBytes.length + data.attachments.reduce((sum, attachment) => sum + attachment.byteSize, 0),
+  );
+  await zip.writeTo(destinationPath, 'The export', progress);
   return { counts: manifest.counts, warnings };
 }
 
@@ -97,11 +106,14 @@ export async function exportWorkspaceArchive(
 async function checkAttachmentFiles(
   workspace: OpenWorkspace,
   snapshot: WorkspaceSnapshot,
+  progress: Progress,
 ): Promise<{ included: Map<string, string>; warnings: string[] }> {
   const included = new Map<string, string>();
   let missing = 0;
   let changed = 0;
   for (const attachment of snapshot.attachments) {
+    progress.checkCancelled();
+    progress.advance();
     const path = await workspace.attachmentStore.resolveExisting(attachment.relativePath);
     if (path === null) {
       missing += 1;

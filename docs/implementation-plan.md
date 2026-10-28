@@ -491,9 +491,10 @@ copy the folder".
 - **Import always adds copies.** There is no merge or update of existing records. Duplicate
   detection uses the export ID, so a new export of the same data is not recognised as a
   duplicate.
-- **No progress bar or cancel** for long exports, imports or backups; the UI shows a busy message
-  only. `transfer_jobs` records only completed imports, not exports, backups or failed jobs.
-- **Backup destinations on network shares are not refused** (only workspaces are).
+- **No progress bar or cancel** for long exports, imports or backups. Done after Phase 5
+  (section 15). `transfer_jobs` still records only completed imports.
+- **Backup destinations on network shares are not refused** (only workspaces are). Kept, and made
+  safe instead (section 15).
 - **Markdown export** leaves out maps and timeline history by design, and cannot be imported.
 
 ## 11. After Phase 5 (2026-10-28)
@@ -564,3 +565,26 @@ relationship** row of chips for the types in use. Tests: `sqlite-search-index.te
 "relationship-type filter" (either end; any of several types; combined with tags; an unused type;
 a type from another workspace), and the packaged bridge check "relationships, wikilinks, backlinks
 and search through the bridge" (the filter keeps the related note and drops it for another type).
+
+## 15. Progress and Cancel; safe network backup folders (2026-10-28)
+
+Long exports, import previews, imports, "Back up now" and restores show a progress bar with the
+current step; all but restores have **Cancel**, enabled only while stopping leaves nothing behind
+([architecture](architecture.md#progress-and-cancellation)). New channels
+`operations:get-progress` and `operations:cancel` (89 in total), the optional `operationId` on
+the seven long requests, and the error code `OPERATION_CANCELLED`.
+
+Backup folders on network shares were listed as "not refused". Refusing them would have removed
+the only off-machine backup place many users have (PRD §9 asks for a separate-drive destination),
+and mapped drive letters cannot be detected anyway. Instead, SQLite no longer writes to any backup
+destination: the database copy is made and checked locally, then copied as a plain file and
+verified by SHA-256.
+
+Tests: `operation-progress.test.ts` (phases, cancellable and uncancellable phases, untracked runs,
+duplicate IDs, restores); `round-trip.test.ts` "cancelling exports and imports" (no archive or
+partial file; no records, no copied files, no import history, and the import can run again);
+`backup-service.test.ts` (a cancelled backup leaves no snapshot and no failure; the local copy is
+removed and the copy in the backup folder matches its manifest; nothing but the snapshot is
+written next to it). Checked once in the packaged app with 5,000 nodes: **Back up now** showed the
+progress bar, Cancel was enabled and stopped it, "Backup cancelled" appeared, no snapshot was
+added and no failure recorded.

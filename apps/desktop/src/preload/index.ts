@@ -113,6 +113,10 @@ const api: MmapRendererApi = {
     restoreFromFolder: (request) =>
       ipcRenderer.invoke(IPC_CHANNELS.backupsRestoreFromFolder, request),
   },
+  operations: {
+    getProgress: (request) => ipcRenderer.invoke(IPC_CHANNELS.operationsGetProgress, request),
+    cancel: (request) => ipcRenderer.invoke(IPC_CHANNELS.operationsCancel, request),
+  },
   maps: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.mapsList),
     listForNode: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsListForNode, request),

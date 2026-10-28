@@ -6,11 +6,15 @@
  * Restoring replaces the workspace's content, so it always asks for confirmation and explains
  * that the current state is backed up first and the current folder goes to the Recycle Bin.
  * After a restore the window reloads, so every view shows the restored data.
+ *
+ * "Back up now" and restores show their progress (`OperationProgress`); a backup can be
+ * cancelled until its last step, a restore cannot (it swaps folders).
  */
 
 import type { BackupStatusDto } from '@mmap/contracts';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 
+import { isCancelled, newOperationId, OperationProgress } from '../components/operation-progress';
 import { ConfirmDialog } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -19,8 +23,13 @@ import { errorMessage, unwrap } from '../lib/ipc';
 
 export function BackupSettings({ timeZone }: { timeZone: string }) {
   const [status, setStatus] = useState<BackupStatusDto | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  /** What is running; long operations carry the ID their progress is read with. */
+  const [busy, setBusy] = useState<{
+    readonly text: string;
+    readonly operationId: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<BackupStatusDto['snapshots'][number] | null>(
     null,
   );
@@ -40,25 +49,44 @@ export function BackupSettings({ timeZone }: { timeZone: string }) {
     };
   }, []);
 
-  /** Runs an action that returns the new status, showing `label` meanwhile. */
-  const run = async (label: string, action: () => Promise<BackupStatusDto>) => {
-    setBusy(label);
+  /**
+   * Runs an action that returns the new status, showing `label` meanwhile, with progress when
+   * the action reports it under `operationId`.
+   */
+  const run = async (
+    label: string,
+    action: () => Promise<BackupStatusDto>,
+    operationId: string | null = null,
+  ) => {
+    setBusy({ text: label, operationId });
     setError(null);
+    setNotice(null);
     try {
       setStatus(await action());
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (isCancelled(caught)) setNotice('Backup cancelled. Nothing was changed.');
+      else setError(errorMessage(caught));
     } finally {
       setBusy(null);
     }
   };
 
+  const backUpNow = () => {
+    const operationId = newOperationId();
+    void run(
+      'Backing up…',
+      () => unwrap(window.mmap.backups.createNow({ operationId })),
+      operationId,
+    );
+  };
+
   const restore = async (snapshotId: string) => {
     setRestoreTarget(null);
-    setBusy('Restoring…');
+    const operationId = newOperationId();
+    setBusy({ text: 'Restoring…', operationId });
     setError(null);
     try {
-      await unwrap(window.mmap.backups.restore({ snapshotId }));
+      await unwrap(window.mmap.backups.restore({ snapshotId, operationId }));
       window.location.reload();
     } catch (caught) {
       setError(errorMessage(caught));
@@ -67,10 +95,11 @@ export function BackupSettings({ timeZone }: { timeZone: string }) {
   };
 
   const restoreFromFolder = async () => {
-    setBusy('Restoring…');
+    const operationId = newOperationId();
+    setBusy({ text: 'Restoring…', operationId });
     setError(null);
     try {
-      const result = await unwrap(window.mmap.backups.restoreFromFolder({}));
+      const result = await unwrap(window.mmap.backups.restoreFromFolder({ operationId }));
       if (result.status === 'restored') {
         window.location.reload();
         return;
@@ -102,7 +131,17 @@ export function BackupSettings({ timeZone }: { timeZone: string }) {
             mmap backs up automatically once a day when the workspace is open.
           </span>
         </p>
-        {busy !== null && <p className="text-muted-foreground">{busy}</p>}
+        {busy !== null &&
+          (busy.operationId === null ? (
+            <p className="text-muted-foreground">{busy.text}</p>
+          ) : (
+            <OperationProgress
+              key={busy.operationId}
+              operationId={busy.operationId}
+              fallback={busy.text}
+            />
+          ))}
+        {notice !== null && <p>{notice}</p>}
       </div>
       {status.lastFailure !== null && (
         <p role="alert" className="text-destructive">
@@ -148,10 +187,7 @@ export function BackupSettings({ timeZone }: { timeZone: string }) {
               Use the default folder
             </Button>
           )}
-          <Button
-            disabled={busy !== null}
-            onClick={() => void run('Backing up…', () => unwrap(window.mmap.backups.createNow({})))}
-          >
+          <Button disabled={busy !== null} onClick={backUpNow}>
             Back up now
           </Button>
         </div>

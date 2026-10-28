@@ -21,6 +21,7 @@ import {
 } from '@mmap/domain';
 
 import type { OpenWorkspace } from '../workspaces/open-workspace';
+import { NO_PROGRESS, type Progress } from '../operations/operation-progress';
 import { ZipWriter } from './zip-writer';
 
 export interface MarkdownExportResult {
@@ -33,8 +34,11 @@ export async function exportWorkspaceMarkdown(
   workspace: OpenWorkspace,
   destinationPath: string,
   now: () => Date,
+  progress: Progress = NO_PROGRESS,
 ): Promise<MarkdownExportResult> {
+  progress.phase('Reading the workspace', null);
   const snapshot = await workspace.services.snapshots.read(workspace.id);
+  progress.checkCancelled();
 
   const fileNames = new Map(
     snapshot.nodes.map((node) => [node.id as string, markdownFileName(node.title, node.id)]),
@@ -95,7 +99,10 @@ export async function exportWorkspaceMarkdown(
     attachmentPath: (attachmentId: string) => attachmentPaths.get(attachmentId) ?? null,
   };
   zip.addBuffer('README.md', Buffer.from(MARKDOWN_README, 'utf8'));
+  progress.phase('Converting notes', snapshot.nodes.length);
   for (const node of snapshot.nodes) {
+    progress.checkCancelled();
+    progress.advance();
     const markdown = nodeToMarkdown(
       {
         id: node.id,
@@ -111,7 +118,8 @@ export async function exportWorkspaceMarkdown(
     );
     zip.addBuffer(`nodes/${fileNames.get(node.id)!}`, Buffer.from(markdown, 'utf8'));
   }
-  await zip.writeTo(destinationPath, 'The Markdown export');
+  progress.phase('Writing the archive', null);
+  await zip.writeTo(destinationPath, 'The Markdown export', progress);
 
   return {
     nodes: snapshot.nodes.length,

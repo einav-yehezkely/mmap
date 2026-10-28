@@ -109,6 +109,10 @@ export interface MmapRendererApi {
     readonly restore: BridgeCall<'backups:restore'>;
     readonly restoreFromFolder: BridgeCall<'backups:restore-from-folder'>;
   };
+  readonly operations: {
+    readonly getProgress: BridgeCall<'operations:get-progress'>;
+    readonly cancel: BridgeCall<'operations:cancel'>;
+  };
   readonly maps: {
     readonly list: BridgeCall<'maps:list'>;
     readonly listForNode: BridgeCall<'maps:list-for-node'>;

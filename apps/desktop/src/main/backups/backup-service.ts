@@ -25,7 +25,8 @@ import { dirname, resolve } from 'node:path';
 import type { WorkspaceState } from '@mmap/contracts';
 import { isBackupDue, snapshotsToKeep } from '@mmap/domain';
 
-import { TransferError } from '../portability/transfer-errors';
+import { NO_PROGRESS, withoutCancel, type Progress } from '../operations/operation-progress';
+import { isTransferError, TransferError } from '../portability/transfer-errors';
 import type { BackupSettings, SettingsStore } from '../workspaces/app-settings';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
 import { WorkspaceError } from '../workspaces/workspace-errors';
@@ -128,13 +129,17 @@ export class BackupService {
     });
   }
 
-  /** Takes a backup now (Settings › Back up now). */
-  public backUpNow(): Promise<BackupStatus> {
+  /**
+   * Takes a backup now (Settings › Back up now). A cancelled backup leaves nothing behind and is
+   * not recorded as a failure.
+   */
+  public backUpNow(progress: Progress = NO_PROGRESS): Promise<BackupStatus> {
     return this.serialize(async () => {
       const workspace = this.requireWorkspace();
       try {
-        await this.backUp(workspace, await this.backupSettings());
+        await this.backUp(workspace, await this.backupSettings(), progress);
       } catch (error) {
+        if (isTransferError(error) && error.code === 'OPERATION_CANCELLED') throw error;
         this.recordFailure(workspace.id, error);
       }
       return this.statusOf(workspace);
@@ -169,7 +174,12 @@ export class BackupService {
    * Replaces the open workspace with one of its snapshots. A safety backup of the current state
    * is taken first, so the restore itself can be undone by restoring that one.
    */
-  public restoreSnapshot(snapshotId: string): Promise<WorkspaceState> {
+  public restoreSnapshot(
+    snapshotId: string,
+    progress: Progress = NO_PROGRESS,
+  ): Promise<WorkspaceState> {
+    // Restoring swaps folders: once started it always finishes (or rolls back on failure).
+    const steady = withoutCancel(progress);
     return this.serialize(async () => {
       const workspace = this.requireWorkspace();
       const settings = await this.backupSettings();
@@ -181,12 +191,18 @@ export class BackupService {
       }
       return this.dependencies.workspaces.restoreCurrent(
         async (target) => {
-          await buildWorkspaceFromSnapshot(snapshot.folder, target, this.dependencies.appVersion);
+          await buildWorkspaceFromSnapshot(
+            snapshot.folder,
+            target,
+            this.dependencies.appVersion,
+            steady,
+          );
         },
         async () => {
           await createSnapshot(workspace, this.destinationOf(settings), {
             appVersion: this.dependencies.appVersion,
             now: () => this.now(),
+            progress: steady,
           });
         },
       );
@@ -194,25 +210,39 @@ export class BackupService {
   }
 
   /** Restores a snapshot folder chosen by the user as a new workspace and opens it. */
-  public restoreFromFolder(snapshotFolder: string): Promise<WorkspaceState> {
+  public restoreFromFolder(
+    snapshotFolder: string,
+    progress: Progress = NO_PROGRESS,
+  ): Promise<WorkspaceState> {
+    const steady = withoutCancel(progress);
     return this.serialize(async () => {
       const manifest = await readSnapshotManifest(snapshotFolder);
       return this.dependencies.workspaces.restoreAsNew(
         manifest.workspaceId,
         manifest.workspaceName,
         async (target) => {
-          await buildWorkspaceFromSnapshot(snapshotFolder, target, this.dependencies.appVersion);
+          await buildWorkspaceFromSnapshot(
+            snapshotFolder,
+            target,
+            this.dependencies.appVersion,
+            steady,
+          );
         },
       );
     });
   }
 
-  private async backUp(workspace: OpenWorkspace, settings: BackupSettings): Promise<void> {
+  private async backUp(
+    workspace: OpenWorkspace,
+    settings: BackupSettings,
+    progress: Progress = NO_PROGRESS,
+  ): Promise<void> {
     this.running = true;
     try {
       await createSnapshot(workspace, this.destinationOf(settings), {
         appVersion: this.dependencies.appVersion,
         now: () => this.now(),
+        progress,
       });
       this.failures.delete(workspace.id);
       await this.prune(workspace, settings);

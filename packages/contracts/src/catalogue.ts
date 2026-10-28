@@ -17,6 +17,7 @@ import { nodeContracts, searchContracts, tagContracts } from './nodes';
 import { graphContracts, timelineContracts } from './graph-timeline';
 import { mapContracts } from './maps';
 import { relationshipContracts, relationshipTypeContracts } from './relationships';
+import { operationContracts } from './operations';
 import { transferContracts } from './transfer';
 import { workspaceContracts } from './workspace';
 
@@ -116,6 +117,8 @@ export const IPC_CATALOGUE = {
   [IPC_CHANNELS.backupsSetRetention]: backupContracts.setRetention,
   [IPC_CHANNELS.backupsRestore]: backupContracts.restore,
   [IPC_CHANNELS.backupsRestoreFromFolder]: backupContracts.restoreFromFolder,
+  [IPC_CHANNELS.operationsGetProgress]: operationContracts.getProgress,
+  [IPC_CHANNELS.operationsCancel]: operationContracts.cancel,
 } as const satisfies Record<IpcChannel, IpcContract>;
 
 export type IpcCatalogue = typeof IPC_CATALOGUE;

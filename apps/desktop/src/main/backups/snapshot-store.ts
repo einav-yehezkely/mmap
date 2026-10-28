@@ -14,6 +14,10 @@
  * Invariants:
  * - A snapshot folder appears under its final name only when complete: it is written as
  *   `snapshots/.partial-<random>` and renamed at the end. Listing ignores anything else.
+ * - SQLite never writes to the destination. The database copy is made and integrity-checked in a
+ *   local temporary folder, then copied into the snapshot as a plain file and checked against the
+ *   local copy's SHA-256. A destination on a network share or a mapped drive (a good place for a
+ *   second copy, PRD §9) therefore never depends on SQLite's file locking over the network.
  * - The attachment list comes from the database copy itself, so the files of a snapshot always
  *   match its database. Every file is checked against its recorded SHA-256 when stored; a file
  *   that is missing or changed in the workspace is counted and reported, never stored wrongly.
@@ -26,7 +30,18 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
-import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import {
@@ -36,7 +51,8 @@ import {
 } from '@mmap/storage-sqlite';
 import { z } from 'zod';
 
-import { TransferError } from '../portability/transfer-errors';
+import { NO_PROGRESS, type Progress } from '../operations/operation-progress';
+import { isTransferError, TransferError } from '../portability/transfer-errors';
 import type { OpenWorkspace } from '../workspaces/open-workspace';
 import {
   ATTACHMENTS_DIRECTORY_NAME,
@@ -109,24 +125,45 @@ export function workspaceBackupFolder(destination: string, workspaceId: string):
 export async function createSnapshot(
   workspace: OpenWorkspace,
   destination: string,
-  options: { readonly appVersion: string; readonly now: () => Date },
+  options: {
+    readonly appVersion: string;
+    readonly now: () => Date;
+    /** Where the local database copy is made; the system temporary folder by default. */
+    readonly temporaryRoot?: string;
+    readonly progress?: Progress;
+  },
 ): Promise<SnapshotSummary> {
   const root = workspaceBackupFolder(destination, workspace.id);
   const createdAt = await unusedSnapshotTime(join(root, SNAPSHOTS), options.now());
   const snapshotId = snapshotIdOf(createdAt);
   const partial = join(root, SNAPSHOTS, `.partial-${randomUUID()}`);
+  let local: string | null = null;
+  const progress = options.progress ?? NO_PROGRESS;
   try {
+    progress.phase('Copying the database', null);
+    local = await mkdtemp(join(options.temporaryRoot ?? tmpdir(), 'mmap-backup-'));
+    const localDatabase = join(local, DATABASE_FILE_NAME);
+    // The writer connection: writes made through it during the copy are part of the image,
+    // so the backup never has to restart while the user keeps editing.
+    await createVerifiedBackup(workspace.connections.writerConnection, localDatabase);
+    const contents = inspectDatabaseFile(localDatabase);
+    const database = await fileDigest(localDatabase);
+
     await mkdir(partial, { recursive: true });
     await mkdir(join(root, FILES), { recursive: true });
     const databasePath = join(partial, DATABASE_FILE_NAME);
-    // The writer connection: writes made through it during the copy are part of the image,
-    // so the backup never has to restart while the user keeps editing.
-    await createVerifiedBackup(workspace.connections.writerConnection, databasePath);
-    const contents = inspectDatabaseFile(databasePath);
+    await copyFile(localDatabase, databasePath, constants.COPYFILE_EXCL);
+    const copied = await fileDigest(databasePath);
+    if (copied.sha256 !== database.sha256 || copied.byteSize !== database.byteSize) {
+      throw new Error('The database copy in the backup folder does not match the original.');
+    }
 
     const attachments: SnapshotManifest['attachments'][number][] = [];
     let missing = 0;
+    progress.phase('Copying attached files', contents.attachments.length);
     for (const attachment of contents.attachments) {
+      progress.checkCancelled();
+      progress.advance();
       if (!STORED_PATH.test(attachment.relativePath) || !SHA256.test(attachment.sha256)) {
         missing += 1;
         continue;
@@ -139,7 +176,6 @@ export async function createSnapshot(
       attachments.push(attachment);
     }
 
-    const database = await fileDigest(databasePath);
     const manifest: SnapshotManifest = {
       format: BACKUP_FORMAT,
       formatVersion: BACKUP_FORMAT_VERSION,
@@ -157,12 +193,17 @@ export async function createSnapshot(
       join(partial, MANIFEST_NAME),
       `${JSON.stringify(manifest, null, 2)}\n`,
     );
+    progress.checkCancelled();
+    progress.phase('Finishing', null, { cancellable: false });
     const finalFolder = join(root, SNAPSHOTS, snapshotId);
     await rename(partial, finalFolder);
     return summarize(manifest, finalFolder);
   } catch (error) {
     await rm(partial, { recursive: true, force: true }).catch(() => undefined);
+    if (isTransferError(error) && error.code === 'OPERATION_CANCELLED') throw error;
     throw new TransferError('BACKUP_FAILED', describeWriteFailure(error), { cause: error });
+  } finally {
+    if (local !== null) await rm(local, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -270,6 +311,7 @@ export async function buildWorkspaceFromSnapshot(
   snapshotFolder: string,
   targetFolder: string,
   appVersion: string,
+  progress: Progress = NO_PROGRESS,
 ): Promise<{ readonly workspaceId: string; readonly workspaceName: string }> {
   const manifest = await readSnapshotManifest(snapshotFolder);
   if (manifest.schemaVersion > LATEST_SCHEMA_VERSION) {
@@ -303,7 +345,11 @@ export async function buildWorkspaceFromSnapshot(
     }
     if (contents.workspaceId !== manifest.workspaceId) throw damaged();
 
+    progress.phase('Restoring attached files', manifest.attachments.length, {
+      cancellable: false,
+    });
     for (const attachment of manifest.attachments) {
+      progress.advance();
       const target = join(
         targetFolder,
         ATTACHMENTS_DIRECTORY_NAME,

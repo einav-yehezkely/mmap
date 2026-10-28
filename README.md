@@ -167,7 +167,7 @@ Run from the repository root.
 - [Data model](docs/data-model.md): every table and how it is used, references and backlinks,
   timeline grouping, reviews, milestones, learning dates and timezone, attachment lifecycle,
   import history, the export archive and backup layouts, migrations
-- [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all 87 channels
+- [IPC contracts](docs/ipc-contracts.md): envelope, error codes, adding a channel, all 89 channels
 - [Testing](docs/testing.md): test layers, rules, smoke test, accessibility check, search and
   portability benchmarks, security tests for archives and backups, what is not automated yet
 - [Packaging runbook](docs/runbooks/packaging.md): build, package, smoke test, fuses, app icon,

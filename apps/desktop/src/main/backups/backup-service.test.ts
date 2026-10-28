@@ -23,7 +23,8 @@ import { createAttachmentIpcServices } from '../services/attachment-ipc-services
 import { createFileSettingsStore, type SettingsStore } from '../workspaces/app-settings';
 import { WorkspaceManager } from '../workspaces/workspace-manager';
 import { BackupService } from './backup-service';
-import { listSnapshots } from './snapshot-store';
+import { operationCancelled, type Progress } from '../operations/operation-progress';
+import { createSnapshot, listSnapshots } from './snapshot-store';
 
 let sandbox: string;
 let clock: Date;
@@ -177,6 +178,85 @@ describe('daily backups', () => {
     const status = await backups.status();
     expect(status.snapshots).toEqual([]);
     expect(status.lastFailure?.message).toMatch(/^The backup failed/u);
+  });
+});
+
+describe('snapshot writing', () => {
+  it('makes the database copy locally and verifies the copy placed in the backup folder', async () => {
+    const { manager } = startApp('app');
+    await manager.startup();
+    const workspace = manager.current!;
+    await workspace.services.nodes.create({ title: 'Kept in the backup' });
+    const temporaryRoot = join(sandbox, 'local-temp');
+    mkdirSync(temporaryRoot);
+    const destination = join(sandbox, 'share');
+
+    const summary = await createSnapshot(workspace, destination, {
+      appVersion: 'test',
+      now: () => clock,
+      temporaryRoot,
+    });
+
+    // The local working copy is gone; the copy in the backup folder matches the manifest.
+    expect(readdirSync(temporaryRoot)).toEqual([]);
+    const manifest = JSON.parse(readFileSync(join(summary.folder, 'backup.json'), 'utf8')) as {
+      database: { sha256: string; byteSize: number };
+    };
+    const bytes = readFileSync(join(summary.folder, 'mmap.sqlite'));
+    expect(bytes.length).toBe(manifest.database.byteSize);
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(manifest.database.sha256);
+    // Nothing but the snapshot itself was written next to it (no journal or WAL side files).
+    expect(readdirSync(summary.folder).sort()).toEqual(['backup.json', 'mmap.sqlite']);
+  });
+
+  it('a cancelled backup leaves no snapshot and is not recorded as a failure', async () => {
+    const { manager, backups } = startApp('app');
+    await manager.startup();
+    await backups.idle();
+    const workspace = manager.current!;
+    const node = await workspace.services.nodes.create({ title: 'With a file' });
+    await addAttachment(manager, node.id, 'diagram.png');
+    const before = (await backups.status()).snapshots.length;
+
+    const controller = new AbortController();
+    const progress: Progress = {
+      phase: (label) => {
+        if (label === 'Copying attached files') controller.abort();
+      },
+      advance: () => undefined,
+      checkCancelled: () => {
+        if (controller.signal.aborted) throw operationCancelled();
+      },
+      signal: controller.signal,
+    };
+    await expect(backups.backUpNow(progress)).rejects.toMatchObject({
+      code: 'OPERATION_CANCELLED',
+    });
+
+    const status = await backups.status();
+    expect(status.snapshots).toHaveLength(before);
+    expect(status.lastFailure).toBeNull();
+    const snapshotsFolder = join(status.destination, workspace.id, 'snapshots');
+    expect(readdirSync(snapshotsFolder).filter((name) => name.startsWith('.partial-'))).toEqual([]);
+  });
+
+  it('removes the local working copy when the backup folder cannot be written', async () => {
+    const { manager } = startApp('app');
+    await manager.startup();
+    const temporaryRoot = join(sandbox, 'local-temp');
+    mkdirSync(temporaryRoot);
+    // A file where the backup folder should be: creating folders under it fails.
+    const destination = join(sandbox, 'not-a-folder');
+    writeFileSync(destination, 'occupied');
+
+    await expect(
+      createSnapshot(manager.current!, destination, {
+        appVersion: 'test',
+        now: () => clock,
+        temporaryRoot,
+      }),
+    ).rejects.toMatchObject({ code: 'BACKUP_FAILED' });
+    expect(readdirSync(temporaryRoot)).toEqual([]);
   });
 });
 

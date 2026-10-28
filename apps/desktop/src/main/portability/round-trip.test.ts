@@ -10,14 +10,17 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { UtcTimestamp, WorkspaceSnapshot } from '@mmap/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { operationCancelled, type Progress } from '../operations/operation-progress';
 import { createAttachmentIpcServices } from '../services/attachment-ipc-services';
+import { exportWorkspaceArchive } from './export-workspace';
+import { applyImport, prepareImport } from './import-workspace';
 import { writeImport, writeImportInProcess, type ImportRecordWriter } from './import-writer';
 import { createTransferIpcServices } from '../services/transfer-ipc-services';
 import { createFileSettingsStore } from '../workspaces/app-settings';
@@ -67,6 +70,24 @@ const writeLikeTheWorker: ImportRecordWriter = (workspace, plan, exportId, store
       }),
     ),
   );
+
+/** Progress that cancels as soon as the phase `label` starts, as a user pressing Cancel would. */
+function cancelAt(label: string): Progress & { readonly phases: string[] } {
+  const controller = new AbortController();
+  const phases: string[] = [];
+  return {
+    phases,
+    phase: (phase) => {
+      phases.push(phase);
+      if (phase === label) controller.abort();
+    },
+    advance: () => undefined,
+    checkCancelled: () => {
+      if (controller.signal.aborted) throw operationCancelled();
+    },
+    signal: controller.signal,
+  };
+}
 
 function transfer(
   manager: WorkspaceManager,
@@ -228,6 +249,76 @@ function byTitle(snapshot: WorkspaceSnapshot) {
   const titles = new Map(snapshot.nodes.map((node) => [node.id as string, node.title]));
   return { titles, title: (id: string | null) => (id === null ? null : (titles.get(id) ?? null)) };
 }
+
+describe('cancelling exports and imports', () => {
+  it('a cancelled export leaves no archive and no partial file', async () => {
+    const source = startApp('source');
+    await source.startup();
+    await buildSourceWorkspace(source);
+    const folder = join(sandbox, 'exports');
+    mkdirSync(folder);
+    const archivePath = join(folder, 'physics.mmap.zip');
+
+    const progress = cancelAt('Writing the archive');
+    await expect(
+      exportWorkspaceArchive(
+        current(source),
+        archivePath,
+        { appVersion: 'test', now: () => new Date() },
+        progress,
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' });
+
+    expect(progress.phases).toEqual([
+      'Reading the workspace',
+      'Checking attached files',
+      'Writing the archive',
+    ]);
+    expect(readdirSync(folder)).toEqual([]);
+  });
+
+  it('a cancelled import adds nothing, keeps no copied files, and the import can run again', async () => {
+    const source = startApp('source');
+    await source.startup();
+    await buildSourceWorkspace(source);
+    const archivePath = join(sandbox, 'physics.mmap.zip');
+    await transfer(source, archivePath)['transfer:export-zip']({});
+
+    const destination = startApp('destination');
+    await destination.startup();
+    const target = current(destination);
+    const attachmentsFolder = join(target.paths.folder, 'attachments');
+    const filesBefore = readdirSync(attachmentsFolder, { recursive: true });
+    const options = {
+      ids: { newId: () => crypto.randomUUID() },
+      maxAttachmentBytes: 20 * 1024 * 1024,
+    };
+
+    // Cancelled after the attached files were copied, just before the records are written.
+    const prepared = await prepareImport(target, archivePath, options);
+    const late = cancelAt('Copying attached files');
+    await expect(applyImport(target, prepared, undefined, late)).rejects.toMatchObject({
+      code: 'OPERATION_CANCELLED',
+    });
+    expect(late.phases).not.toContain('Saving to the workspace');
+    expect((await target.services.snapshots.read(target.id)).nodes).toEqual([]);
+    expect(readdirSync(attachmentsFolder, { recursive: true })).toEqual(filesBefore);
+
+    // Cancelling the preview stops it as well.
+    await expect(
+      prepareImport(target, archivePath, {
+        ...options,
+        progress: cancelAt('Checking attached files'),
+      }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' });
+
+    // Nothing was recorded as imported: a new import of the same archive is not a duplicate.
+    const again = await prepareImport(target, archivePath, options);
+    expect(again.earlierImports).toEqual([]);
+    await applyImport(target, again);
+    expect((await target.services.snapshots.read(target.id)).nodes.length).toBeGreaterThan(0);
+  });
+});
 
 describe('workspace export and import (criterion 12)', () => {
   it.each([
