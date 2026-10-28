@@ -16,7 +16,7 @@
  */
 
 import type { NodeDependentsView } from '@mmap/contracts';
-import { ArrowLeft, BookCheck, Copy, Trash2, X } from 'lucide-react';
+import { AppWindow, ArrowLeft, BookCheck, Copy, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
@@ -318,6 +318,15 @@ export function NodeDetailPanel({
           <Button variant="outline" size="sm" onClick={() => void duplicate()}>
             <Copy aria-hidden="true" />
             Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Open this note in another window, for example to compare it with another one"
+            onClick={() => void window.mmap.app.openWindow({ nodeId })}
+          >
+            <AppWindow aria-hidden="true" />
+            New window
           </Button>
           <Button variant="outline" size="sm" onClick={() => void askDelete()}>
             <Trash2 aria-hidden="true" />

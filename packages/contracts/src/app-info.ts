@@ -36,3 +36,12 @@ export const openExternalLinkContract = {
   request: z.strictObject({ href: z.string().max(2_048) }),
   response: z.strictObject({ opened: z.boolean() }),
 } as const;
+
+/**
+ * Opens another window on the open workspace (PRD §5.1: "Multiple windows use the same service
+ * and revision checks"). With `nodeId`, the new window shows that note.
+ */
+export const openWindowContract = {
+  request: z.strictObject({ nodeId: z.uuid().optional() }),
+  response: z.strictObject({ opened: z.literal(true) }),
+} as const;

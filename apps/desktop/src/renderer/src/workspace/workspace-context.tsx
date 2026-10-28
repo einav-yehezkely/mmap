@@ -35,6 +35,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setState(await unwrap(window.mmap.workspace.getState()));
   }, []);
 
+  // Another window may have switched, closed or restored the workspace: re-read the state when
+  // this window is focused again.
+  useEffect(() => {
+    const onFocus = () => {
+      unwrap(window.mmap.workspace.getState()).then(setState, () => undefined);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     unwrap(window.mmap.workspace.getState()).then(

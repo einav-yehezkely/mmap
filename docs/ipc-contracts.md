@@ -209,7 +209,7 @@ return. Design the pattern with the first channel that needs it and document it 
 
 ## Channel reference
 
-There are 90 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+There are 92 channels. The renderer method is `window.mmap.<group>.<method>`; for example
 `nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
 is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
@@ -221,10 +221,11 @@ channels, `workspace:set-timezone`, and the backup channels that need the open w
 
 Services: `apps/desktop/src/main/services/app-info-service.ts` and `external-link-service.ts`.
 
-| Channel                  | Purpose                                                      | Request                    | Response                                                     |
-| ------------------------ | ------------------------------------------------------------ | -------------------------- | ------------------------------------------------------------ |
-| `app:get-info`           | Runtime and storage diagnostics for Settings, About.         | none                       | `AppInfo`: versions, `isPackaged`, SQLite version, FTS5 flag |
-| `app:open-external-link` | Open a note link in the browser or mail client (Ctrl+click). | `{ href }` (≤ 2,048 chars) | `{ opened }`; `false` when the URL fails the link policy     |
+| Channel                  | Purpose                                                                       | Request                    | Response                                                     |
+| ------------------------ | ----------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------ |
+| `app:get-info`           | Runtime and storage diagnostics for Settings, About.                          | none                       | `AppInfo`: versions, `isPackaged`, SQLite version, FTS5 flag |
+| `app:open-external-link` | Open a note link in the browser or mail client (Ctrl+click).                  | `{ href }` (≤ 2,048 chars) | `{ opened }`; `false` when the URL fails the link policy     |
+| `app:open-window`        | Open another window on the open workspace; with `nodeId`, it shows that note. | `{ nodeId? (UUID) }`       | `{ opened: true }`                                           |
 
 `app:get-info` contains no paths, user names or workspace data, and is computed once per process.
 `app:open-external-link` re-checks the URL with `normalizeLinkHref`
@@ -237,19 +238,20 @@ URLs return `{ opened: false }` without involving the OS.
 Service: `apps/desktop/src/main/services/workspace-ipc-services.ts`, which calls
 `WorkspaceManager` (`apps/desktop/src/main/workspaces/workspace-manager.ts`).
 
-| Channel                   | Purpose                                                                                                                     | Request                                            | Response                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
-| `workspace:get-state`     | Which workspace is open, or why none is.                                                                                    | none                                               | `WorkspaceState`                                        |
-| `workspace:list-recent`   | Recent workspaces (up to 10) for the switcher.                                                                              | none                                               | `{ items: RecentWorkspace[] }`                          |
-| `workspace:create`        | Create a workspace and switch to it.                                                                                        | `{ name, location: 'default' \| 'choose-folder' }` | `{ cancelled, state }`                                  |
-| `workspace:open-folder`   | Pick an existing workspace folder in a native dialog, open it.                                                              | none                                               | `{ cancelled, state }`                                  |
-| `workspace:open-recent`   | Switch to a workspace from the recent list.                                                                                 | `{ workspaceId }`                                  | `WorkspaceState`                                        |
-| `workspace:forget-recent` | Remove an entry from the recent list. Never deletes files.                                                                  | `{ workspaceId }`                                  | `{ items: RecentWorkspace[] }`                          |
-| `workspace:rename`        | Rename the open workspace (display name only, not the folder).                                                              | `{ name }`                                         | `WorkspaceState`                                        |
-| `workspace:reveal-folder` | Open the workspace folder in Explorer.                                                                                      | none                                               | `{ revealed }`                                          |
-| `workspace:move`          | Move the open workspace into a folder chosen in a native dialog: verified copy, open the copy, original to the Recycle Bin. | none                                               | `{ cancelled, state, originalRemoved, originalFolder }` |
-| `workspace:delete`        | Move the open workspace folder to the Recycle Bin after the typed name matches.                                             | `{ confirmName }`                                  | `{ state }` (status `none`)                             |
-| `workspace:set-timezone`  | Set the IANA timezone used to show dates and to read timeline date filters. Stored timestamps do not change.                | `{ timezone }` (1–100 chars)                       | `WorkspaceState`                                        |
+| Channel                      | Purpose                                                                                                                                 | Request                                            | Response                                                |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| `workspace:get-state`        | Which workspace is open, or why none is.                                                                                                | none                                               | `WorkspaceState`                                        |
+| `workspace:get-change-count` | How many writes the open workspace has committed (0 when none is open); windows compare it to reload only after changes made elsewhere. | none                                               | `{ count }`                                             |
+| `workspace:list-recent`      | Recent workspaces (up to 10) for the switcher.                                                                                          | none                                               | `{ items: RecentWorkspace[] }`                          |
+| `workspace:create`           | Create a workspace and switch to it.                                                                                                    | `{ name, location: 'default' \| 'choose-folder' }` | `{ cancelled, state }`                                  |
+| `workspace:open-folder`      | Pick an existing workspace folder in a native dialog, open it.                                                                          | none                                               | `{ cancelled, state }`                                  |
+| `workspace:open-recent`      | Switch to a workspace from the recent list.                                                                                             | `{ workspaceId }`                                  | `WorkspaceState`                                        |
+| `workspace:forget-recent`    | Remove an entry from the recent list. Never deletes files.                                                                              | `{ workspaceId }`                                  | `{ items: RecentWorkspace[] }`                          |
+| `workspace:rename`           | Rename the open workspace (display name only, not the folder).                                                                          | `{ name }`                                         | `WorkspaceState`                                        |
+| `workspace:reveal-folder`    | Open the workspace folder in Explorer.                                                                                                  | none                                               | `{ revealed }`                                          |
+| `workspace:move`             | Move the open workspace into a folder chosen in a native dialog: verified copy, open the copy, original to the Recycle Bin.             | none                                               | `{ cancelled, state, originalRemoved, originalFolder }` |
+| `workspace:delete`           | Move the open workspace folder to the Recycle Bin after the typed name matches.                                                         | `{ confirmName }`                                  | `{ state }` (status `none`)                             |
+| `workspace:set-timezone`     | Set the IANA timezone used to show dates and to read timeline date filters. Stored timestamps do not change.                            | `{ timezone }` (1–100 chars)                       | `WorkspaceState`                                        |
 
 `WorkspaceState` is one of `{ status: 'open', workspace }`,
 `{ status: 'unavailable', reason, message, lastWorkspace }` (the last workspace could not be

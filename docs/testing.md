@@ -21,8 +21,8 @@ architecture project. All run on plain Node 24; none of them start Electron. Tes
 | `desktop`        | `apps/desktop/src/**/*.test.ts`            | Security and IPC (renderer location, origins, CSP, `app://` paths, IPC handler); workspace manager; attachment file store, preview resolver and attachment services with real files; external links; Phase 2, map, graph and timeline channel handlers; the autosave state machine; the editor/schema contract; wikilink rendering; the map, graph and timeline view models; the timeline axis (windows, ticks, marker layout); stable graph placement; the Phase 1 acceptance test; export and import round trip, hostile archives, Markdown export; backups and restore; the Home page helpers. | 310 (+2 skipped) |
 | `architecture`   | `tests/**/*.test.ts`                       | Module boundary scan driven by `tooling/architecture-rules.mjs` (the same rules ESLint uses), plus a test of the import extractor itself.                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 6                |
 
-The total on `main` (2026-10-28) is **1,180 passing tests in 69 files, plus two benchmark
-files (4 tests) that are skipped by default**: 71 files, 1,184 tests. The skipped files are the
+The total on `main` (2026-10-28) is **1,183 passing tests in 69 files, plus two benchmark
+files (4 tests) that are skipped by default**: 71 files, 1,187 tests. The skipped files are the
 [search benchmark](#search-benchmark) (`storage-sqlite`) and the
 [portability benchmark](#portability-benchmark) (`desktop`). Earlier totals: Phase 4 ended with
 1,053 in 57 files (1,007 in 54 before the timeline redesign), Phase 3 with 882 in 45 files, Phase 2
@@ -210,7 +210,7 @@ fails if any check fails, the exit code is not 0, or 240 seconds pass.
 | a relationship is added from the knowledge graph (Find and a click on the node) | `smoke-graph-timeline.ts`: selects a node with Find, opens **Add relationship**, chooses the other node with Find (the selection must stay), clears it, chooses it again with a real mouse click at the position Cytoscape reports for it (the instance registered on its container as `_cyreg`), saves, and finds the relationship through `relationships:list-for-node`. |
 | a connector note and a linked relationship are saved, shown and undone | Selects a connector on the canvas, opens the note box with its button (focused), saves a note with Enter, finds it on the line and in `maps:get`, and checks that **Undo** removes it. Then creates a relationship between the two notes, links it with the link button, finds its type on the line and in `maps:get`, checks that the note box still starts empty (not with the type), and that **Undo** unlinks it. |
 
-There are 21 checks. The attachment check bypasses `attachments:add`, because adding a file through
+There are 22 checks. The attachment check bypasses `attachments:add`, because adding a file through
 the bridge needs a native dialog; the full add flow is covered by `attachment-ipc-services.test.ts`
 and the acceptance test instead. The 200-placement check measured 37 ms from the click to 200
 rendered items with the packaged build on a developer machine (2026-10-27); the PRD target still

@@ -161,8 +161,8 @@ Implemented on branch `phase-1-knowledge-base` in five slices (`git log --onelin
 
 PRD §5.1 and §5.2 items that are **not** implemented:
 
-- **Multiple app windows** (PRD §5.1). The app has a single window. Revision checks are in place
-  and reject stale writes, so a second window can be added on top of the same services.
+- **Multiple app windows** (PRD §5.1). The app had a single window. Added after Phase 5
+  (section 17).
 - **Timeline UI.** Events are recorded; the Timeline view is Phase 4.
 - **Search UI.** The FTS5 index is maintained on every save; search and title lookup are Phase 2.
 - **Opening a node from search, graph, timeline, map or backlink** (PRD §5.2). Only the Library
@@ -607,3 +607,19 @@ added and no failure recorded.
   copy. `backups:get-status` reports `cloudSyncProvider`, and Settings explains the cloud copy
   (and suggests "Always keep on this device") instead of the "same drive" warning. The user guide
   explains how to keep notes in OneDrive: the workspace stays local, backups go to OneDrive.
+
+## 17. Multiple windows (2026-10-28)
+
+PRD §5.1: "Multiple windows use the same service and revision checks." **New window** (sidebar,
+Ctrl+Shift+N) and **New window** in the node panel (opens that note) call `app:open-window`; every
+window uses the same main-process services, so the workspace, the write queue and the revision
+checks are shared. Native dialogs attach to the focused window. A window reloads its views when it
+regains focus only if the workspace's count of committed writes changed while it was in the
+background (`workspace:get-change-count`, `SqliteConnections.commitCount`), so returning to a
+window never reloads a graph or map for nothing; it also re-reads the workspace state, so a switch
+or restore made in another window is picked up. 92 channels.
+
+Tests: `sqlite-connections.test.ts` (committed writes are counted, failed ones are not); packaged
+smoke check "a second window opens a note, and the first shows its changes when focused" (opens a
+note in a second window, renames it there, the first window's Library shows the new title after
+focus, the second window closes and the first keeps working).

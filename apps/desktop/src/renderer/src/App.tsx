@@ -4,7 +4,7 @@
  */
 
 import type { WorkspaceSummary } from '@mmap/contracts';
-import { Plus, Search } from 'lucide-react';
+import { AppWindow, Plus, Search } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import logoUrl from './assets/mmap-logo.png';
@@ -12,12 +12,14 @@ import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { GraphView } from './graph/graph-view';
 import { HomeView } from './home/home-view';
+import { unwrap } from './lib/ipc';
 import { cn } from './lib/utils';
 import { MapsView } from './maps/maps-view';
 import { NAVIGATION_ITEMS, type ViewId } from './navigation';
 import { LibraryView } from './nodes/library-view';
 import { NewNodeDialog } from './nodes/new-node-dialog';
 import { NodeDetailPanel } from './nodes/node-detail-panel';
+import { notifyNodesChanged } from './nodes/node-events';
 import { NodePreview } from './nodes/node-preview';
 import { SearchView } from './nodes/search-view';
 import { TimelineView } from './timeline/timeline-view';
@@ -47,9 +49,27 @@ export function App() {
 /** Views that open nodes in the full-width editor. */
 type PageView = 'home' | 'library';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+/**
+ * The note a window was opened for ("Open in a new window" puts its ID in the address), or null.
+ * Only a well-formed ID is used; the window then opens that note like the Library does.
+ */
+function nodeFromAddress(): string | null {
+  const nodeId = new URLSearchParams(window.location.search).get('node');
+  return nodeId !== null && UUID.test(nodeId) ? nodeId : null;
+}
+
+/** Opens another window on the same workspace (PRD §5.1). */
+export function openNewWindow(nodeId?: string): void {
+  void window.mmap.app.openWindow(nodeId === undefined ? {} : { nodeId });
+}
+
 function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   // The app opens on Home (a summary and quick actions), not inside one of the work views.
-  const [activeView, setActiveView] = useState<ViewId>('home');
+  // A window opened for a note shows it full-width over the Library.
+  const [initialNode] = useState(nodeFromAddress);
+  const [activeView, setActiveView] = useState<ViewId>(initialNode === null ? 'home' : 'library');
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
   /** Node shown read-only beside the view (Mind Maps); the node editor panel takes precedence. */
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
@@ -58,7 +78,9 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
   /** The map being edited in the Mind Maps view, preselected when creating a node there. */
   const [editedMapId, setEditedMapId] = useState<string | null>(null);
   /** A node opened from Home or the Library, shown full-width in place of that view. */
-  const [pageNode, setPageNode] = useState<{ view: PageView; nodeId: string } | null>(null);
+  const [pageNode, setPageNode] = useState<{ view: PageView; nodeId: string } | null>(
+    initialNode === null ? null : { view: 'library', nodeId: initialNode },
+  );
   const mainRef = useRef<HTMLElement>(null);
   /** Scroll position of the view a full-width node replaced, restored when going back. */
   const pageReturnScroll = useRef(0);
@@ -87,9 +109,45 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
         event.preventDefault();
         searchInput.current?.focus();
       }
+      // Ctrl+Shift+N (Cmd+Shift+N) opens another window.
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        openNewWindow();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Another window may have changed notes, maps or relationships while this one was in the
+  // background: views reload when it is focused again, but only if the workspace's count of
+  // committed writes moved meanwhile (this window's own edits happen while it has focus), so
+  // returning to the window never reloads a graph or map under the first click for nothing.
+  // Saves are protected by revision checks either way.
+  useEffect(() => {
+    let countWhenLeft: number | null = null;
+    const count = async () => (await unwrap(window.mmap.workspace.getChangeCount())).count;
+    const onBlur = () => {
+      count().then(
+        (value) => (countWhenLeft = value),
+        () => (countWhenLeft = null),
+      );
+    };
+    const onFocus = () => {
+      const before = countWhenLeft;
+      count().then(
+        (value) => {
+          if (before === null || value !== before) notifyNodesChanged();
+        },
+        () => undefined,
+      );
+    };
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   /** Switches the main view; a node open full-width over Home is closed (its edits are saved). */
@@ -199,6 +257,15 @@ function Workbench({ workspace }: { workspace: WorkspaceSummary }) {
             </Button>
           );
         })}
+        <Button
+          variant="ghost"
+          className="mt-auto justify-start text-muted-foreground"
+          title="Open another window on this workspace (Ctrl+Shift+N)"
+          onClick={() => openNewWindow()}
+        >
+          <AppWindow aria-hidden="true" />
+          New window
+        </Button>
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">

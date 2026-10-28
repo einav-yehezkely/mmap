@@ -32,6 +32,16 @@ can do next:
 In a new, empty workspace, Home shows three steps under **Get started** instead: write your first
 note, link ideas together, and see the big picture on mind maps and the graph.
 
+## More than one window
+
+Click **New window** at the bottom of the sidebar (or press **Ctrl+Shift+N**) to open another
+window on the same workspace, for example a map in one window and a note in the other. In an open
+note, **New window** opens that note in its own window, to compare two notes side by side.
+
+All windows work on the same notes. When you switch to a window, it shows what you changed in the
+others. If two windows change the same note at the same time, the second save shows the usual
+conflict message with your text kept, so nothing is lost. Closing the last window quits mmap.
+
 ## Workspaces
 
 A **workspace** is a folder on your computer that holds your nodes, notes, tags and attached
@@ -1184,7 +1194,6 @@ These features are planned for later versions:
 - On mind maps: **dragging
   an item onto another to change its parent**, a **search or sort** for the list of maps, and
   more colors.
-- **More than one window.**
 - **Automatic updates.** To update mmap, run the installer of the newer version; your workspaces,
   settings and backups are kept.
 - **Merging an import** into existing nodes: importing always adds copies.

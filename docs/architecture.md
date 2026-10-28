@@ -109,6 +109,14 @@ export's snapshot read and the integrity checks of backups and restores are sync
 calls too; on the 10,000-node dataset a whole export took 0.9 s and a backup 1.6 s (benchmark,
 developer machine), and only part of that blocks the main process.
 
+**Windows.** The main process can open several windows (`openWindow` in `index.ts`, via
+`app:open-window`), all created by `createMainWindow` with the same security settings and talking to
+the same services. `nodeId` in the request becomes `?node=<id>` in the window's address; the
+renderer only reads it as a well-formed note ID to open. Native dialogs attach to the focused
+window. Views in a window are refreshed when it regains focus and the workspace's commit count
+(`workspace:get-change-count`) moved meanwhile; concurrent edits of one note or map are caught by
+the revision checks as before.
+
 Startup order (`apps/desktop/src/main/index.ts`) matters for security:
 
 1. Decide the renderer location and trusted origins (`resolveRendererLocation`).

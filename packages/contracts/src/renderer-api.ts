@@ -19,9 +19,11 @@ export interface MmapRendererApi {
   readonly app: {
     readonly getInfo: BridgeCall<'app:get-info'>;
     readonly openExternalLink: BridgeCall<'app:open-external-link'>;
+    readonly openWindow: BridgeCall<'app:open-window'>;
   };
   readonly workspace: {
     readonly getState: BridgeCall<'workspace:get-state'>;
+    readonly getChangeCount: BridgeCall<'workspace:get-change-count'>;
     readonly listRecent: BridgeCall<'workspace:list-recent'>;
     readonly create: BridgeCall<'workspace:create'>;
     readonly openFolder: BridgeCall<'workspace:open-folder'>;
