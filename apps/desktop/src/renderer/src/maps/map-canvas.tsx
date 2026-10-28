@@ -42,7 +42,7 @@ import {
   type OnSelectionChangeParams,
   useReactFlow,
 } from '@xyflow/react';
-import type { RelationshipViewDto } from '@mmap/contracts';
+import type { RelationshipTypeViewDto, RelationshipViewDto } from '@mmap/contracts';
 import { ChevronDown, ChevronRight, Link2, MessageSquareText, X } from 'lucide-react';
 import {
   memo,
@@ -50,12 +50,14 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useId,
   useState,
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
 
-import { unwrap } from '../lib/ipc';
+import { errorMessage, unwrap } from '../lib/ipc';
+import { notifyNodesChanged } from '../nodes/node-events';
 import { cn } from '../lib/utils';
 import { buildCanvasModel, facingSides, type ItemBox } from './map-model';
 import { placementColorClass } from './placement-colors';
@@ -100,7 +102,8 @@ const MAX_CONNECTOR_NOTE_LENGTH = 200;
  * click. The note is written in a small box on the line: Enter or clicking elsewhere saves,
  * Escape cancels, and a blank note removes it. Double-clicking a note edits it. The link button
  * lists the relationships between the two nodes; choosing one shows its type on the connector
- * (PRD §4.4). Linking never creates or changes a relationship.
+ * (PRD §4.4). The same panel can also create a relationship between the two nodes, in the
+ * connector's direction, and link it: the way to add a relationship without leaving the map.
  */
 const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlowEdge>) {
   const [path, labelX, labelY] = getBezierPath(props);
@@ -230,8 +233,7 @@ const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlow
                     <p className="text-muted-foreground">Loading…</p>
                   ) : linkOptions.length === 0 ? (
                     <p className="text-muted-foreground">
-                      These two notes have no relationship yet. Add one in a note&apos;s
-                      Relationships section, then link it here.
+                      These two notes have no relationship yet.
                     </p>
                   ) : (
                     <ul className="space-y-0.5">
@@ -254,6 +256,13 @@ const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlow
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {data.sourceNodeId !== null && data.targetNodeId !== null && (
+                    <NewRelationshipForm
+                      sourceNodeId={data.sourceNodeId}
+                      targetNodeId={data.targetNodeId}
+                      onCreated={(relationshipId) => chooseLink(relationshipId)}
+                    />
                   )}
                   <div className="flex justify-end gap-1 pt-1">
                     {data.relationshipId !== null && (
@@ -303,6 +312,109 @@ const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlow
     </>
   );
 });
+
+/**
+ * Creates a relationship between a connector's two nodes, from the connector's start to its end,
+ * and hands back its ID to be linked. The relationship belongs to the notes (it appears in their
+ * Relationships sections, the graph and every map), not to this map.
+ */
+function NewRelationshipForm({
+  sourceNodeId,
+  targetNodeId,
+  onCreated,
+}: {
+  readonly sourceNodeId: string;
+  readonly targetNodeId: string;
+  readonly onCreated: (relationshipId: string) => void;
+}) {
+  const [types, setTypes] = useState<readonly RelationshipTypeViewDto[] | null>(null);
+  const [typeId, setTypeId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const typeFieldId = useId();
+
+  useEffect(() => {
+    let cancelled = false;
+    unwrap(window.mmap.relationshipTypes.list()).then(
+      (result) => {
+        if (cancelled) return;
+        const active = result.items.filter((type) => !type.isArchived);
+        setTypes(active);
+        setTypeId(active[0]?.id ?? '');
+      },
+      (caught: unknown) => {
+        if (!cancelled) setError(errorMessage(caught));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (types === null || types.length === 0) return null;
+  const create = () => {
+    setSaving(true);
+    setError(null);
+    unwrap(
+      window.mmap.relationships.create({ sourceNodeId, targetNodeId, typeId, description: null }),
+    ).then(
+      (relationship) => {
+        notifyNodesChanged();
+        onCreated(relationship.id);
+      },
+      (caught: unknown) => {
+        setError(errorMessage(caught));
+        setSaving(false);
+      },
+    );
+  };
+
+  return (
+    <form
+      className="space-y-1 border-t pt-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        create();
+      }}
+    >
+      <p className="font-medium">Create a relationship</p>
+      <div className="flex items-center gap-1">
+        <label htmlFor={typeFieldId} className="sr-only">
+          Relationship type
+        </label>
+        <select
+          id={typeFieldId}
+          value={typeId}
+          onChange={(event) => setTypeId(event.target.value)}
+          className="h-7 min-w-0 flex-1 rounded border bg-background px-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {types.map((type) => (
+            <option key={type.id} value={type.id}>
+              {type.label}
+              {type.directionality === 'directed' ? ' →' : ' —'}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={saving || typeId === ''}
+          className="rounded border px-2 py-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          Create
+        </button>
+      </div>
+      <p className="text-muted-foreground">
+        In the connector&apos;s direction, between the two notes; it then appears in both notes, the
+        graph and every map.
+      </p>
+      {error !== null && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
 
 const EDGE_TYPES = { connector: ConnectorEdge };
 
