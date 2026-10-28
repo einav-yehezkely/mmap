@@ -160,11 +160,20 @@ export function BackupSettings({ timeZone }: { timeZone: string }) {
         <p className="break-all rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs">
           {status.destination}
         </p>
-        {status.sameDriveAsWorkspace && (
-          <p className="text-amber-700 dark:text-amber-400">
-            Backups are on the same drive as the workspace, so a drive failure would lose both.
-            Choose a folder on another drive, such as an external disk, to protect against that.
+        {status.cloudSyncProvider !== null ? (
+          <p className="text-muted-foreground">
+            This folder is synced by {status.cloudSyncProvider}, so your backups are also copied off
+            this computer. In {status.cloudSyncProvider}, set this folder to “Always keep on this
+            device” so you can see and restore backups when you are offline.
           </p>
+        ) : (
+          status.sameDriveAsWorkspace && (
+            <p className="text-amber-700 dark:text-amber-400">
+              Backups are on the same drive as the workspace, so a drive failure would lose both.
+              Choose a folder on another drive, such as an external disk or a OneDrive folder, to
+              protect against that.
+            </p>
+          )
         )}
         <div className="flex flex-wrap gap-2">
           <Button

@@ -258,8 +258,10 @@ export async function runSmokeTest(
     ),
   );
   checks.push(
-    await check('a note written on a connector is saved, shown and undone', async () => {
-      const outcome = (await window.webContents.executeJavaScript(`
+    await check(
+      'a connector note and a linked relationship are saved, shown and undone',
+      async () => {
+        const outcome = (await window.webContents.executeJavaScript(`
         (async () => {
           const { nodes, maps } = window.mmap;
           const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -311,14 +313,40 @@ export async function runSmokeTest(
           press(buttonWithText('Undo'), 'Undo');
           await wait(800);
           if (!(await saved(null))) return 'undo did not remove the note';
+
+          // Linking the connector to a relationship between the same two notes (PRD §4.4).
+          const dependsOn = (await window.mmap.relationshipTypes.list()).data.items.find((t) => t.label === 'depends on');
+          const relationship = (await window.mmap.relationships.create({ sourceNodeId: a.id, targetNodeId: b.id, typeId: dependsOn.id })).data;
+          edge().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          const linkButton = () => document.querySelector('button[aria-label="Link this connector to a relationship"]');
+          if (!(await until(linkButton, 3000))) return 'link button not shown on the selected connector';
+          press(linkButton(), 'link button');
+          const option = () => [...document.querySelectorAll('[role="dialog"][aria-label="Show a relationship on this connector"] button')].find((button) => button.textContent.includes('depends on'));
+          if (!(await until(option, 3000))) return 'the relationship between the two notes was not offered';
+          press(option(), 'relationship option');
+          const linked = async (id) => (await maps.get({ mapId })).data.connections[0].relationshipId === id;
+          if (!(await until(() => [...document.querySelectorAll('.react-flow__edgelabel-renderer span')].some((span) => span.textContent === 'depends on'), 3000))) return 'linked type not shown on the line';
+          if (!(await linked(relationship.id))) return 'link not saved';
+          // The note box edits the note alone, never the linked type shown next to it.
+          edge().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          if (!(await until(noteButton, 3000))) return 'note button missing after linking';
+          press(noteButton(), 'note button');
+          if (!(await until(input, 3000))) return 'note box did not open after linking';
+          if (input().value !== '') return 'note box started with the linked type: ' + input().value;
+          input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          press(buttonWithText('Undo'), 'Undo');
+          await wait(800);
+          if (!(await linked(null))) return 'undo did not remove the link';
+          await window.mmap.relationships.delete({ relationshipId: relationship.id });
           press(buttonWithText('All maps'), 'All maps');
           await maps.delete({ mapId });
           return 'ok';
         })()`)) as string;
-      if (outcome !== 'ok') {
-        throw new Error(outcome);
-      }
-    }),
+        if (outcome !== 'ok') {
+          throw new Error(outcome);
+        }
+      },
+    ),
   );
   checks.push(
     await check('renderer has no Node.js access', async () => {
@@ -435,7 +463,7 @@ async function previewByDoubleClick(
   const opened = await run(`(async () => {
     ${helpers}
     const { nodes, maps } = window.mmap;
-    const node = (await nodes.create({ title: ${JSON.stringify(title)} })).data;
+    const node = (await nodes.create({ title: ${JSON.stringify(title)}, summary: 'Preview summary line' })).data;
     await nodes.update({ nodeId: node.id, expectedRevision: node.revision, changes: { note: { type: 'doc',
       content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Preview body text' }] }] } } });
     const view = (await maps.create({ title: ${JSON.stringify(title)}, mode: ${JSON.stringify(mode)} })).data;
@@ -483,6 +511,7 @@ async function previewByDoubleClick(
     if (!(await until(() => previewNote()?.textContent.includes('Preview body text'), 3000))) return 'double-click did not open the preview';
     if (previewNote().getAttribute('contenteditable') !== 'false') return 'preview note is editable';
     if (document.querySelector('[aria-label="Formatting"]')) return 'preview shows the editing toolbar';
+    if (!previewNote().closest('aside').textContent.includes('Preview summary line')) return 'preview does not show the summary';
     press(document.querySelector('button[aria-label="Edit note"]'), 'pencil');
     if (!(await until(() => document.querySelector('aside [aria-label="Formatting"]'), 3000))) return 'pencil did not open the editor';
     const editable = () => document.querySelector('aside .note-content')?.getAttribute('contenteditable') === 'true';

@@ -163,6 +163,16 @@ export interface MapService {
     expectedRevision: Revision,
     connectionId: MapConnectionId,
   ): Promise<MapView>;
+  /**
+   * Links a connector to a semantic relationship between the same two nodes (PRD §4.4), or
+   * removes the link (null). The relationship itself is never created or changed.
+   */
+  setConnectionRelationship(
+    mapId: MapId,
+    expectedRevision: Revision,
+    connectionId: MapConnectionId,
+    relationshipId: RelationshipId | null,
+  ): Promise<MapView>;
   /** Writes, changes or (with null or blank text) removes the note on a connector. */
   setConnectionLabel(
     mapId: MapId,
@@ -358,6 +368,26 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
       })),
     );
   }
+
+  /** Only an existing relationship between exactly these two nodes (either direction) may be referenced. */
+  const requireRelationshipBetween = async (
+    relationshipId: RelationshipId,
+    nodeA: NodeId,
+    nodeB: NodeId,
+  ): Promise<void> => {
+    const relationship = await relationships.findById(workspaceId, relationshipId);
+    const endpoints = new Set([nodeA, nodeB]);
+    if (
+      relationship === null ||
+      !endpoints.has(relationship.sourceNodeId) ||
+      !endpoints.has(relationship.targetNodeId)
+    ) {
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        'The chosen relationship does not connect these two nodes.',
+      );
+    }
+  };
 
   const service: MapService = {
     listMaps: () => maps.listMaps(workspaceId),
@@ -574,19 +604,7 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
         }
         const relationshipId = input.relationshipId ?? null;
         if (relationshipId !== null) {
-          // Only an existing relationship between exactly these two nodes may be referenced.
-          const relationship = await relationships.findById(workspaceId, relationshipId);
-          const endpoints = new Set([source.nodeId, target.nodeId]);
-          if (
-            relationship === null ||
-            !endpoints.has(relationship.sourceNodeId) ||
-            !endpoints.has(relationship.targetNodeId)
-          ) {
-            throw new DomainError(
-              'VALIDATION_FAILED',
-              'The chosen relationship does not connect these two nodes.',
-            );
-          }
+          await requireRelationshipBetween(relationshipId, source.nodeId, target.nodeId);
         }
         const label = normalizeConnectorLabel(input.label);
         const now = clock.now();
@@ -611,6 +629,29 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
           throw new DomainError('NOT_FOUND', 'This connector no longer exists.');
         }
         await maps.deleteConnection(workspaceId, connectionId);
+      }),
+
+    setConnectionRelationship: (mapId, expectedRevision, connectionId, relationshipId) =>
+      structuralChange(mapId, expectedRevision, async (map, placements) => {
+        const connection = (await maps.listConnections(workspaceId, map.id)).find(
+          (candidate) => candidate.id === connectionId,
+        );
+        if (connection === undefined) {
+          throw new DomainError('NOT_FOUND', 'This connector no longer exists.');
+        }
+        if (relationshipId !== null) {
+          await requireRelationshipBetween(
+            relationshipId,
+            requirePlacement(placements, connection.sourcePlacementId).nodeId,
+            requirePlacement(placements, connection.targetPlacementId).nodeId,
+          );
+        }
+        await maps.updateConnectionRelationship(
+          workspaceId,
+          connectionId,
+          relationshipId,
+          clock.now(),
+        );
       }),
 
     setConnectionLabel: (mapId, expectedRevision, connectionId, label) =>

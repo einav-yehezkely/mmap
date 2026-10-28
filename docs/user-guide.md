@@ -83,6 +83,23 @@ folder on disk keeps its name.
   database while mmap is writing to it can damage it. Use **Move workspace…** to move it to a
   folder that is not synced.
 
+#### If you want your notes in OneDrive (or Dropbox, Google Drive…)
+
+Keep the workspace itself in a normal folder on your computer, and let mmap put **backups** in the
+cloud instead:
+
+1. In **Settings › Backups**, click **Change folder…** and choose a folder inside OneDrive, for
+   example `OneDrive\mmap backups`.
+2. In OneDrive, right-click that folder and choose **Always keep on this device**, so you can see
+   and restore your backups even when you are offline.
+
+mmap then backs up there every day. Backups suit sync folders: each backup is complete before it
+gets its final name and never changes afterwards, and every file is checked against its checksum
+when you restore. To move to another computer, install mmap there, wait until OneDrive has synced
+the folder, and use **Settings › Backups › Restore from a backup folder…**, or move a ZIP export
+(**Settings › Export and import**). Do not open the same workspace on two computers at once
+through a synced folder.
+
 ### If a workspace cannot be opened
 
 If mmap cannot open the workspace you used last time, it shows a **Choose a workspace** screen
@@ -423,7 +440,7 @@ with a short legend below it.
 - mmap remembers where you panned and zoomed for each map. A map you open for the first time is
   fitted into view.
 - **Preview a node** by double-clicking it on the canvas, or by selecting it in the outline and
-  pressing Enter or **Open**. Its note opens read-only beside the map, with its formatting,
+  pressing Enter or **Open**. Its summary, tags and note open read-only beside the map, with its formatting,
   formulas and attachments. Click a node link in the preview to preview that node. To change the
   note, select the **pencil** in the preview's top corner: the node panel opens, the same one as
   in the Library. Escape or **×** closes the preview.
@@ -464,6 +481,11 @@ relationship that a map connector already shows (a connector linked to it) is dr
   the note (up to 200 characters, in any language) and press Enter, or click elsewhere. Escape
   cancels. Double-click a note to change it; erase its text to remove it. Ctrl+Z (or **Undo**)
   reverses the last note change, like other connector changes.
+- **Show a relationship on a connector**: when the two notes have a relationship (added in a
+  note's Relationships section), click the connector, then the link button on it, and choose the
+  relationship. The connector then shows its type, and the separate relationship line is no longer
+  drawn. **Remove the link** turns it back into a plain connector; the relationship stays. Ctrl+Z
+  undoes this too.
 - **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
 - **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
   has focus. This removes them from the map only; the nodes stay in your library.
@@ -1003,8 +1025,10 @@ drive fails, the workspace and its backups are lost together. To protect against
 **Back up now**. **Use the default folder** switches back. Backups that are already in the old
 folder stay there.
 
-A network folder works as a backup folder too. Avoid folders synced by OneDrive, Dropbox or
-similar programs for backups: they can copy a backup while it is being written.
+A network folder works as a backup folder too, and so does a folder synced by OneDrive,
+Dropbox or a similar program: that is the easiest way to keep a copy off your computer (see
+[If you want your notes in OneDrive](#if-you-want-your-notes-in-onedrive-or-dropbox-google-drive)).
+mmap recognises such a folder and says so instead of the "same drive" warning.
 
 ### How many backups are kept
 
@@ -1149,7 +1173,7 @@ These features are planned for later versions:
 - In the timeline: **separate lanes per tag or topic**. Today all entries share one time axis.
 - **Changing the text of an existing node link.** Delete the link and insert it again with new
   **Link text**.
-- On mind maps: **linking a connector to a relationship**, **dragging
+- On mind maps: **dragging
   an item onto another to change its parent**, a **search or sort** for the list of maps, and
   more colors.
 - **More than one window.**

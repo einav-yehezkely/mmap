@@ -284,11 +284,19 @@ export async function pruneSnapshots(
     }
   }
 
+  // Shared files are removed only when every snapshot folder could be read. A snapshot that is
+  // unreadable for now (an online-only file in a cloud folder while offline, a file locked by a
+  // virus scanner) still needs its files; deleting them would quietly break that backup.
   const used = new Set<string>();
-  for (const snapshot of await listSnapshots(destination, workspaceId)) {
-    for (const attachment of (await readSnapshotManifest(snapshot.folder)).attachments) {
-      used.add(attachment.sha256);
+  for (const name of await readdir(snapshotsFolder).catch(() => [] as string[])) {
+    if (!SNAPSHOT_ID.test(name)) continue;
+    let manifest: SnapshotManifest;
+    try {
+      manifest = await readSnapshotManifest(join(snapshotsFolder, name));
+    } catch {
+      return;
     }
+    for (const attachment of manifest.attachments) used.add(attachment.sha256);
   }
   const files = join(root, FILES);
   for (const shard of await readdir(files).catch(() => [] as string[])) {

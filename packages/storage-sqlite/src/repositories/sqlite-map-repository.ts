@@ -301,6 +301,20 @@ export class SqliteMapRepository implements MapRepository {
       .run(workspaceId, connectionId);
   }
 
+  public async updateConnectionRelationship(
+    workspaceId: WorkspaceId,
+    connectionId: MapConnectionId,
+    relationshipId: RelationshipId | null,
+    updatedAt: string,
+  ): Promise<void> {
+    this.connections
+      .forWrite()
+      .prepare(
+        'UPDATE map_connections SET relationship_id = ?, updated_at = ? WHERE workspace_id = ? AND id = ?',
+      )
+      .run(relationshipId, updatedAt, workspaceId, connectionId);
+  }
+
   public async updateConnectionLabel(
     workspaceId: WorkspaceId,
     connectionId: MapConnectionId,

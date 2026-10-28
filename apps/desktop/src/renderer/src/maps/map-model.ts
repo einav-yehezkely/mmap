@@ -31,6 +31,8 @@ export interface CanvasLine {
   readonly label: string | null;
   /** Relationship lines: false for undirected relationships, which have no arrow. */
   readonly directed?: boolean;
+  /** Connector lines: the connector itself (its own note and linked relationship). */
+  readonly connection?: MapConnectionViewDto;
 }
 
 export interface CanvasModel {
@@ -176,6 +178,7 @@ function connectorLines(
     source: connection.sourcePlacementId,
     target: connection.targetPlacementId,
     label: connectorLabel(connection),
+    connection,
   }));
 }
 

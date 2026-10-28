@@ -86,9 +86,12 @@ in the old folder stay there; they are not moved. **Use the default folder** swi
 
 If the chosen drive is disconnected, backups fail with "the backup folder or drive is not
 available" until it is connected again. Network folders work: SQLite never writes there (the
-database copy is made and checked on this computer, then copied and verified by checksum). Avoid
-folders synced by OneDrive, Dropbox and similar programs: a sync program can copy a snapshot while
-it is being written.
+database copy is made and checked on this computer, then copied and verified by checksum). Folders
+synced by OneDrive, Dropbox and similar programs work too and are the recommended way to keep a
+copy off the computer: a snapshot is complete before it gets its final name and never changes
+afterwards, restore verifies every file, and shared attachment files are not pruned while any
+snapshot cannot be read (for example an online-only file while offline). Mark the folder "Always
+keep on this device" so backups can be listed and restored offline.
 
 ## What is verified
 
