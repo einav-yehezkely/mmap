@@ -85,9 +85,10 @@ The setting is stored for this computer only (in `%APPDATA%\mmap\settings.json`)
 in the old folder stay there; they are not moved. **Use the default folder** switches back.
 
 If the chosen drive is disconnected, backups fail with "the backup folder or drive is not
-available" until it is connected again. Avoid network folders and folders synced by OneDrive,
-Dropbox and similar programs: mmap does not refuse them as backup folders, but a sync program can
-copy a snapshot while it is being written.
+available" until it is connected again. Network folders work: SQLite never writes there (the
+database copy is made and checked on this computer, then copied and verified by checksum). Avoid
+folders synced by OneDrive, Dropbox and similar programs: a sync program can copy a snapshot while
+it is being written.
 
 ## What is verified
 

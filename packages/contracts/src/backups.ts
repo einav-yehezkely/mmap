@@ -7,6 +7,8 @@
 
 import { z } from 'zod';
 
+import { operationIdField } from './operations';
+
 import { MAX_DAILY_SNAPSHOTS, MAX_WEEKLY_SNAPSHOTS } from '@mmap/domain';
 
 import { workspaceStateSchema } from './workspace';
@@ -42,7 +44,7 @@ const noRequest = z.strictObject({});
 
 export const backupContracts = {
   getStatus: { request: noRequest, response: backupStatusSchema },
-  createNow: { request: noRequest, response: backupStatusSchema },
+  createNow: { request: z.strictObject({ ...operationIdField }), response: backupStatusSchema },
   /** Native folder dialog; cancelling returns the unchanged status. */
   chooseDestination: { request: noRequest, response: backupStatusSchema },
   useDefaultDestination: { request: noRequest, response: backupStatusSchema },
@@ -55,12 +57,12 @@ export const backupContracts = {
   },
   /** Replaces the open workspace's content with a snapshot (after a safety backup). */
   restore: {
-    request: z.strictObject({ snapshotId: z.string().min(1).max(64) }),
+    request: z.strictObject({ snapshotId: z.string().min(1).max(64), ...operationIdField }),
     response: z.strictObject({ state: workspaceStateSchema }),
   },
   /** Native folder dialog for a snapshot folder; restores it as a new workspace. */
   restoreFromFolder: {
-    request: noRequest,
+    request: z.strictObject({ ...operationIdField }),
     response: z.discriminatedUnion('status', [
       z.strictObject({ status: z.literal('cancelled') }),
       z.strictObject({ status: z.literal('restored'), state: workspaceStateSchema }),

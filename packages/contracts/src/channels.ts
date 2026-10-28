@@ -96,6 +96,8 @@ export const IPC_CHANNELS = {
   backupsSetRetention: 'backups:set-retention',
   backupsRestore: 'backups:restore',
   backupsRestoreFromFolder: 'backups:restore-from-folder',
+  operationsGetProgress: 'operations:get-progress',
+  operationsCancel: 'operations:cancel',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

@@ -1477,7 +1477,12 @@ PRD §9 and [ADR-0006](adr/0006-backup-policy.md). Code:
 2. `createVerifiedBackup` copies the database with SQLite's online backup API through the
    workspace's **writer** connection, so writes made during the copy are part of the image and
    the backup never has to restart while the user keeps editing, then runs
-   `PRAGMA integrity_check` on the copy.
+   `PRAGMA integrity_check` on the copy. This copy is made in a **local temporary folder**, not
+   in the destination: it is then copied into the snapshot folder as a plain file and checked
+   against the local copy's SHA-256, and the temporary folder is removed. SQLite therefore never
+   writes to the destination, so a destination on a network share or a mapped drive (a useful
+   place for a second copy, PRD §9) never relies on SQLite's file locking over the network.
+   Network destinations are allowed for this reason, unlike network workspaces.
 3. `inspectDatabaseFile` opens the copy read-only and returns its workspace and committed
    attachments. Taking the attachment list from the copy, not from the live database, guarantees
    that a snapshot's files match its database.
@@ -1540,6 +1545,38 @@ the folder is removed again on any failure.
 
 The renderer reloads after a restore. The pre-migration backups in `<workspace>/recovery`
 (see [Write coordinator](#write-coordinator)) are separate and unchanged.
+
+### Progress and cancellation
+
+Exports, import previews, imports, "Back up now" and restores report progress, and all but
+restores can be cancelled (`apps/desktop/src/main/operations/operation-progress.ts`).
+
+- **No push channel.** IPC stays request and response. The renderer generates an operation ID
+  (a UUID), passes it as `operationId` with the request that starts the work, and while that
+  request is pending polls `operations:get-progress` every 250 ms
+  (`renderer/src/components/operation-progress.tsx`). `operations:cancel` asks the work to stop.
+  An ID only labels work the renderer itself started; it grants nothing.
+- **Phases.** The work reports phases with a label, a done/total count (`null` total for an
+  indeterminate bar; the archive phase counts bytes) and whether Cancel is possible:
+
+  | Operation      | Phases                                                                          |
+  | -------------- | ------------------------------------------------------------------------------- |
+  | ZIP export     | Reading the workspace · Checking attached files · Writing the archive           |
+  | Markdown       | Reading the workspace · Converting notes · Writing the archive                  |
+  | Import preview | Reading the archive · Checking attached files · Planning the import             |
+  | Import         | Copying attached files · **Saving to the workspace** (not cancellable)          |
+  | Back up now    | Copying the database · Copying attached files · **Finishing** (not cancellable) |
+  | Restore        | Restoring attached files, safety backup (nothing cancellable)                   |
+
+- **Cancellation is cooperative and only where it is safe.** The work calls `checkCancelled()`
+  between steps and passes the abort signal to the archive stream; its own cleanup then removes
+  the partial archive, the copied attachment files or the `.partial-` snapshot folder, and the
+  request fails with `OPERATION_CANCELLED` ("Cancelled. Nothing was changed."), which the UI shows
+  as a plain message. A step that makes changes visible (the import's transaction, a snapshot's
+  final rename, a restore's folder swap) is never cancellable, so a cancel can never be reported
+  for work that was in fact committed. A cancelled backup is not recorded as a failed backup.
+- Requests without an operation ID (tests, the daily backup) run untracked and cannot be
+  cancelled.
 
 ## External links
 
@@ -1604,10 +1641,10 @@ implemented); see [ADR-0004](adr/0004-installer-signing-and-updates.md).
   layout and the Cytoscape graph layout run in the renderer. If one of them grows, the same
   pattern applies: hold the write queue with `runExclusive` (or read on a separate connection)
   and run the work in a worker.
-- **Progress and cancellation.** Export, import, backup and restore are single request and
-  response calls today. Long-running operations should report progress and allow cancellation
-  (PRD §7.2); `transfer_jobs` already has `kind`, `state`, `progress` and `idempotency_key`
-  columns for this, but is used only as the import history.
+- **Persisted job state.** Progress and cancellation live in memory
+  ([Progress and cancellation](#progress-and-cancellation)); `transfer_jobs` has `kind`,
+  `state`, `progress` and `idempotency_key` columns that a future server job queue could use,
+  but is used only as the import history.
 - **Updates.** electron-updater with signature verification needs an update feed host first
   ([ADR-0004](adr/0004-installer-signing-and-updates.md)); its checks must be visible in Settings
   and possible to turn off.

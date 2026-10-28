@@ -40,10 +40,12 @@ import {
 } from './services/attachment-ipc-services';
 import { createExternalLinkService } from './services/external-link-service';
 import { createNodeIpcServices } from './services/node-ipc-services';
+import { createOperationIpcServices } from './services/operation-ipc-services';
 import { createGraphTimelineIpcServices } from './services/graph-timeline-ipc-services';
 import { createMapIpcServices } from './services/map-ipc-services';
 import { createRelationshipIpcServices } from './services/relationship-ipc-services';
 import { BackupService } from './backups/backup-service';
+import { OperationRegistry } from './operations/operation-progress';
 import { workerImportWriter } from './portability/import-writer';
 import {
   createBackupIpcServices,
@@ -91,6 +93,8 @@ const settings = createFileSettingsStore(app.getPath('userData'));
 // Large imports are written in a worker thread so the app keeps responding (PRD §9). The worker
 // is built next to this file (electron.vite.config.ts).
 const importRecordWriter = workerImportWriter(new URL('./import-worker.js', import.meta.url));
+// Progress and Cancel of long exports, imports, backups and restores.
+const operations = new OperationRegistry();
 const workspaces = new WorkspaceManager({
   settings,
   defaultWorkspacesRoot: join(app.getPath('userData'), 'workspaces'),
@@ -319,8 +323,10 @@ async function startApplication(): Promise<void> {
         appVersion: app.getVersion(),
         ids: { newId: () => randomUUID() },
         importRecordWriter,
+        operations,
       }),
-      ...createBackupIpcServices(backups, backupInteractions),
+      ...createBackupIpcServices(backups, backupInteractions, operations),
+      ...createOperationIpcServices(operations),
       'preferences:get': () => workspaces.getPreferences(),
       'preferences:update': (changes) => workspaces.updatePreferences(changes),
     },

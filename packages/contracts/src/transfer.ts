@@ -10,6 +10,8 @@
 
 import { z } from 'zod';
 
+import { operationIdField } from './operations';
+
 export const TRANSFER_ERROR_CODES = [
   /** The file is not an mmap archive, or it is damaged or inconsistent. */
   'ARCHIVE_INVALID',
@@ -25,6 +27,8 @@ export const TRANSFER_ERROR_CODES = [
   'TRANSFER_FAILED',
   /** The previewed import is no longer available (it expired or another workspace was opened). */
   'IMPORT_EXPIRED',
+  /** The user cancelled a long operation; nothing was changed. */
+  'OPERATION_CANCELLED',
   /** A backup could not be written (disk full, folder unavailable, no permission, …). */
   'BACKUP_FAILED',
   /** A backup is incomplete or its files do not match their checksums. */
@@ -61,13 +65,14 @@ export const importSummarySchema = z.strictObject({
   attachments: z.number().int().nonnegative(),
 });
 
-const noRequest = z.strictObject({});
+/** Requests of long operations may carry an operation ID for progress and Cancel. */
+const operationRequest = z.strictObject({ ...operationIdField });
 const cancelled = z.strictObject({ status: z.literal('cancelled') });
 
 export const transferContracts = {
   /** Asks where to save, then writes the lossless ZIP archive of the open workspace. */
   exportZip: {
-    request: noRequest,
+    request: operationRequest,
     response: z.discriminatedUnion('status', [
       cancelled,
       z.strictObject({
@@ -81,7 +86,7 @@ export const transferContracts = {
   },
   /** Asks where to save, then writes the readable Markdown export (a ZIP of .md files). */
   exportMarkdown: {
-    request: noRequest,
+    request: operationRequest,
     response: z.discriminatedUnion('status', [
       cancelled,
       z.strictObject({
@@ -95,7 +100,7 @@ export const transferContracts = {
   },
   /** Asks for an archive, validates all of it and describes the import without changing data. */
   previewImport: {
-    request: noRequest,
+    request: operationRequest,
     response: z.discriminatedUnion('status', [
       cancelled,
       z.strictObject({
@@ -121,7 +126,11 @@ export const transferContracts = {
    * true: the user saw the duplicate warning and chose to import again.
    */
   applyImport: {
-    request: z.strictObject({ importToken: z.uuid(), acceptDuplicate: z.boolean() }),
+    request: z.strictObject({
+      importToken: z.uuid(),
+      acceptDuplicate: z.boolean(),
+      ...operationIdField,
+    }),
     response: z.strictObject({ summary: importSummarySchema }),
   },
   /** Forgets a previewed import (the user cancelled after the preview). */

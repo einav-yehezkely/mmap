@@ -16,6 +16,7 @@ import { DomainError, type IdGenerator } from '@mmap/domain';
 import type { IpcServices } from '../ipc/register-ipc-handlers';
 import { exportWorkspaceMarkdown } from '../portability/export-markdown';
 import { exportWorkspaceArchive } from '../portability/export-workspace';
+import { OperationRegistry } from '../operations/operation-progress';
 import type { ImportRecordWriter } from '../portability/import-writer';
 import { applyImport, prepareImport, type PreparedImport } from '../portability/import-workspace';
 import { TransferError } from '../portability/transfer-errors';
@@ -43,6 +44,8 @@ export interface TransferIpcDependencies {
   readonly now?: () => Date;
   /** Writes the import's records; the app passes the worker-thread writer. */
   readonly importRecordWriter?: ImportRecordWriter;
+  /** Progress and Cancel for requests that carry an operation ID. */
+  readonly operations?: OperationRegistry;
 }
 
 interface PendingImport {
@@ -55,6 +58,7 @@ export function createTransferIpcServices(
   dependencies: TransferIpcDependencies,
 ): Pick<IpcServices, TransferChannel> {
   const now = dependencies.now ?? (() => new Date());
+  const operations = dependencies.operations ?? new OperationRegistry();
   let pending: PendingImport | null = null;
 
   const requireWorkspace = (): OpenWorkspace => {
@@ -89,17 +93,21 @@ export function createTransferIpcServices(
   };
 
   return {
-    'transfer:export-zip': async () => {
+    'transfer:export-zip': async ({ operationId }) => {
       const workspace = requireWorkspace();
       const date = now().toISOString().slice(0, 10);
       const destination = await dependencies.native.chooseExportDestination(
         `${safeFileName(await workspaceName(workspace))} ${date}.mmap.zip`,
       );
       if (destination === null) return { status: 'cancelled' as const };
-      const result = await exportWorkspaceArchive(workspace, destination, {
-        appVersion: dependencies.appVersion,
-        now,
-      });
+      const result = await operations.run(operationId, (progress) =>
+        exportWorkspaceArchive(
+          workspace,
+          destination,
+          { appVersion: dependencies.appVersion, now },
+          progress,
+        ),
+      );
       return {
         status: 'exported' as const,
         fileName: basename(destination),
@@ -108,26 +116,32 @@ export function createTransferIpcServices(
       };
     },
 
-    'transfer:export-markdown': async () => {
+    'transfer:export-markdown': async ({ operationId }) => {
       const workspace = requireWorkspace();
       const date = now().toISOString().slice(0, 10);
       const destination = await dependencies.native.chooseExportDestination(
         `${safeFileName(await workspaceName(workspace))} ${date} Markdown.zip`,
       );
       if (destination === null) return { status: 'cancelled' as const };
-      const result = await exportWorkspaceMarkdown(workspace, destination, now);
+      const result = await operations.run(operationId, (progress) =>
+        exportWorkspaceMarkdown(workspace, destination, now, progress),
+      );
       return { status: 'exported' as const, fileName: basename(destination), ...result };
     },
 
-    'transfer:preview-import': async () => {
+    'transfer:preview-import': async ({ operationId }) => {
       const workspace = requireWorkspace();
       discardPending();
       const archivePath = await dependencies.native.chooseArchiveToImport();
       if (archivePath === null) return { status: 'cancelled' as const };
-      const prepared = await prepareImport(workspace, archivePath, {
-        ids: dependencies.ids,
-        maxAttachmentBytes: await dependencies.maxAttachmentBytes(),
-      });
+      const maxAttachmentBytes = await dependencies.maxAttachmentBytes();
+      const prepared = await operations.run(operationId, (progress) =>
+        prepareImport(workspace, archivePath, {
+          ids: dependencies.ids,
+          maxAttachmentBytes,
+          progress,
+        }),
+      );
       const token = randomUUID();
       pending = { token, prepared, expiresAt: now().getTime() + IMPORT_PREVIEW_LIFETIME_MS };
       return {
@@ -146,7 +160,7 @@ export function createTransferIpcServices(
       };
     },
 
-    'transfer:apply-import': async ({ importToken, acceptDuplicate }) => {
+    'transfer:apply-import': async ({ importToken, acceptDuplicate, operationId }) => {
       const workspace = requireWorkspace();
       const prepared = takePending(importToken, workspace);
       if (prepared.earlierImports.length > 0 && !acceptDuplicate) {
@@ -157,7 +171,9 @@ export function createTransferIpcServices(
         );
       }
       pending = null;
-      await applyImport(workspace, prepared, dependencies.importRecordWriter);
+      await operations.run(operationId, (progress) =>
+        applyImport(workspace, prepared, dependencies.importRecordWriter, progress),
+      );
       return { summary: prepared.plan.summary };
     },
 

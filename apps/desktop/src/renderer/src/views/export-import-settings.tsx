@@ -7,11 +7,15 @@
  *   the archive was imported before, the user must tick a box before it can be imported again.
  *
  * Imports always add new records with new identities; nothing that exists is changed.
+ *
+ * Long steps show their progress with a Cancel button (`OperationProgress`); a cancelled export,
+ * preview or import leaves nothing behind.
  */
 
 import type { IpcResponse } from '@mmap/contracts';
 import { useId, useState } from 'react';
 
+import { isCancelled, newOperationId, OperationProgress } from '../components/operation-progress';
 import { Button } from '../components/ui/button';
 import { FormDialog } from '../components/ui/dialog';
 import { formatDateTime } from '../lib/format-date';
@@ -22,7 +26,7 @@ type TransferPreview = Extract<IpcResponse<'transfer:preview-import'>, { status:
 
 type Status =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'busy'; readonly text: string }
+  | { readonly kind: 'busy'; readonly text: string; readonly operationId: string }
   | { readonly kind: 'done'; readonly text: string; readonly warnings: readonly string[] }
   | { readonly kind: 'error'; readonly text: string };
 
@@ -32,9 +36,10 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
   const busy = status.kind === 'busy';
 
   const exportZip = async () => {
-    setStatus({ kind: 'busy', text: 'Exporting…' });
+    const operationId = newOperationId();
+    setStatus({ kind: 'busy', text: 'Exporting…', operationId });
     try {
-      const result = await unwrap(window.mmap.transfer.exportZip({}));
+      const result = await unwrap(window.mmap.transfer.exportZip({ operationId }));
       if (result.status === 'cancelled') {
         setStatus({ kind: 'idle' });
         return;
@@ -45,14 +50,15 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
         warnings: result.warnings,
       });
     } catch (caught) {
-      setStatus({ kind: 'error', text: errorMessage(caught) });
+      setStatus(failureStatus(caught));
     }
   };
 
   const exportMarkdown = async () => {
-    setStatus({ kind: 'busy', text: 'Exporting…' });
+    const operationId = newOperationId();
+    setStatus({ kind: 'busy', text: 'Exporting…', operationId });
     try {
-      const result = await unwrap(window.mmap.transfer.exportMarkdown({}));
+      const result = await unwrap(window.mmap.transfer.exportMarkdown({ operationId }));
       if (result.status === 'cancelled') {
         setStatus({ kind: 'idle' });
         return;
@@ -63,18 +69,19 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
         warnings: result.warnings,
       });
     } catch (caught) {
-      setStatus({ kind: 'error', text: errorMessage(caught) });
+      setStatus(failureStatus(caught));
     }
   };
 
   const chooseArchive = async () => {
-    setStatus({ kind: 'busy', text: 'Checking the archive…' });
+    const operationId = newOperationId();
+    setStatus({ kind: 'busy', text: 'Checking the archive…', operationId });
     try {
-      const result = await unwrap(window.mmap.transfer.previewImport({}));
+      const result = await unwrap(window.mmap.transfer.previewImport({ operationId }));
       setStatus({ kind: 'idle' });
       if (result.status === 'ready') setPreview(result);
     } catch (caught) {
-      setStatus({ kind: 'error', text: errorMessage(caught) });
+      setStatus(failureStatus(caught));
     }
   };
 
@@ -89,10 +96,11 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
     if (preview === null) return;
     const token = preview.importToken;
     setPreview(null);
-    setStatus({ kind: 'busy', text: 'Importing…' });
+    const operationId = newOperationId();
+    setStatus({ kind: 'busy', text: 'Importing…', operationId });
     try {
       const { summary } = await unwrap(
-        window.mmap.transfer.applyImport({ importToken: token, acceptDuplicate }),
+        window.mmap.transfer.applyImport({ importToken: token, acceptDuplicate, operationId }),
       );
       notifyNodesChanged();
       setStatus({
@@ -101,7 +109,7 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
         warnings: [],
       });
     } catch (caught) {
-      setStatus({ kind: 'error', text: errorMessage(caught) });
+      setStatus(failureStatus(caught));
     }
   };
 
@@ -129,7 +137,13 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
         </Button>
       </div>
       <div aria-live="polite">
-        {status.kind === 'busy' && <p className="text-muted-foreground">{status.text}</p>}
+        {status.kind === 'busy' && (
+          <OperationProgress
+            key={status.operationId}
+            operationId={status.operationId}
+            fallback={status.text}
+          />
+        )}
         {status.kind === 'done' && (
           <div className="space-y-1">
             <p>{status.text}</p>
@@ -158,6 +172,13 @@ export function ExportImportSettings({ timeZone }: { timeZone: string }) {
       )}
     </div>
   );
+}
+
+/** A cancelled operation is reported plainly; anything else is an error. */
+function failureStatus(caught: unknown): Status {
+  return isCancelled(caught)
+    ? { kind: 'done', text: 'Cancelled. Nothing was changed.', warnings: [] }
+    : { kind: 'error', text: errorMessage(caught) };
 }
 
 function ImportPreviewDialog({

@@ -12,6 +12,8 @@
  * 5. The import plan (`planImport`): consistency, new IDs, rewritten references, merged labels.
  * It also reports earlier imports of the same archive, so the user is warned before a duplicate.
  *
+ * Both report progress; cancelling is possible until the records are written (the last step).
+ *
  * `applyImport` then copies each attachment out of the archive into a temporary folder, checks
  * its bytes against the recorded checksum, stores it with the attachment store (which verifies
  * again and only then moves it into place), and writes every record in one transaction (in the
@@ -50,6 +52,7 @@ import { describeRejection, extensionOf } from '../services/attachment-ipc-servi
 import type { OpenWorkspace } from '../workspaces/open-workspace';
 import { parseArchiveData, parseArchiveManifest } from './archive-schema';
 import { writeImportInProcess, type ImportRecordWriter } from './import-writer';
+import { NO_PROGRESS, type Progress } from '../operations/operation-progress';
 import { toWriteError, TransferError } from './transfer-errors';
 import { ZipReader, type ZipLimits } from './zip-reader';
 
@@ -79,6 +82,7 @@ export interface PrepareOptions {
   readonly ids: IdGenerator;
   readonly maxAttachmentBytes: number;
   readonly limits?: typeof IMPORT_LIMITS;
+  readonly progress?: Progress;
 }
 
 /**
@@ -93,6 +97,8 @@ export async function prepareImport(
   options: PrepareOptions,
 ): Promise<PreparedImport> {
   const limits = options.limits ?? IMPORT_LIMITS;
+  const progress = options.progress ?? NO_PROGRESS;
+  progress.phase('Reading the archive', null);
   const reader = await ZipReader.open(archivePath, limits);
   try {
     const manifest = parseArchiveManifest(
@@ -112,11 +118,15 @@ export async function prepareImport(
     checkCounts(manifest.counts, archiveCounts(data));
     checkAttachmentEntries(manifest, data);
 
+    progress.checkCancelled();
+    progress.phase('Checking attached files', data.attachments.length);
     const { approved, warnings: attachmentWarnings } = await checkAttachmentPolicy(
       reader,
       data,
       options.maxAttachmentBytes,
+      progress,
     );
+    progress.phase('Planning the import', null);
     const destination = await workspace.services.importer.describeDestination(manifest.exportId);
     const plan = planImport(data, {
       workspaceId: workspace.id,
@@ -160,6 +170,7 @@ export async function applyImport(
   workspace: OpenWorkspace,
   prepared: PreparedImport,
   writeRecords: ImportRecordWriter = writeImportInProcess,
+  progress: Progress = NO_PROGRESS,
 ): Promise<void> {
   const { plan, reader } = prepared;
   const stored = new Map<AttachmentId, string>();
@@ -170,7 +181,9 @@ export async function applyImport(
         throw toWriteError(error, 'The import');
       });
     }
+    progress.phase('Copying attached files', plan.attachments.length);
     for (const [index, attachment] of plan.attachments.entries()) {
+      progress.checkCancelled();
       // The temporary name is ours; the archive name only selects which entry to read.
       const temporaryPath = join(temporaryDirectory!, `${index}.bin`);
       const extracted = await reader
@@ -199,7 +212,12 @@ export async function applyImport(
         });
       stored.set(attachment.id, file.relativePath);
       await rm(temporaryPath, { force: true });
+      progress.advance();
     }
+    progress.checkCancelled();
+    // From here on the import becomes visible: no cancelling, so a cancel can never be reported
+    // for an import that was in fact committed.
+    progress.phase('Saving to the workspace', null, { cancellable: false });
     await writeRecords(workspace, plan, prepared.manifest.exportId, stored);
   } catch (error) {
     for (const relativePath of stored.values()) {
@@ -291,10 +309,13 @@ async function checkAttachmentPolicy(
   reader: ZipReader,
   data: ArchiveData,
   maxBytes: number,
+  progress: Progress,
 ): Promise<{ approved: Map<string, ApprovedAttachment>; warnings: string[] }> {
   const approved = new Map<string, ApprovedAttachment>();
   const reasons = new Map<string, number>();
   for (const attachment of data.attachments) {
+    progress.checkCancelled();
+    progress.advance();
     const leadingBytes =
       attachment.byteSize > maxBytes
         ? new Uint8Array(0)

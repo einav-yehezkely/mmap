@@ -9,10 +9,12 @@
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { open, rename, rm } from 'node:fs/promises';
+import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import yazl from 'yazl';
 
+import { NO_PROGRESS, operationCancelled, type Progress } from '../operations/operation-progress';
 import { toWriteError } from './transfer-errors';
 
 export class ZipWriter {
@@ -38,13 +40,32 @@ export class ZipWriter {
    * Finishes the archive at `destinationPath`, replacing an existing file there only after the
    * new one is complete (the user confirmed the replacement in the save dialog).
    *
-   * @throws TransferError `TRANSFER_FAILED` (disk full, no permission, …).
+   * Bytes written advance `progress`'s current phase; cancelling stops the write and removes the
+   * partial file.
+   *
+   * @throws TransferError `TRANSFER_FAILED` (disk full, no permission, …) or
+   *   `OPERATION_CANCELLED`.
    */
-  public async writeTo(destinationPath: string, what = 'The export'): Promise<void> {
+  public async writeTo(
+    destinationPath: string,
+    what = 'The export',
+    progress: Progress = NO_PROGRESS,
+  ): Promise<void> {
     const temporaryPath = `${destinationPath}.${randomUUID()}.partial`;
     try {
       this.zipFile.end();
-      await pipeline(this.zipFile.outputStream, createWriteStream(temporaryPath, { flags: 'wx' }));
+      const counter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          progress.advance(chunk.length);
+          callback(null, chunk);
+        },
+      });
+      await pipeline(
+        this.zipFile.outputStream,
+        counter,
+        createWriteStream(temporaryPath, { flags: 'wx' }),
+        { signal: progress.signal },
+      );
       const handle = await open(temporaryPath, 'r+');
       try {
         await handle.sync();
@@ -54,6 +75,7 @@ export class ZipWriter {
       await rename(temporaryPath, destinationPath);
     } catch (error) {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
+      if (progress.signal.aborted) throw operationCancelled();
       throw toWriteError(error, what);
     }
   }

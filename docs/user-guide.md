@@ -991,7 +991,8 @@ attached files. "(N missing at backup time)" means N attached files were missing
 workspace folder, or had been changed outside mmap, when that backup was taken; they are not in
 it.
 
-**Back up now** takes a backup immediately, for example before a big change.
+**Back up now** takes a backup immediately, for example before a big change. A bar shows how
+far it is; **Cancel** stops it and leaves no partial backup behind.
 
 ### Where backups are kept
 
@@ -1002,7 +1003,8 @@ drive fails, the workspace and its backups are lost together. To protect against
 **Back up now**. **Use the default folder** switches back. Backups that are already in the old
 folder stay there.
 
-Avoid network folders and folders synced by OneDrive, Dropbox or similar programs for backups.
+A network folder works as a backup folder too. Avoid folders synced by OneDrive, Dropbox or
+similar programs for backups: they can copy a backup while it is being written.
 
 ### How many backups are kept
 
@@ -1062,6 +1064,13 @@ inside the backup folder yourself.
 
 **Settings**, section **Export and import**, has three buttons. Each asks you where to save or
 which file to open.
+
+### Progress and Cancel
+
+Exporting, checking an archive, importing, backing up and restoring show a bar with the current
+step. **Cancel** stops an export, an import or a backup and leaves nothing behind: no partial file,
+no added notes. While an import is saving its notes, or a backup is finishing, Cancel is not
+available for those few seconds. A restore cannot be cancelled once it has started.
 
 ### Exporting a workspace (ZIP)
 

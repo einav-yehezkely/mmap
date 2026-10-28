@@ -141,6 +141,7 @@ from `packages/contracts/src/envelope.ts` and are produced by the IPC handler it
 | `ARCHIVE_CHECKSUM_MISMATCH`      | Transfer  | A file's bytes do not match the checksum recorded in the archive.                                                                             |
 | `TRANSFER_FAILED`                | Transfer  | Writing an export or copying files failed (disk full, no permission, …).                                                                      |
 | `IMPORT_EXPIRED`                 | Transfer  | The previewed import is no longer available: the token is unknown or older than 10 minutes, or another preview or workspace replaced it.      |
+| `OPERATION_CANCELLED`            | Transfer  | The user cancelled a long operation (export, import preview, import, backup); nothing was changed.                                            |
 | `BACKUP_FAILED`                  | Transfer  | A backup could not be written (disk full, folder unavailable, no permission).                                                                 |
 | `BACKUP_DAMAGED`                 | Transfer  | A backup is incomplete, unknown, or its files do not match their checksums.                                                                   |
 | `RESTORE_FAILED`                 | Transfer  | Restoring failed; the workspace is unchanged.                                                                                                 |
@@ -208,7 +209,7 @@ return. Design the pattern with the first channel that needs it and document it 
 
 ## Channel reference
 
-There are 87 channels. The renderer method is `window.mmap.<group>.<method>`; for example
+There are 89 channels. The renderer method is `window.mmap.<group>.<method>`; for example
 `nodes:preview-delete` is `window.mmap.nodes.previewDelete` and `relationship-types:set-archived`
 is `window.mmap.relationshipTypes.setArchived`. Every channel can also fail with
 `FORBIDDEN_SENDER`, `INVALID_REQUEST` and `INTERNAL_ERROR`; the notes under each table list only
@@ -654,13 +655,13 @@ Service: `apps/desktop/src/main/services/transfer-ipc-services.ts`, which calls
 [architecture.md](architecture.md#export-and-import) and
 [ADR-0011](adr/0011-export-import.md) for the archive format and the import rules.
 
-| Channel                    | Purpose                                                                                  | Request                                   | Response                                                                                                                             |
-| -------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `transfer:export-zip`      | Ask where to save (native dialog), then write the lossless ZIP archive of the workspace. | `{}`                                      | `{ status: 'cancelled' }` or `{ status: 'exported', fileName, counts, warnings }`                                                    |
-| `transfer:export-markdown` | Ask where to save, then write the readable Markdown export (a ZIP of `.md` files).       | `{}`                                      | `{ status: 'cancelled' }` or `{ status: 'exported', fileName, nodes, attachments, warnings }`                                        |
-| `transfer:preview-import`  | Ask for an archive, validate all of it and describe the import. Changes nothing.         | `{}`                                      | `{ status: 'cancelled' }` or `{ status: 'ready', importToken, fileName, source, summary, warnings, previousImports, sameWorkspace }` |
-| `transfer:apply-import`    | Perform a previewed import.                                                              | `{ importToken (UUID), acceptDuplicate }` | `{ summary }`                                                                                                                        |
-| `transfer:discard-import`  | Forget a previewed import (the user cancelled after the preview).                        | `{ importToken (UUID) }`                  | `{ discarded: true }`                                                                                                                |
+| Channel                    | Purpose                                                                                  | Request                                                 | Response                                                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `transfer:export-zip`      | Ask where to save (native dialog), then write the lossless ZIP archive of the workspace. | `{ operationId? }`                                      | `{ status: 'cancelled' }` or `{ status: 'exported', fileName, counts, warnings }`                                                    |
+| `transfer:export-markdown` | Ask where to save, then write the readable Markdown export (a ZIP of `.md` files).       | `{ operationId? }`                                      | `{ status: 'cancelled' }` or `{ status: 'exported', fileName, nodes, attachments, warnings }`                                        |
+| `transfer:preview-import`  | Ask for an archive, validate all of it and describe the import. Changes nothing.         | `{ operationId? }`                                      | `{ status: 'cancelled' }` or `{ status: 'ready', importToken, fileName, source, summary, warnings, previousImports, sameWorkspace }` |
+| `transfer:apply-import`    | Perform a previewed import.                                                              | `{ importToken (UUID), acceptDuplicate, operationId? }` | `{ summary }`                                                                                                                        |
+| `transfer:discard-import`  | Forget a previewed import (the user cancelled after the preview).                        | `{ importToken (UUID) }`                                | `{ discarded: true }`                                                                                                                |
 
 **Exports.** The save dialog proposes `<workspace name> <YYYY-MM-DD>.mmap.zip` or
 `<workspace name> <YYYY-MM-DD> Markdown.zip` in Documents. `counts` has the number of nodes, tags,
@@ -712,12 +713,26 @@ See [architecture.md](architecture.md#backups-and-restore) and the
 | Channel                           | Purpose                                                                                    | Request                            | Response                                                     |
 | --------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------------------ |
 | `backups:get-status`              | Destination, retention, last success and failure, and the snapshots of the workspace.      | `{}`                               | `BackupStatus`                                               |
-| `backups:create-now`              | Take a backup now (Settings › Back up now).                                                | `{}`                               | `BackupStatus`                                               |
+| `backups:create-now`              | Take a backup now (Settings › Back up now).                                                | `{ operationId? }`                 | `BackupStatus`                                               |
 | `backups:choose-destination`      | Pick the backup folder in a native dialog; cancelling changes nothing.                     | `{}`                               | `BackupStatus`                                               |
 | `backups:use-default-destination` | Go back to the default folder, `<userData>/backups`.                                       | `{}`                               | `BackupStatus`                                               |
 | `backups:set-retention`           | Set how many daily and weekly snapshots to keep, then prune.                               | `{ daily (0–60), weekly (0–104) }` | `BackupStatus`                                               |
 | `backups:restore`                 | Replace the open workspace's content with one of its snapshots, after a safety backup.     | `{ snapshotId }` (1–64 chars)      | `{ state: WorkspaceState }`                                  |
-| `backups:restore-from-folder`     | Pick a snapshot folder in a native dialog and restore it as a new workspace, then open it. | `{}`                               | `{ status: 'cancelled' }` or `{ status: 'restored', state }` |
+| `backups:restore-from-folder`     | Pick a snapshot folder in a native dialog and restore it as a new workspace, then open it. | `{ operationId? }`                 | `{ status: 'cancelled' }` or `{ status: 'restored', state }` |
+
+### Progress and cancellation
+
+The seven long requests above (`transfer:export-zip`, `transfer:export-markdown`,
+`transfer:preview-import`, `transfer:apply-import`, `backups:create-now`, `backups:restore`,
+`backups:restore-from-folder`) take an optional `operationId`: a UUID the renderer generates. While
+the request is pending, the renderer reads its progress and may ask it to stop; see
+[architecture](architecture.md#progress-and-cancellation). A cancelled request fails with
+`OPERATION_CANCELLED`. Restores report progress but cannot be cancelled.
+
+| Channel                   | Purpose                                                   | Request                  | Response                                                                               |
+| ------------------------- | --------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| `operations:get-progress` | Progress of a running operation started with this ID.     | `{ operationId (UUID) }` | `{ running: false }` or `{ running: true, phase, done, total (or null), cancellable }` |
+| `operations:cancel`       | Ask the operation to stop, if its current step allows it. | `{ operationId (UUID) }` | `{ cancelling }` (false when not running or not cancellable now)                       |
 
 `BackupStatus` has `destination` (the backup folder, for display), `isDefaultDestination`,
 `sameDriveAsWorkspace` (the destination is on the workspace's drive, so a drive failure would lose
