@@ -348,8 +348,8 @@ removed.
   members are far apart gets a large outline that can include unrelated nodes in between (they are
   not members; badges, the tooltip and the side panel say which maps a node is on).
 - **Collapsed maps are not remembered** between visits to the Knowledge Graph.
-- **No drag-to-connect and no relationship creation from the graph** (PRD §5.5 "or graph action",
-  carried from Phase 2). Relationships are still created only in the node panel.
+- **No drag-to-connect** in the graph. (Creating relationships from the graph, PRD §5.5 "or
+  graph action", was added after Phase 5: see section 13.)
 - **The canvas is not keyboard-operable.** Cytoscape draws on a canvas element that has no
   focusable nodes. The List tab is the accessible alternative and offers the same actions (open,
   focus, expand); the toolbar, filters and side panel are ordinary controls.
@@ -537,3 +537,18 @@ thread boundary). The packaged smoke check "workspace exported to ZIP and import
 through the real worker. Still on the main thread: export, backups and restore (on the 10,000-node
 dataset a whole export took 0.9 s, a backup 1.6 s and a restore 2.7 s; only part of that blocks),
 search and graph queries.
+
+## 13. Relationships from the knowledge graph (2026-10-28)
+
+PRD §5.5: "Users can create relationships from a node detail panel or graph action." The graph's
+side panel has **Add relationship**, which opens the node panel's form for the selected node.
+While it is open, clicking another node on the canvas, or choosing it with **Find**, makes it the
+other end without changing the selection; the form's picker works from the keyboard. The new edge
+appears as soon as the relationship is saved.
+
+Packaged smoke check "a relationship is added from the knowledge graph (Find and a click on the
+node)": selects a node with Find, opens the form, chooses the other node with Find, clears it,
+chooses it again with a real mouse click at the position Cytoscape reports (its instance is
+registered on the container as `_cyreg`), checks that the selection did not move, saves, and
+finds the relationship. The packaged smoke run now has 20 checks and a 240-second limit (the
+previous 120 seconds were reached once on a busy machine).

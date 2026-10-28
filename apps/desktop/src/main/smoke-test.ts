@@ -16,7 +16,7 @@ import { verifySchemaOnFreshDatabase } from '@mmap/storage-sqlite';
 import type { BrowserWindow } from 'electron';
 
 import { checkAttachmentPreview } from './smoke-attachments';
-import { checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
+import { checkGraphRelationship, checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
 import type { ImportRecordWriter } from './portability/import-writer';
 import { checkExportImport } from './smoke-transfer';
 import { checkBackupAndRestore } from './smoke-backups';
@@ -352,6 +352,12 @@ export async function runSmokeTest(
     }),
   );
 
+  checks.push(
+    await check(
+      'a relationship is added from the knowledge graph (Find and a click on the node)',
+      () => checkGraphRelationship(window),
+    ),
+  );
   checks.push(
     await check('1,000-node graph renders within 3 seconds', async () => {
       const elapsed = await checkGraphRendering(window, workspaces);

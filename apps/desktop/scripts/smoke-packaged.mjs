@@ -14,7 +14,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const TIMEOUT_MS = 120_000;
+// The whole run: 20 checks, including a 1,000-node graph, accessibility scans of nine views in two
+// themes and real mouse input. A local run once passed the old 120-second limit on a busy machine.
+const TIMEOUT_MS = 240_000;
 const executable = resolve(import.meta.dirname, '..', 'release', 'win-unpacked', 'mmap.exe');
 
 if (!existsSync(executable)) {

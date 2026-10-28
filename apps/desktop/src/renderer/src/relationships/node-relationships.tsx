@@ -326,25 +326,44 @@ function RelationshipRow({
   );
 }
 
-function AddRelationshipForm({
-  nodeId,
-  types,
-  onCancel,
-  onCreate,
-}: {
-  nodeId: string;
-  types: readonly RelationshipTypeViewDto[];
-  onCancel: () => void;
-  onCreate: (input: {
+export interface AddRelationshipFormProps {
+  readonly nodeId: string;
+  readonly types: readonly RelationshipTypeViewDto[];
+  readonly onCancel: () => void;
+  readonly onCreate: (input: {
     sourceNodeId: string;
     targetNodeId: string;
     typeId: string;
     description: string | null;
   }) => Promise<void>;
-}) {
+  /**
+   * A node chosen outside the form (the knowledge graph: clicking a node while the form is open).
+   * Each new value becomes the other end; the type, direction and text typed so far are kept.
+   */
+  readonly pickedOther?: PickedNode | null;
+  /** Shown under the node picker, e.g. that a node can also be clicked on the graph. */
+  readonly pickerHint?: string;
+}
+
+/** Form for a new relationship of `nodeId`; also used by the knowledge graph's side panel. */
+export function AddRelationshipForm({
+  nodeId,
+  types,
+  onCancel,
+  onCreate,
+  pickedOther = null,
+  pickerHint,
+}: AddRelationshipFormProps) {
   const [typeId, setTypeId] = useState(types[0]?.id ?? '');
   const [thisIsSource, setThisIsSource] = useState(true);
-  const [other, setOther] = useState<PickedNode | null>(null);
+  const [other, setOther] = useState<PickedNode | null>(pickedOther);
+  // Adopts a node picked outside the form (state adjusted during render, as React recommends
+  // instead of an effect).
+  const [adoptedPick, setAdoptedPick] = useState<PickedNode | null>(pickedOther);
+  if (pickedOther !== adoptedPick) {
+    setAdoptedPick(pickedOther);
+    if (pickedOther !== null) setOther(pickedOther);
+  }
   const [description, setDescription] = useState('');
   const typeFieldId = useId();
   const descriptionId = useId();
@@ -409,6 +428,9 @@ function AddRelationshipForm({
           onPick={setOther}
           autoFocus
         />
+      )}
+      {other === null && pickerHint !== undefined && (
+        <p className="text-xs text-muted-foreground">{pickerHint}</p>
       )}
 
       <div className="space-y-1">

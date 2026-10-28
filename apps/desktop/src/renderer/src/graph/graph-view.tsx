@@ -35,6 +35,7 @@ import { Input } from '../components/ui/input';
 import { errorMessage, unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
 import { useNodesChanged } from '../nodes/node-events';
+import type { PickedNode } from '../nodes/node-picker';
 import { TagFilterBar, type TagOption } from '../nodes/tag-filter-bar';
 import { GraphCanvas, type GraphCanvasHandle } from './graph-canvas';
 import { placeNodes, type Point } from './graph-layout';
@@ -144,6 +145,12 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
   const [showRegions, setShowRegions] = useState(false);
   const [collapsedMapIds, setCollapsedMapIds] = useState<ReadonlySet<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * The node whose side panel has the "Add relationship" form open. While it matches the
+   * selection, clicking another node chooses it as the other end instead of selecting it.
+   */
+  const [relatingFor, setRelatingFor] = useState<string | null>(null);
+  const [graphPick, setGraphPick] = useState<{ forNodeId: string; node: PickedNode } | null>(null);
   const [highlightedMapId, setHighlightedMapId] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ centerId: string; expanded: readonly string[] } | null>(
     null,
@@ -320,15 +327,29 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
       else next.add(mapId);
       return next;
     });
-  /** Selecting a collapsed map's summary expands it; selecting a node selects it. */
-  const onCanvasSelect = useCallback((id: string | null) => {
-    if (id !== null && isSummaryId(id)) {
-      const mapId = id.slice(SUMMARY_PREFIX.length);
-      setCollapsedMapIds((current) => new Set([...current].filter((item) => item !== mapId)));
-      return;
-    }
-    setSelectedId(id);
-  }, []);
+  /**
+   * Selecting a collapsed map's summary expands it; selecting a node selects it, except while the
+   * selected node's "Add relationship" form is open: then the clicked node becomes the other end
+   * (a click on the empty canvas changes nothing).
+   */
+  const onCanvasSelect = useCallback(
+    (id: string | null) => {
+      if (id !== null && isSummaryId(id)) {
+        const mapId = id.slice(SUMMARY_PREFIX.length);
+        setCollapsedMapIds((current) => new Set([...current].filter((item) => item !== mapId)));
+        return;
+      }
+      if (relatingFor !== null && relatingFor === selectedId) {
+        const node = id === null ? undefined : state?.nodes.get(id);
+        if (id !== null && id !== relatingFor && node !== undefined) {
+          setGraphPick({ forNodeId: relatingFor, node: { id, title: node.title } });
+        }
+        return;
+      }
+      setSelectedId(id);
+    },
+    [relatingFor, selectedId, state],
+  );
   const emphasis = useMemo(
     () =>
       state === null
@@ -357,8 +378,15 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
   const filterCount = activeFilterCount(filters);
   const highlightedMap = state?.maps.find((map) => map.id === highlightedMapId) ?? null;
 
+  /** Find: selects and centers a node, or, while adding a relationship, chooses it as the other end. */
   const select = (nodeId: string) => {
-    setSelectedId(nodeId);
+    const node = state?.nodes.get(nodeId);
+    if (relatingFor !== null && relatingFor === selectedId && nodeId !== relatingFor) {
+      if (node !== undefined)
+        setGraphPick({ forNodeId: relatingFor, node: { id: nodeId, title: node.title } });
+    } else {
+      setSelectedId(nodeId);
+    }
     canvas.current?.center(nodeId);
   };
 
@@ -810,6 +838,11 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
               if (mapId !== null) setSelectedId(null);
             }}
             onOpenMap={onOpenMap}
+            onRelatingChange={(relating) => {
+              setRelatingFor(relating ? selected.id : null);
+              setGraphPick(null);
+            }}
+            graphPick={graphPick?.forNodeId === selected.id ? graphPick.node : null}
           />
         )}
       </div>
