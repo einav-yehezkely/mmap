@@ -226,8 +226,9 @@ linking-note counts.
   result; ranked results have no stable keyset.
 - **Picker case and accent folding.** Title lookup folds ASCII case only and does not ignore
   accents, unlike full-text search, because `node:sqlite` has no ICU.
-- **Relationship-type filters in search** (PRD §5.8, "where applicable") are not implemented.
-  Creating relationships from a graph action (PRD §5.5) waits for the Phase 4 graph.
+- **Relationship-type filters in search** (PRD §5.8, "where applicable") were not implemented
+  (added after Phase 5, section 14). Creating relationships from a graph action (PRD §5.5) waited
+  for the Phase 4 graph (added after Phase 5, section 13).
 - **No UI tests** for the picker, relationship form, types dialog, backlinks or search view, and no
   structured accessibility check of them (Phase 5).
 - **Worker thread** (carried from Phases 0 and 1). Search and all other database work still run on
@@ -371,7 +372,8 @@ removed.
   than 1,000 nodes on the canvas.
 - **Position saves are fire-and-forget.** A failed `graph:save-positions` call is not reported;
   the node then returns to its last saved (or newly placed) position on the next visit.
-- **Search has no relationship-type filter** (PRD §5.8, carried from Phase 2). The graph has one.
+- **Search has no relationship-type filter** (PRD §5.8, carried from Phase 2). Added after Phase
+  5 (section 14).
 - **No import marking yet.** `is_imported` and `import_origin` exist and the timeline shows an
   "Imported" badge for such events, but nothing creates them until import arrives in Phase 5.
 - **Sessions are placed at their start time.** An editing session is ordered, grouped by day and
@@ -552,3 +554,13 @@ chooses it again with a real mouse click at the position Cytoscape reports (its 
 registered on the container as `_cyreg`), checks that the selection did not move, saves, and
 finds the relationship. The packaged smoke run now has 20 checks and a 240-second limit (the
 previous 120 seconds were reached once on a busy machine).
+
+## 14. Relationship-type filter in search (2026-10-28)
+
+PRD §5.8: "Support tag filters, relationship-type filters where applicable". `search:query` takes
+`relationshipTypeIds` (up to 20); the search keeps nodes with at least one relationship of any
+chosen type, at either end, combined with the tag filter. The Search view shows a **Has a
+relationship** row of chips for the types in use. Tests: `sqlite-search-index.test.ts` block
+"relationship-type filter" (either end; any of several types; combined with tags; an unused type;
+a type from another workspace), and the packaged bridge check "relationships, wikilinks, backlinks
+and search through the bridge" (the filter keeps the related note and drops it for another type).

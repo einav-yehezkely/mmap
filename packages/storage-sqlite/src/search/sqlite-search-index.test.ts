@@ -9,10 +9,13 @@ import { join } from 'node:path';
 
 import {
   createKnowledgeNodeService,
+  createRelationshipService,
   createTagService,
   createWorkspaceService,
   type KnowledgeNodeService,
   type NodeId,
+  type RelationshipService,
+  type RelationshipTypeId,
   type SearchHit,
   type TagId,
   type TagService,
@@ -23,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { SqliteKnowledgeNodeRepository } from '../repositories/sqlite-knowledge-node-repository';
 import { SqliteNoteReferenceRepository } from '../repositories/sqlite-note-reference-repository';
+import { SqliteRelationshipRepository } from '../repositories/sqlite-relationship-repository';
 import { SqliteRelationshipTypeRepository } from '../repositories/sqlite-relationship-type-repository';
 import { SqliteTagRepository } from '../repositories/sqlite-tag-repository';
 import { SqliteTimelineEventRepository } from '../repositories/sqlite-timeline-event-repository';
@@ -96,14 +100,48 @@ async function tag(workspaceId: WorkspaceId, nodeId: NodeId, label: string): Pro
 
 function search(
   text: string,
-  options: { workspaceId?: WorkspaceId; tagIds?: TagId[]; limit?: number; cursor?: string } = {},
+  options: {
+    workspaceId?: WorkspaceId;
+    tagIds?: TagId[];
+    relationshipTypeIds?: RelationshipTypeId[];
+    limit?: number;
+    cursor?: string;
+  } = {},
 ): ReturnType<SqliteSearchIndex['search']> {
   return index.search({
     workspaceId: options.workspaceId ?? WORKSPACE_A,
     text,
     tagIds: options.tagIds ?? [],
+    relationshipTypeIds: options.relationshipTypeIds ?? [],
     page: { limit: options.limit ?? 20, cursor: options.cursor },
   });
+}
+
+function relationships(workspaceId: WorkspaceId): RelationshipService {
+  return createRelationshipService({
+    workspaceId,
+    transactions: connections,
+    relationships: new SqliteRelationshipRepository(connections),
+    types: new SqliteRelationshipTypeRepository(connections),
+    nodes: new SqliteKnowledgeNodeRepository(connections),
+    timeline: new SqliteTimelineEventRepository(connections),
+    ids,
+    clock,
+  });
+}
+
+/** Relates two nodes with the built-in type `label`; returns the type's ID. */
+async function relate(
+  workspaceId: WorkspaceId,
+  sourceNodeId: NodeId,
+  targetNodeId: NodeId,
+  label: string,
+): Promise<RelationshipTypeId> {
+  const service = relationships(workspaceId);
+  const type = (await service.listTypes()).find((item) => item.label === label);
+  if (type === undefined) throw new Error(`No type ${label}`);
+  await service.create({ sourceNodeId, targetNodeId, typeId: type.id });
+  return type.id;
 }
 
 const hitIds = (hits: readonly SearchHit[]): NodeId[] => hits.map((hit) => hit.nodeId);
@@ -380,6 +418,62 @@ describe('search pagination and filters', () => {
     expect(hitIds(page.items)).toEqual([both]);
     expect(page.totalCount).toBe(1);
     expect((await search('lens', { tagIds: [physics] })).totalCount).toBe(2);
+  });
+});
+
+describe('relationship-type filter (PRD §5.8)', () => {
+  it('returns nodes with a relationship of a chosen type at either end', async () => {
+    const source = await createNode(WORKSPACE_A, { title: 'Orbit source' });
+    const target = await createNode(WORKSPACE_A, { title: 'Orbit target' });
+    const elsewhere = await createNode(WORKSPACE_A, { title: 'Orbit elsewhere' });
+    const unrelated = await createNode(WORKSPACE_A, { title: 'Orbit alone' });
+    const dependsOn = await relate(WORKSPACE_A, source, target, 'depends on');
+    await relate(WORKSPACE_A, elsewhere, unrelated, 'related to');
+
+    const page = await search('orbit', { relationshipTypeIds: [dependsOn] });
+
+    expect(new Set(hitIds(page.items))).toEqual(new Set([source, target]));
+    expect(page.totalCount).toBe(2);
+  });
+
+  it('matches any of several types, and combines with tags', async () => {
+    const a = await createNode(WORKSPACE_A, { title: 'Wave a' });
+    const b = await createNode(WORKSPACE_A, { title: 'Wave b' });
+    const c = await createNode(WORKSPACE_A, { title: 'Wave c' });
+    const d = await createNode(WORKSPACE_A, { title: 'Wave d' });
+    const dependsOn = await relate(WORKSPACE_A, a, b, 'depends on');
+    const relatedTo = await relate(WORKSPACE_A, c, d, 'related to');
+    const physics = await tag(WORKSPACE_A, a, 'physics');
+    await tag(WORKSPACE_A, c, 'physics');
+
+    const anyType = await search('wave', {
+      relationshipTypeIds: [dependsOn, relatedTo, dependsOn],
+    });
+    expect(anyType.totalCount).toBe(4);
+
+    const withTag = await search('wave', { relationshipTypeIds: [dependsOn], tagIds: [physics] });
+    expect(hitIds(withTag.items)).toEqual([a]);
+    expect(withTag.totalCount).toBe(1);
+  });
+
+  it('returns nothing for a type no relationship uses', async () => {
+    await createNode(WORKSPACE_A, { title: 'Quiet node' });
+    const unused = (await relationships(WORKSPACE_A).listTypes()).find(
+      (type) => type.label === 'contradicts',
+    )!.id;
+
+    expect((await search('quiet', { relationshipTypeIds: [unused] })).items).toEqual([]);
+  });
+
+  it('does not let a type from another workspace widen results', async () => {
+    const a1 = await createNode(WORKSPACE_A, { title: 'Prism one' });
+    const a2 = await createNode(WORKSPACE_A, { title: 'Prism two' });
+    await relate(WORKSPACE_A, a1, a2, 'depends on');
+    const b1 = await createNode(WORKSPACE_B, { title: 'Prism one' });
+    const b2 = await createNode(WORKSPACE_B, { title: 'Prism two' });
+    const typeInB = await relate(WORKSPACE_B, b1, b2, 'depends on');
+
+    expect((await search('prism', { relationshipTypeIds: [typeInB] })).items).toEqual([]);
   });
 });
 

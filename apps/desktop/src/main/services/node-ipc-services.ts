@@ -3,7 +3,7 @@
  * moment the request is handled; requests while no workspace is open fail with a clear error.
  */
 
-import type { MapId, NodeId, PlacementId, TagId } from '@mmap/domain';
+import type { MapId, NodeId, PlacementId, RelationshipTypeId, TagId } from '@mmap/domain';
 
 import type { IpcServices } from '../ipc/register-ipc-handlers';
 import type { OpenWorkspace, WorkspaceServices } from '../workspaces/open-workspace';
@@ -45,11 +45,12 @@ export function createNodeIpcServices(manager: WorkspaceManager): Pick<IpcServic
     'nodes:resolve-links': async ({ nodeIds }) => ({
       items: await services().nodes.resolveLinkTargets(nodeIds as NodeId[]),
     }),
-    'search:query': ({ text, tagIds = [], limit, cursor }) =>
+    'search:query': ({ text, tagIds = [], relationshipTypeIds = [], limit, cursor }) =>
       services().search.search({
         workspaceId: requireWorkspace().id,
         text,
         tagIds: tagIds as TagId[],
+        relationshipTypeIds: relationshipTypeIds as RelationshipTypeId[],
         page: { limit, cursor },
       }),
     'nodes:create': ({ title, summary, addToMaps }) => {

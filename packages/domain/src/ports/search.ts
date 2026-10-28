@@ -10,7 +10,7 @@
  * returned, even when the same words appear there (PRD §5.8).
  */
 
-import type { NodeId, TagId, WorkspaceId } from '../ids';
+import type { NodeId, RelationshipTypeId, TagId, WorkspaceId } from '../ids';
 import type { Page, PageRequest } from './pagination';
 
 export interface SearchQuery {
@@ -19,6 +19,12 @@ export interface SearchQuery {
   readonly text: string;
   /** When non-empty, only nodes carrying all of these tags are returned. */
   readonly tagIds: readonly TagId[];
+  /**
+   * When non-empty, only nodes with at least one relationship of any of these types, at either
+   * end, are returned (PRD §5.8: "relationship-type filters where applicable"). "Any", unlike
+   * tags: a node rarely has relationships of several chosen types at once.
+   */
+  readonly relationshipTypeIds?: readonly RelationshipTypeId[];
   readonly page: PageRequest;
 }
 

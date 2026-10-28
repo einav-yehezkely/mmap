@@ -311,9 +311,9 @@ Service: `apps/desktop/src/main/services/node-ipc-services.ts`, which calls `Sql
 (`packages/storage-sqlite/src/search/sqlite-search-index.ts`) through the domain `SearchIndex`
 port.
 
-| Channel        | Purpose                                                   | Request                                                      | Response                                                          |
-| -------------- | --------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------- |
-| `search:query` | Ranked full-text search over titles, summaries and notes. | `{ text (≤ 1,000), tagIds? (≤ 20), limit (1–100), cursor? }` | `{ items: { nodeId, title, snippet }[], nextCursor, totalCount }` |
+| Channel        | Purpose                                                   | Request                                                                                                                            | Response                                                          |
+| -------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `search:query` | Ranked full-text search over titles, summaries and notes. | `{ text (≤ 1,000), tagIds? (≤ 20, all must match), relationshipTypeIds? (≤ 20, any matches, either end), limit (1–100), cursor? }` | `{ items: { nodeId, title, snippet }[], nextCursor, totalCount }` |
 
 `snippet` is an array of `{ text, isMatch }` segments, never HTML; the renderer wraps matched
 segments in `<mark>` elements as text. `tagIds` keeps only nodes that carry all the given tags, and

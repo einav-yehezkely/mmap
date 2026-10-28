@@ -884,10 +884,16 @@ Each result shows the node's title and a short piece of the matching text with t
 highlighted. Click a result to open the node. **Load more** shows the next 20 results; the count
 above the list says how many nodes match.
 
-### Filtering by tags
+### Filtering by tags and relationships
 
 Click tags in the **Filter** row above the results to keep only nodes that carry all selected
 tags. **Clear filters** removes them.
+
+The **Has a relationship** row lists the relationship types you use, with how many relationships
+have each. Click one or more to keep only nodes with a relationship of any of those types, in
+either direction: **depends on** keeps both the nodes that depend on something and the nodes
+something depends on. **Clear** removes the relationship filter. Tag and relationship filters work
+together.
 
 ### Known limitations
 
@@ -1131,7 +1137,6 @@ These features are planned for later versions:
   in the side panel); **keyboard use of the drawing itself** (use the List tab); undoing
   **Rearrange**; and clearing expanded neighbors without leaving the graph. Labels of two lines
   between the same nodes can overlap; the node panel and the List name each one.
-- **Filtering search results by relationship type** (the graph has this filter).
 - In the timeline: **separate lanes per tag or topic**. Today all entries share one time axis.
 - **Changing the text of an existing node link.** Delete the link and insert it again with new
   **Link text**.
