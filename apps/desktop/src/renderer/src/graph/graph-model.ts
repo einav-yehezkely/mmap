@@ -18,6 +18,7 @@ import { summaryId, summaryPosition, type CollapseResult } from './graph-regions
 export type SliceNode = GraphSliceDto['nodes'][number];
 export type SliceEdge = GraphSliceDto['edges'][number];
 export type SliceReference = GraphSliceDto['references'][number];
+export type SliceConnector = GraphSliceDto['connectors'][number];
 export type SliceMap = GraphSliceDto['maps'][number];
 
 export interface Expansion {
@@ -32,6 +33,8 @@ export interface GraphState {
   readonly edges: ReadonlyMap<string, SliceEdge>;
   /** Keyed by "source>target". */
   readonly references: ReadonlyMap<string, SliceReference>;
+  /** Mind map connectors, keyed by "source>target". */
+  readonly connectors: ReadonlyMap<string, SliceConnector>;
   /** Every mind map of the workspace, by title. */
   readonly maps: readonly SliceMap[];
   /** Nodes matching the filters in the whole workspace, and how many the overview showed. */
@@ -39,6 +42,7 @@ export interface GraphState {
   readonly overviewShown: number;
   readonly edgesTruncated: boolean;
   readonly referencesTruncated: boolean;
+  readonly connectorsTruncated: boolean;
   /** Neighborhoods the user expanded, by node ID, in expansion order. */
   readonly expansions: ReadonlyMap<string, Expansion>;
 }
@@ -48,16 +52,18 @@ export function stateFromOverview(slice: GraphSliceDto): GraphState {
     nodes: new Map(slice.nodes.map((node) => [node.id, node])),
     edges: new Map(slice.edges.map((edge) => [edge.id, edge])),
     references: new Map(slice.references.map((reference) => [referenceKey(reference), reference])),
+    connectors: new Map(slice.connectors.map((connector) => [referenceKey(connector), connector])),
     maps: slice.maps,
     overviewTotal: slice.totalNodes,
     overviewShown: slice.nodes.length,
     edgesTruncated: slice.edgesTruncated,
     referencesTruncated: slice.referencesTruncated,
+    connectorsTruncated: slice.connectorsTruncated,
     expansions: new Map(),
   };
 }
 
-export function referenceKey(reference: SliceReference): string {
+export function referenceKey(reference: { sourceNodeId: string; targetNodeId: string }): string {
   return `${reference.sourceNodeId}>${reference.targetNodeId}`;
 }
 
@@ -76,6 +82,8 @@ export function mergeNeighborhood(
   for (const edge of slice.edges) edges.set(edge.id, edge);
   const references = new Map(state.references);
   for (const reference of slice.references) references.set(referenceKey(reference), reference);
+  const connectors = new Map(state.connectors);
+  for (const connector of slice.connectors) connectors.set(referenceKey(connector), connector);
   const center = slice.nodes.find((node) => node.id === nodeId);
   const expansions = new Map(state.expansions);
   expansions.set(nodeId, {
@@ -89,9 +97,11 @@ export function mergeNeighborhood(
     nodes,
     edges,
     references,
+    connectors,
     maps: slice.maps,
     edgesTruncated: state.edgesTruncated || slice.edgesTruncated,
     referencesTruncated: state.referencesTruncated || slice.referencesTruncated,
+    connectorsTruncated: state.connectorsTruncated || slice.connectorsTruncated,
     expansions,
   };
 }
@@ -102,6 +112,7 @@ export function isPartial(state: GraphState): boolean {
     state.overviewShown < state.overviewTotal ||
     state.edgesTruncated ||
     state.referencesTruncated ||
+    state.connectorsTruncated ||
     [...state.expansions.values()].some((item) => item.shownNeighbors < item.totalNeighbors)
   );
 }
@@ -128,6 +139,9 @@ export function describeCompleteness(state: GraphState): string[] {
   }
   if (state.referencesTruncated) {
     lines.push('Some note links between the shown nodes are not drawn (limit reached).');
+  }
+  if (state.connectorsTruncated) {
+    lines.push('Some map connectors between the shown nodes are not drawn (limit reached).');
   }
   for (const expansion of state.expansions.values()) {
     if (expansion.shownNeighbors < expansion.totalNeighbors) {
@@ -183,7 +197,8 @@ export interface CytoscapeElement {
  * full on hover) and, with `showMaps`, pie-slice data for their map badges. Relationship edges
  * carry their type label; whether it is drawn is decided by the canvas (on hover or selection,
  * or always when the user asks). Directed edges get the `directed` class (arrow), undirected ones
- * `undirected`; note links get `reference` (dashed) so they are never mistaken for relationships.
+ * `undirected`; note links get `reference` (dashed) and map connectors `connector` (dotted, with
+ * an arrow), so neither is ever mistaken for a relationship.
  *
  * With collapsed maps (`collapse`), hidden members and their lines are left out; each collapsed
  * map becomes a summary node (`summary` class, its name and node count) and the aggregated
@@ -265,6 +280,19 @@ export function toCytoscapeElements(
       classes: 'reference',
     });
   }
+  for (const connector of state.connectors.values()) {
+    if (!drawn(connector.sourceNodeId) || !drawn(connector.targetNodeId)) continue;
+    elements.push({
+      group: 'edges',
+      data: {
+        id: `connector:${referenceKey(connector)}`,
+        source: connector.sourceNodeId,
+        target: connector.targetNodeId,
+        label: connectorText(connector, state.maps),
+      },
+      classes: 'connector',
+    });
+  }
   for (const summary of options.collapse?.summaries ?? []) {
     const count = summary.memberCount === 1 ? '1 node' : `${summary.memberCount} nodes`;
     elements.push({
@@ -314,6 +342,14 @@ function edgesTouching(
       edges.push(`reference:${referenceKey(reference)}`);
       neighbors.push(
         reference.sourceNodeId === nodeId ? reference.targetNodeId : reference.sourceNodeId,
+      );
+    }
+  }
+  for (const connector of state.connectors.values()) {
+    if (connector.sourceNodeId === nodeId || connector.targetNodeId === nodeId) {
+      edges.push(`connector:${referenceKey(connector)}`);
+      neighbors.push(
+        connector.sourceNodeId === nodeId ? connector.targetNodeId : connector.sourceNodeId,
       );
     }
   }
@@ -415,6 +451,14 @@ export function buildGraphList(state: GraphState): GraphListItem[] {
     add(reference.sourceNodeId, `note links to ${titleOf(reference.targetNodeId)}`);
     add(reference.targetNodeId, `linked from the note of ${titleOf(reference.sourceNodeId)}`);
   }
+  for (const connector of state.connectors.values()) {
+    if (!state.nodes.has(connector.sourceNodeId) || !state.nodes.has(connector.targetNodeId)) {
+      continue;
+    }
+    const where = connectorText(connector, state.maps);
+    add(connector.sourceNodeId, `map connector to ${titleOf(connector.targetNodeId)} (${where})`);
+    add(connector.targetNodeId, `map connector from ${titleOf(connector.sourceNodeId)} (${where})`);
+  }
   return [...state.nodes.values()]
     .map((node) => ({
       id: node.id,
@@ -435,4 +479,11 @@ export function findNodes(state: GraphState, text: string, limit: number): Slice
     if (matches.length >= limit) break;
   }
   return matches;
+}
+
+/** Where a connector is drawn, e.g. "on Thermodynamics" or "on 3 maps". */
+export function connectorText(connector: SliceConnector, maps: readonly SliceMap[]): string {
+  if (connector.mapIds.length !== 1) return `on ${connector.mapIds.length} maps`;
+  const title = maps.find((map) => map.id === connector.mapIds[0])?.title;
+  return title === undefined ? 'on 1 map' : `on ${title}`;
 }

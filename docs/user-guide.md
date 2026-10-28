@@ -504,6 +504,11 @@ relationship that a map connector already shows (a connector linked to it) is dr
   relationship. The connector then shows its type, and the separate relationship line is no longer
   drawn. **Remove the link** turns it back into a plain connector; the relationship stays. Ctrl+Z
   undoes this too.
+- **Create a relationship from the map**: in the same panel, under **Create a relationship**,
+  choose a type and click **Create**. The relationship goes in the connector's direction (from
+  where you started drawing), is linked to the connector, and appears in both notes, the graph and
+  every map that shows both notes. Undo removes the link; to remove the relationship itself, delete
+  it in a note's Relationships section.
 - **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
 - **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
   has focus. This removes them from the map only; the nodes stay in your library.
@@ -628,6 +633,9 @@ Above the graph:
 - With **Note links** on, note links are **dashed** lines without an arrow. They are not
   relationships, so they are drawn differently and are off by default. Several links from one note
   to the same node are one line. The List says which way each link goes.
+- With **Connectors** on, the connectors you drew on mind maps are **dotted** lines with an arrow,
+  labeled with their map ("on Thermodynamics", or "on 2 maps" when the same two notes are
+  connected on several maps). Like note links, they are not relationships and are off by default.
 - Being on the same mind map never draws a line between two nodes.
 
 The line under the graph repeats what the lines mean.

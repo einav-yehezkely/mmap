@@ -25,6 +25,8 @@ const graphFilterFields = {
   mapIds: z.array(z.uuid()).max(200).optional(),
   text: z.string().max(1_000).nullable().optional(),
   includeReferences: z.boolean().optional(),
+  /** Also return mind map connectors between the shown nodes. */
+  includeConnectors: z.boolean().optional(),
 };
 
 export const graphSliceSchema = z.strictObject({
@@ -69,9 +71,20 @@ export const graphSliceSchema = z.strictObject({
       }),
     )
     .readonly(),
+  /** Mind map connectors between shown nodes, one per direction, with the maps they are on. */
+  connectors: z
+    .array(
+      z.strictObject({
+        sourceNodeId: z.uuid(),
+        targetNodeId: z.uuid(),
+        mapIds: z.array(z.uuid()).readonly(),
+      }),
+    )
+    .readonly(),
   totalNodes: z.number().int().nonnegative(),
   edgesTruncated: z.boolean(),
   referencesTruncated: z.boolean(),
+  connectorsTruncated: z.boolean(),
 });
 
 export const timelineEntrySchema = z.strictObject({

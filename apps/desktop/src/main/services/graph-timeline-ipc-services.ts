@@ -31,6 +31,7 @@ interface FilterFields {
   readonly mapIds?: readonly string[] | undefined;
   readonly text?: string | null | undefined;
   readonly includeReferences?: boolean | undefined;
+  readonly includeConnectors?: boolean | undefined;
 }
 
 function toFilters(request: FilterFields): GraphFilterInput {
@@ -40,6 +41,7 @@ function toFilters(request: FilterFields): GraphFilterInput {
     mapIds: (request.mapIds ?? []) as MapId[],
     text: request.text ?? null,
     includeReferences: request.includeReferences ?? false,
+    includeConnectors: request.includeConnectors ?? false,
   };
 }
 
@@ -62,9 +64,15 @@ function toSliceDto(slice: GraphSlice) {
       targetNodeId,
       occurrences,
     })),
+    connectors: slice.connectors.map(({ sourceNodeId, targetNodeId, mapIds }) => ({
+      sourceNodeId,
+      targetNodeId,
+      mapIds,
+    })),
     totalNodes: slice.totalNodes,
     edgesTruncated: slice.edgesTruncated,
     referencesTruncated: slice.referencesTruncated,
+    connectorsTruncated: slice.connectorsTruncated,
   };
 }
 

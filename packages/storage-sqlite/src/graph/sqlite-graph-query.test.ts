@@ -43,6 +43,7 @@ const NO_FILTERS: GraphFilters = {
   mapIds: [],
   text: null,
   includeReferences: false,
+  includeConnectors: false,
 };
 const LIMITS = { maxNodes: 1_000, maxEdges: 3_000 };
 

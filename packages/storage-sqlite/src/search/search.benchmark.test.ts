@@ -441,6 +441,7 @@ describe.skipIf(process.env.MMAP_BENCHMARK !== '1')('search benchmark (PRD §9 d
         mapIds: [],
         text: null,
         includeReferences: true,
+        includeConnectors: false,
       };
       const limits = { maxNodes: MAX_GRAPH_NODES, maxEdges: MAX_GRAPH_EDGES };
       const filterSets = [

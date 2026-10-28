@@ -43,6 +43,7 @@ export interface GraphFilterInput {
   readonly mapIds?: readonly MapId[];
   readonly text?: string | null;
   readonly includeReferences?: boolean;
+  readonly includeConnectors?: boolean;
 }
 
 export interface GraphService {
@@ -74,6 +75,7 @@ export function normalizeGraphFilters(input: GraphFilterInput): GraphFilters {
     mapIds: [...new Set(input.mapIds ?? [])],
     text: text === '' ? null : text,
     includeReferences: input.includeReferences ?? false,
+    includeConnectors: input.includeConnectors ?? false,
   };
 }
 

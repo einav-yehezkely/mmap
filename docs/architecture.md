@@ -849,7 +849,9 @@ relationship only clears the reference. The canvas shows the label and, for a re
 relationship, its type in brackets. On the canvas, a selected connector's link button lists the
 relationships between its two nodes (in either direction) and links or unlinks one through
 `maps:set-connection-relationship`; the service checks the same rule as `maps:add-connection`.
-The canvas keeps the connector's own note apart from the text shown on the line (note plus linked
+The same panel can create a relationship (`relationships:create`, from the connector's source node
+to its target) and then link it, so a relationship can be added without leaving the map. The
+canvas keeps the connector's own note apart from the text shown on the line (note plus linked
 type), so editing the note never stores the type name in it.
 
 Editing on the canvas (`map-canvas.tsx`, `map-editor.tsx`), freeform mode only:
@@ -968,6 +970,10 @@ Filters:
   edges between members.
 - **Note links** (`includeReferences`): adds one line per (source note, target node) pair, with
   the number of links; a note linking to its own node is left out.
+- **Map connectors** (`includeConnectors`): adds one line per direction between two shown nodes,
+  naming every map on which a connector joins them (`map_connections` joined to the placements of
+  both ends). Drawn dotted with an arrow and labeled "on <map>" or "on N maps", so they are never
+  mistaken for relationships (solid) or note links (dashed); expanding a node also follows them.
 
 ### Simple scans, ranking in TypeScript
 

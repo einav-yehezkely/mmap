@@ -66,6 +66,8 @@ function slice(overrides: Partial<GraphSliceDto> = {}): GraphSliceDto {
     totalNodes: 3,
     edgesTruncated: false,
     referencesTruncated: false,
+    connectors: [],
+    connectorsTruncated: false,
     ...overrides,
   };
 }
@@ -252,5 +254,51 @@ describe('neighborhoods, find and list', () => {
       ['Beta', ['← depends on Alpha', 'note links to Gamma']],
       ['Gamma', ['linked from the note of Beta', 'related to — Alpha']],
     ]);
+  });
+});
+
+describe('map connectors in the graph', () => {
+  it('draws them as their own dotted layer and names their maps in the List', () => {
+    const state = stateFromOverview(
+      slice({
+        connectors: [
+          { sourceNodeId: id('b'), targetNodeId: id('c'), mapIds: [NETWORKING] },
+          { sourceNodeId: id('c'), targetNodeId: id('a'), mapIds: [NETWORKING, SECURITY] },
+        ],
+      }),
+    );
+
+    const connectors = toCytoscapeElements(state, NO_POSITIONS, { showMaps: false }).filter(
+      (element) => element.classes === 'connector',
+    );
+    expect(connectors.map((element) => element.data)).toEqual([
+      {
+        id: `connector:${id('b')}>${id('c')}`,
+        source: id('b'),
+        target: id('c'),
+        label: 'on Networking',
+      },
+      {
+        id: `connector:${id('c')}>${id('a')}`,
+        source: id('c'),
+        target: id('a'),
+        label: 'on 2 maps',
+      },
+    ]);
+    const gamma = buildGraphList(state).find((item) => item.title === 'Gamma');
+    expect(gamma?.connections).toEqual(
+      expect.arrayContaining([
+        'map connector from Beta (on Networking)',
+        'map connector to Alpha (on 2 maps)',
+      ]),
+    );
+  });
+
+  it('reports a cut-off connector layer as partial', () => {
+    const state = stateFromOverview(slice({ connectorsTruncated: true }));
+    expect(isPartial(state)).toBe(true);
+    expect(describeCompleteness(state)).toContain(
+      'Some map connectors between the shown nodes are not drawn (limit reached).',
+    );
   });
 });
