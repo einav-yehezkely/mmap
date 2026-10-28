@@ -365,3 +365,31 @@ export function parentChoices(view: MapViewDto): ParentChoice[] {
   visit(null, 0);
   return choices;
 }
+
+/** A side of a map item, where a line can attach. */
+export type ItemSide = 'left' | 'right' | 'top' | 'bottom';
+
+/** An item's box on the canvas (its position is the top-left corner). */
+export interface ItemBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The sides of two items that face each other, where a line between them attaches: right and
+ * left when they are further apart side by side, bottom and top when they are further apart one
+ * above the other. Gaps between the boxes are compared, not distances between centers, because
+ * items are much wider than tall. Overlapping items use left and right.
+ */
+export function facingSides(from: ItemBox, to: ItemBox): { from: ItemSide; to: ItemSide } {
+  const dx = to.x + to.width / 2 - (from.x + from.width / 2);
+  const dy = to.y + to.height / 2 - (from.y + from.height / 2);
+  const gapX = Math.abs(dx) - (from.width + to.width) / 2;
+  const gapY = Math.abs(dy) - (from.height + to.height) / 2;
+  if (gapY > gapX && gapY > 0) {
+    return dy > 0 ? { from: 'bottom', to: 'top' } : { from: 'top', to: 'bottom' };
+  }
+  return dx >= 0 ? { from: 'right', to: 'left' } : { from: 'left', to: 'right' };
+}

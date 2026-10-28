@@ -349,6 +349,95 @@ export async function runSmokeTest(
     ),
   );
   checks.push(
+    await check(
+      'adding to a large hierarchy map finds other nodes and moves an item under a parent',
+      async () => {
+        const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { nodes, maps } = window.mmap;
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const until = async (predicate, timeoutMs) => {
+            const start = performance.now();
+            while (performance.now() - start < timeoutMs) {
+              if (predicate()) return true;
+              await wait(20);
+            }
+            return false;
+          };
+          const buttonWithText = (text) =>
+            [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === text);
+          const press = (element, what) => {
+            if (!element) throw new Error(what + ' not found');
+            element.click();
+          };
+          const type = (input, text) => {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, text);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          };
+          const option = (text) =>
+            [...document.querySelectorAll('[role="dialog"] [role="option"]')].find((item) => item.textContent.includes(text));
+          // More than 50 items: the old picker sent their IDs and was refused, so it found nothing.
+          let view = (await maps.create({ title: 'Smoke large hierarchy', mode: 'hierarchical' })).data;
+          for (let index = 0; index < 54; index += 1) {
+            view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
+              newNodeTitle: 'Smoke filler ' + index, x: 0, y: 0, parentPlacementId: null })).data;
+          }
+          view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
+            newNodeTitle: 'Smoke parent item', x: 0, y: 0, parentPlacementId: null })).data;
+          view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
+            newNodeTitle: 'Smoke mover item', x: 0, y: 0, parentPlacementId: null })).data;
+          const unplaced = (await nodes.create({ title: 'Smoke unplaced zebra' })).data;
+          const mapId = view.map.id;
+          press(buttonWithText('Home'), 'Home');
+          await wait(300);
+          press(buttonWithText('Mind Maps'), 'Mind Maps');
+          const opened = await until(() => {
+            const button = document.querySelector('main')?.textContent.includes('New map')
+              ? [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Smoke large hierarchy'))
+              : undefined;
+            button?.click();
+            return Boolean(button);
+          }, 3000);
+          if (!opened) return 'map list did not show the map';
+          const row = (text) => [...document.querySelectorAll('[role="treeitem"]')].find((item) => item.textContent.includes(text));
+          if (!(await until(() => row('Smoke parent item'), 5000))) return 'outline not shown';
+
+          press(buttonWithText('Add top-level'), 'Add top-level');
+          const input = () => document.querySelector('[role="dialog"] input');
+          if (!(await until(input, 3000))) return 'add dialog did not open';
+          type(input(), 'Smoke unplaced');
+          if (!(await until(() => option('Smoke unplaced zebra'), 3000))) return 'the add dialog did not find a node that is not on the map';
+          if (document.querySelector('[role="dialog"] [role="alert"]')) return 'the lookup failed';
+          press(buttonWithText('Cancel'), 'Cancel');
+          await until(() => !input(), 3000);
+
+          press(row('Smoke parent item'), 'parent row');
+          if (!(await until(() => buttonWithText('Add child'), 3000))) return 'Add child not offered';
+          press(buttonWithText('Add child'), 'Add child');
+          if (!(await until(input, 3000))) return 'add-child dialog did not open';
+          type(input(), 'Smoke mover');
+          if (!(await until(() => option('already on this map'), 3000))) return 'an item already on the map was not offered to move';
+          option('Smoke mover item').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          const moved = async () => {
+            const current = (await maps.get({ mapId })).data;
+            const parent = current.placements.find((p) => p.nodeTitle === 'Smoke parent item');
+            const mover = current.placements.find((p) => p.nodeTitle === 'Smoke mover item');
+            return mover.parentPlacementId === parent.id && current.placements.length === 56;
+          };
+          let ok = false;
+          for (let attempt = 0; attempt < 50 && !ok; attempt += 1) { ok = await moved(); if (!ok) await wait(100); }
+          if (!ok) return 'the item was not moved under the parent';
+          if (input()) return 'the dialog stayed open after the move';
+          press(buttonWithText('All maps'), 'All maps');
+          await maps.delete({ mapId });
+          await nodes.delete({ nodeId: unplaced.id, expectedRevision: unplaced.revision });
+          return 'ok';
+        })()`)) as string;
+        if (outcome !== 'ok') throw new Error(outcome);
+      },
+    ),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",

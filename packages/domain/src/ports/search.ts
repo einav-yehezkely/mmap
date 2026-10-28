@@ -10,7 +10,7 @@
  * returned, even when the same words appear there (PRD §5.8).
  */
 
-import type { NodeId, RelationshipTypeId, TagId, WorkspaceId } from '../ids';
+import type { MapId, NodeId, RelationshipTypeId, TagId, WorkspaceId } from '../ids';
 import type { Page, PageRequest } from './pagination';
 
 export interface SearchQuery {
@@ -69,5 +69,7 @@ export interface SearchIndex {
     text: string,
     limit: number,
     excludeNodeIds?: readonly NodeId[],
+    /** Leaves out every node placed on this map (the map's "Add" dialog), however many. */
+    excludeOnMapId?: MapId,
   ): Promise<readonly TitleMatch[]>;
 }

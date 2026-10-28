@@ -11,7 +11,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 
 import { Input } from '../components/ui/input';
-import { unwrap } from '../lib/ipc';
+import { errorMessage, unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
 
 export interface PickedNode {
@@ -23,6 +23,10 @@ export interface NodePickerProps {
   readonly label: string;
   readonly onPick: (node: PickedNode) => void;
   readonly excludeNodeIds?: readonly string[];
+  /** Leaves out every node already on this map (any number), checked by the main process. */
+  readonly excludeOnMapId?: string;
+  /** A short note shown after a result's title, e.g. "already on this map". */
+  readonly describe?: (node: PickedNode) => string | null;
   readonly placeholder?: string;
   readonly autoFocus?: boolean;
   /**
@@ -38,6 +42,8 @@ export function NodePicker({
   label,
   onPick,
   excludeNodeIds = [],
+  excludeOnMapId,
+  describe,
   placeholder = 'Type to find a node',
   autoFocus = false,
   onCreateNew,
@@ -47,6 +53,8 @@ export function NodePicker({
   const [activeIndex, setActiveIndex] = useState(0);
   /** The query the current results answer; avoids claiming "no match" while still looking up. */
   const [answeredQuery, setAnsweredQuery] = useState('');
+  /** Shown instead of an empty list when a lookup fails, so it never looks like "no match". */
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const latestRequest = useRef(0);
   const inputId = useId();
   const listId = useId();
@@ -65,6 +73,7 @@ export function NodePicker({
           text: query,
           limit: 8,
           excludeNodeIds: excludeKey === '' ? [] : excludeKey.split(','),
+          ...(excludeOnMapId === undefined ? {} : { excludeOnMapId }),
         }),
       ).then(
         ({ items }) => {
@@ -72,14 +81,17 @@ export function NodePicker({
           setResults(items);
           setAnsweredQuery(query);
           setActiveIndex(0);
+          setLookupError(null);
         },
-        () => {
-          if (requestNumber === latestRequest.current) setResults([]);
+        (caught: unknown) => {
+          if (requestNumber !== latestRequest.current) return;
+          setResults([]);
+          setLookupError(errorMessage(caught));
         },
       );
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [text, excludeKey]);
+  }, [text, excludeKey, excludeOnMapId]);
 
   const trimmed = text.trim();
   const canCreate = onCreateNew !== undefined && trimmed !== '' && answeredQuery === trimmed;
@@ -170,6 +182,9 @@ export function NodePicker({
             onMouseEnter={() => setActiveIndex(index)}
           >
             {node.title}
+            {describe?.(node) && (
+              <span className="ml-2 text-xs text-muted-foreground">{describe(node)}</span>
+            )}
           </li>
         ))}
         {canCreate && (
@@ -191,7 +206,12 @@ export function NodePicker({
           </li>
         )}
       </ul>
-      {trimmed !== '' && answeredQuery === trimmed && optionCount === 0 && (
+      {lookupError !== null && trimmed !== '' && (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {lookupError}
+        </p>
+      )}
+      {lookupError === null && trimmed !== '' && answeredQuery === trimmed && optionCount === 0 && (
         <p role="status" className="mt-1 text-xs text-muted-foreground">
           No matching node.
         </p>

@@ -230,7 +230,27 @@ function LoadedMapEditor({
 
   const selected = view.placements.find((placement) => placement.id === selectedId) ?? null;
   const isHierarchy = view.map.mode === 'hierarchical';
-  const nodeIdsOnMap = useMemo(() => view.placements.map((placement) => placement.nodeId), [view]);
+  const placementOfNode = useMemo(
+    () => new Map(view.placements.map((placement) => [placement.nodeId, placement.id])),
+    [view],
+  );
+
+  /** Moves an item that is already on the map under `parentId`, as its last child. */
+  const moveUnder = async (placementId: string, parentId: string) => {
+    const index = view.placements.filter(
+      (placement) => placement.parentPlacementId === parentId && placement.id !== placementId,
+    ).length;
+    const ok = await apply((mapId, expectedRevision) =>
+      window.mmap.maps.reparent({
+        mapId,
+        expectedRevision,
+        placementId,
+        parentPlacementId: parentId,
+        index,
+      }),
+    );
+    if (ok) setAdding(null);
+  };
 
   const addPlacement = async (item: { nodeId: string } | { newNodeTitle: string }) => {
     const parentPlacementId = adding?.parentId ?? null;
@@ -514,7 +534,20 @@ function LoadedMapEditor({
               : (view.placements.find((placement) => placement.id === adding.parentId)?.nodeTitle ??
                 null)
           }
-          excludeNodeIds={nodeIdsOnMap}
+          mapId={view.map.id}
+          moveTargets={
+            adding.parentId === null
+              ? null
+              : {
+                  placementOfNode,
+                  parentNodeId:
+                    view.placements.find((placement) => placement.id === adding.parentId)?.nodeId ??
+                    '',
+                }
+          }
+          onMoveExisting={(placementId) =>
+            adding.parentId !== null && void moveUnder(placementId, adding.parentId)
+          }
           onAddExisting={(nodeId) => void addPlacement({ nodeId })}
           onCreateNew={(title) => void addPlacement({ newNodeTitle: title })}
           onClose={() => setAdding(null)}

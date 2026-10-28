@@ -1,6 +1,9 @@
 /**
- * Adds a node to a map (PRD §5.6): pick an existing node, or explicitly create a new one. Nodes
- * already on the map are not offered, because a node appears at most once per map.
+ * Adds a node to a map (PRD §5.6): pick an existing node, or explicitly create a new one.
+ *
+ * A node appears at most once per map. At the top level, nodes already on the map are not offered.
+ * When adding under an item of a hierarchy, they are offered too, marked "already on this map":
+ * choosing one moves that item under the parent instead (what the user means when they pick it).
  */
 
 import { Dialog as DialogPrimitive } from 'radix-ui';
@@ -11,7 +14,18 @@ import { NodePicker } from '../nodes/node-picker';
 export interface AddToMapDialogProps {
   /** Title of the item that receives the new child, when adding inside a hierarchy. */
   readonly parentTitle: string | null;
-  readonly excludeNodeIds: readonly string[];
+  /** The map items are added to. */
+  readonly mapId: string;
+  /**
+   * Adding under an item of a hierarchy: node ID → placement ID of every item already on the map
+   * (offered, and moved under the parent when chosen), and the parent's node, which is never
+   * offered. Null at the top level, where items on the map are not offered.
+   */
+  readonly moveTargets: {
+    readonly placementOfNode: ReadonlyMap<string, string>;
+    readonly parentNodeId: string;
+  } | null;
+  readonly onMoveExisting: (placementId: string) => void;
   readonly onAddExisting: (nodeId: string) => void;
   readonly onCreateNew: (title: string) => void;
   readonly onClose: () => void;
@@ -19,7 +33,9 @@ export interface AddToMapDialogProps {
 
 export function AddToMapDialog({
   parentTitle,
-  excludeNodeIds,
+  mapId,
+  moveTargets,
+  onMoveExisting,
   onAddExisting,
   onCreateNew,
   onClose,
@@ -40,8 +56,24 @@ export function AddToMapDialog({
             <NodePicker
               label="Node to add"
               autoFocus
-              excludeNodeIds={excludeNodeIds}
-              onPick={(node) => onAddExisting(node.id)}
+              {...(moveTargets === null
+                ? {
+                    // Filtered in the main process, so a map of any size works (a list of IDs
+                    // was capped at 50, and larger maps found nothing at all).
+                    excludeOnMapId: mapId,
+                  }
+                : {
+                    excludeNodeIds: [moveTargets.parentNodeId],
+                    describe: (node) =>
+                      moveTargets.placementOfNode.has(node.id)
+                        ? 'already on this map; moves here'
+                        : null,
+                  })}
+              onPick={(node) => {
+                const placementId = moveTargets?.placementOfNode.get(node.id);
+                if (placementId === undefined) onAddExisting(node.id);
+                else onMoveExisting(placementId);
+              }}
               onCreateNew={onCreateNew}
             />
           </div>
