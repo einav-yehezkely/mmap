@@ -11,7 +11,9 @@
 export const IPC_CHANNELS = {
   appGetInfo: 'app:get-info',
   appOpenExternalLink: 'app:open-external-link',
+  appOpenWindow: 'app:open-window',
   workspaceGetState: 'workspace:get-state',
+  workspaceGetChangeCount: 'workspace:get-change-count',
   workspaceListRecent: 'workspace:list-recent',
   workspaceCreate: 'workspace:create',
   workspaceOpenFolder: 'workspace:open-folder',

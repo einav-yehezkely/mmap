@@ -19,8 +19,7 @@ import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { toUtcTimestamp } from '@mmap/domain';
-import type { BrowserWindow } from 'electron';
-import { app, dialog, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, session, shell } from 'electron';
 
 import { registerIpcHandlers } from './ipc/register-ipc-handlers';
 import { createRedactedLogger } from './logging';
@@ -123,7 +122,13 @@ const backups = new BackupService({
   logFailure: (operation, error) => logger.error(operation, error),
 });
 
+/** The first window; the smoke test drives it. More windows can be opened (`openWindow`). */
 let mainWindow: BrowserWindow | null = null;
+
+/** Native dialogs attach to the window the user is working in, whichever of several it is. */
+function dialogParent(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? mainWindow ?? BrowserWindow.getAllWindows()[0] ?? null;
+}
 
 // One app instance per user profile; a second launch focuses the existing window. The workspace
 // lock additionally protects a workspace folder opened from another profile or computer.
@@ -131,11 +136,12 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
+    const window = dialogParent();
+    if (window) {
+      if (window.isMinimized()) {
+        window.restore();
       }
-      mainWindow.focus();
+      window.focus();
     }
   });
 
@@ -179,8 +185,9 @@ const nativeInteractions: NativeWorkspaceInteractions = {
             : 'Choose where to create the workspace',
       properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
     };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
+    const parent = dialogParent();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   },
@@ -196,8 +203,9 @@ const attachmentInteractions: AttachmentNativeInteractions = {
       title: 'Attach files',
       properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
     };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
+    const parent = dialogParent();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : result.filePaths;
   },
@@ -215,8 +223,9 @@ const transferInteractions: TransferNativeInteractions = {
       filters: [{ name: 'mmap workspace export', extensions: ['zip'] }],
       properties: ['showOverwriteConfirmation', 'dontAddToRecent'],
     };
-    const result = mainWindow
-      ? await dialog.showSaveDialog(mainWindow, options)
+    const parent = dialogParent();
+    const result = parent
+      ? await dialog.showSaveDialog(parent, options)
       : await dialog.showSaveDialog(options);
     return result.canceled || result.filePath === '' ? null : result.filePath;
   },
@@ -226,8 +235,9 @@ const transferInteractions: TransferNativeInteractions = {
       filters: [{ name: 'mmap workspace export', extensions: ['zip'] }],
       properties: ['openFile', 'dontAddToRecent'],
     };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
+    const parent = dialogParent();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   },
@@ -240,8 +250,9 @@ const backupInteractions: BackupNativeInteractions = {
       title: 'Choose a folder for backups',
       properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
     };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
+    const parent = dialogParent();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   },
@@ -250,8 +261,9 @@ const backupInteractions: BackupNativeInteractions = {
       title: 'Choose a backup to restore (a folder inside "snapshots")',
       properties: ['openDirectory', 'dontAddToRecent'],
     };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
+    const parent = dialogParent();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   },
@@ -303,6 +315,10 @@ async function startApplication(): Promise<void> {
         },
       }),
       'app:open-external-link': createExternalLinkService((url) => shell.openExternal(url)),
+      'app:open-window': ({ nodeId }) => {
+        openWindow(nodeId);
+        return Promise.resolve({ opened: true as const });
+      },
       ...createWorkspaceIpcServices(workspaces, nativeInteractions),
       ...createNodeIpcServices(workspaces),
       ...createRelationshipIpcServices(workspaces),
@@ -336,16 +352,32 @@ async function startApplication(): Promise<void> {
     },
   );
 
-  mainWindow = createMainWindow({
-    entryUrl: rendererLocation.entryUrl,
-    preloadPath: resolvePreloadPath(mainDirectory),
-    allowDevTools: !app.isPackaged,
-    showWhenReady: !smokeTest,
-    ...(app.isPackaged ? {} : { iconPath: join(app.getAppPath(), 'resources', 'icon.png') }),
-  });
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  /**
+   * Opens a window on the renderer. Every window talks to the same main-process services, so the
+   * workspace, the write queue and the revision checks are shared (PRD §5.1); a window shows
+   * changes made in another one when it is focused again. `nodeId` opens that note in the new
+   * window (passed in the address, which the renderer only reads as a node to open).
+   */
+  // Smoke test windows stay hidden.
+  function openWindow(nodeId?: string, show = !smokeTest): BrowserWindow {
+    const entry = new URL(rendererLocation.entryUrl);
+    if (nodeId !== undefined) entry.searchParams.set('node', nodeId);
+    const window = createMainWindow({
+      entryUrl: entry.toString(),
+      preloadPath: resolvePreloadPath(mainDirectory),
+      allowDevTools: !app.isPackaged,
+      showWhenReady: show,
+      ...(app.isPackaged ? {} : { iconPath: join(app.getAppPath(), 'resources', 'icon.png') }),
+    });
+    window.on('closed', () => {
+      if (mainWindow === window) {
+        mainWindow = BrowserWindow.getAllWindows().find((other) => other !== window) ?? null;
+      }
+    });
+    return window;
+  }
+
+  mainWindow = openWindow();
 
   if (smokeTest) {
     const report = await runSmokeTest(

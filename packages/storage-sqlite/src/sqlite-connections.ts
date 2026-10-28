@@ -33,6 +33,16 @@ export class SqliteConnections implements TransactionRunner {
   private readonly transactionContext = new AsyncLocalStorage<TransactionContext>();
   /** Tail of the write queue. Each transaction waits for the previous one to settle. */
   private writeQueue: Promise<unknown> = Promise.resolve();
+  private commits = 0;
+
+  /**
+   * Number of write transactions committed through this pair (including exclusive work such as
+   * imports). Windows compare it to learn whether anything changed while they were in the
+   * background.
+   */
+  public get commitCount(): number {
+    return this.commits;
+  }
 
   public constructor(
     private readonly writer: DatabaseSync,
@@ -65,6 +75,7 @@ export class SqliteConnections implements TransactionRunner {
       try {
         const result = await this.transactionContext.run({ connection: this.writer }, work);
         this.writer.exec('COMMIT;');
+        this.commits += 1;
         return result;
       } catch (error) {
         if (this.writer.isTransaction) {
@@ -93,7 +104,10 @@ export class SqliteConnections implements TransactionRunner {
       // never write: fail clearly instead of waiting for the busy timeout.
       throw new Error('runExclusive cannot be used inside a transaction.');
     }
-    const result = this.writeQueue.then(work, work);
+    const result = this.writeQueue.then(work, work).then((value) => {
+      this.commits += 1;
+      return value;
+    });
     this.writeQueue = result.catch(() => undefined);
     return result;
   }

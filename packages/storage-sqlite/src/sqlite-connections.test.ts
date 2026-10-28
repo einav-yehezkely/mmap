@@ -223,6 +223,26 @@ describe('runExclusive (writes through another connection)', () => {
     expect(order).toEqual(['transaction', 'exclusive', 'after']);
   });
 
+  it('counts committed writes, not failed ones (windows use it to know whether to reload)', async () => {
+    const connections = await open();
+    const start = connections.commitCount;
+    await connections.runInTransaction(async () => insertWorkspace(connections, 'one'));
+    await expect(
+      connections.runInTransaction(async () => {
+        insertWorkspace(connections, 'rolled back');
+        throw new Error('fails');
+      }),
+    ).rejects.toThrow('fails');
+    await connections.runExclusive(async () => undefined);
+    await expect(
+      connections.runExclusive(async () => {
+        throw new Error('worker failed');
+      }),
+    ).rejects.toThrow('worker failed');
+
+    expect(connections.commitCount - start).toBe(2);
+  });
+
   it('is refused inside a transaction', async () => {
     const connections = await open();
     await expect(

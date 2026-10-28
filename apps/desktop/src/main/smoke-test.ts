@@ -438,6 +438,11 @@ export async function runSmokeTest(
     ),
   );
   checks.push(
+    await check('a second window opens a note, and the first shows its changes when focused', () =>
+      checkSecondWindow(window),
+    ),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",
@@ -657,4 +662,74 @@ function waitForRendererLoad(window: BrowserWindow): Promise<void> {
       reject(new Error(`Renderer failed to load (${code}: ${description}).`));
     });
   });
+}
+
+/**
+ * PRD §5.1: multiple windows share the services and revision checks. Opens a note in a second
+ * window through `app:open-window`, renames it there, and checks that the first window's Library
+ * shows the new title when that window is focused again; then closes the second window.
+ */
+async function checkSecondWindow(first: BrowserWindow): Promise<void> {
+  const { BrowserWindow: Windows } = await import('electron');
+  const run = (target: BrowserWindow, code: string) =>
+    target.webContents.executeJavaScript(code) as Promise<string>;
+  const nodeId = await run(
+    first,
+    `(async () => {
+      const node = (await window.mmap.nodes.create({ title: 'Smoke window note' })).data;
+      [...document.querySelectorAll('nav button')].find((b) => b.textContent.trim() === 'Library').click();
+      await window.mmap.app.openWindow({ nodeId: node.id });
+      return node.id;
+    })()`,
+  );
+  let second: BrowserWindow | undefined;
+  for (let attempt = 0; attempt < 100 && second === undefined; attempt += 1) {
+    second = Windows.getAllWindows().find((candidate) => candidate !== first);
+    if (second === undefined) await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (second === undefined) throw new Error('no second window opened');
+  const waitFor = async (target: BrowserWindow, condition: string, what: string) => {
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const met = await run(target, `String(Boolean(${condition}))`).catch(() => 'false');
+      if (met === 'true') return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(what);
+  };
+  await waitFor(
+    second,
+    "document.querySelector('article[aria-label=\"Node editor\"]') && [...document.querySelectorAll('input')].some((input) => input.value === 'Smoke window note')",
+    'the second window did not open the note',
+  );
+  // The rename happens in the second window; the first finds out when it is focused.
+  await run(
+    second,
+    `(async () => {
+      const node = (await window.mmap.nodes.get({ nodeId: ${JSON.stringify(nodeId)} })).data;
+      await window.mmap.nodes.update({ nodeId: node.id, expectedRevision: node.revision, changes: { title: 'Smoke window renamed' } });
+      return 'ok';
+    })()`,
+  );
+  await run(first, "window.dispatchEvent(new Event('focus')); 'ok'");
+  await waitFor(
+    first,
+    "document.querySelector('main')?.textContent.includes('Smoke window renamed')",
+    'the first window did not show the change made in the second one',
+  );
+  second.close();
+  for (let attempt = 0; attempt < 50 && !second.isDestroyed(); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const stillWorks = await run(
+    first,
+    `(async () => {
+      const node = (await window.mmap.nodes.get({ nodeId: ${JSON.stringify(nodeId)} })).data;
+      await window.mmap.nodes.delete({ nodeId: node.id, expectedRevision: node.revision });
+      return 'ok';
+    })()`,
+  );
+  if (stillWorks !== 'ok') throw new Error('the first window stopped working');
+  // Input focus goes back to the first window, as when a user clicks it; later checks send it
+  // mouse input.
+  first.webContents.focus();
 }

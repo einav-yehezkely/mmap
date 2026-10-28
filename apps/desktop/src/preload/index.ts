@@ -18,9 +18,11 @@ const api: MmapRendererApi = {
   app: {
     getInfo: () => ipcRenderer.invoke(IPC_CHANNELS.appGetInfo),
     openExternalLink: (request) => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternalLink, request),
+    openWindow: (request) => ipcRenderer.invoke(IPC_CHANNELS.appOpenWindow, request),
   },
   workspace: {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceGetState),
+    getChangeCount: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceGetChangeCount),
     listRecent: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceListRecent),
     create: (request) => ipcRenderer.invoke(IPC_CHANNELS.workspaceCreate, request),
     openFolder: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenFolder),

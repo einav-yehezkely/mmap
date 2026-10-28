@@ -82,6 +82,15 @@ const workspaceNameInput = z.string().max(200);
 
 export const workspaceContracts = {
   getState: { request: z.undefined(), response: workspaceStateSchema },
+  /**
+   * How many writes the open workspace has committed (0 when none is open). A window compares the
+   * count when it regains focus with the one when it lost focus, and reloads its views only if
+   * another window changed something meanwhile.
+   */
+  getChangeCount: {
+    request: z.undefined(),
+    response: z.strictObject({ count: z.number().int().nonnegative() }),
+  },
   listRecent: { request: z.undefined(), response: recentWorkspaceListSchema },
   create: {
     request: z.strictObject({

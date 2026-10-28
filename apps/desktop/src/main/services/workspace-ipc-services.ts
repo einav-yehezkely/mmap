@@ -27,6 +27,9 @@ export function createWorkspaceIpcServices(
   return {
     'workspace:get-state': () => Promise.resolve(manager.getState()),
 
+    'workspace:get-change-count': () =>
+      Promise.resolve({ count: manager.current?.connections.commitCount ?? 0 }),
+
     'workspace:list-recent': async () => ({ items: await manager.listRecent() }),
 
     'workspace:create': async ({ name, location }) => {
