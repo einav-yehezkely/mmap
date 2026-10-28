@@ -201,7 +201,7 @@ The renderer's top level is wrapped in an error boundary (`components/error-boun
 
 ## Request flow: one IPC call end to end
 
-This is the full path of `app:get-info`, the pattern every channel follows. The other 83 channels
+This is the full path of `app:get-info`, the pattern every channel follows. The other 93 channels
 are listed in [ipc-contracts.md](ipc-contracts.md#channel-reference).
 
 1. **Renderer.** `SettingsView` (`src/renderer/src/views/settings-view.tsx`) calls

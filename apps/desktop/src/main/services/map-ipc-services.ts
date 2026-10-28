@@ -8,6 +8,7 @@
  */
 
 import type {
+  MapArrangement,
   MapConnectionId,
   MapId,
   MapService,
@@ -32,6 +33,7 @@ export function toMapViewDto(view: MapView): MapViewDto {
       title: map.title,
       mode: map.mode,
       viewport: { x: map.viewport.x, y: map.viewport.y, zoom: map.viewport.zoom },
+      arrangement: map.arrangement ?? null,
       revision: map.revision,
       updatedAt: map.updatedAt,
     },
@@ -45,6 +47,7 @@ export function toMapViewDto(view: MapView): MapViewDto {
       siblingOrder: placement.siblingOrder,
       isCollapsed: placement.isCollapsed,
       color: placement.style.color,
+      pinned: placement.style.pinned === true,
     })),
     connections: view.connections.map((connection) => ({
       id: connection.id,
@@ -177,6 +180,25 @@ export function createMapIpcServices(manager: WorkspaceManager): Pick<IpcService
           placementId as PlacementId,
           {
             color,
+          },
+        ),
+      ),
+    'maps:save-arrangement': async ({ mapId, expectedRevision, arrangement }) =>
+      toMapViewDto(
+        await maps().saveArrangement(
+          mapId as MapId,
+          expectedRevision,
+          arrangement as MapArrangement,
+        ),
+      ),
+    'maps:set-placement-pinned': async ({ mapId, expectedRevision, placementId, pinned }) =>
+      toMapViewDto(
+        await maps().setPlacementStyle(
+          mapId as MapId,
+          expectedRevision,
+          placementId as PlacementId,
+          {
+            pinned,
           },
         ),
       ),

@@ -14,6 +14,7 @@ import {
   nextFreeformPosition,
   parentChoices,
   planKeyboardMove,
+  routePath,
 } from './map-model';
 
 /** Placement IDs are readable letters padded into UUID shape. */
@@ -35,6 +36,7 @@ function placement(
     siblingOrder,
     isCollapsed: false,
     color: null,
+    pinned: false,
     ...extra,
   };
 }
@@ -51,6 +53,7 @@ function mapView(
       title: 'Map',
       mode,
       viewport: { x: 0, y: 0, zoom: 1 },
+      arrangement: null,
       revision: 1,
       updatedAt: '2026-10-27T12:00:00.000Z',
     },
@@ -375,5 +378,21 @@ describe('facingSides', () => {
 
   it('uses left and right for overlapping items', () => {
     expect(facingSides(box(0, 0), box(20, 10))).toEqual({ from: 'right', to: 'left' });
+  });
+});
+
+describe('routePath', () => {
+  it('draws an orthogonal route with rounded corners and puts the label halfway along it', () => {
+    const [path, labelX, labelY] = routePath([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ]);
+    expect(path).toBe('M 0 0 L 92 0 Q 100 0 100 8 L 100 100');
+    expect([labelX, labelY]).toEqual([100, 0]);
+  });
+
+  it('is empty without points', () => {
+    expect(routePath([])).toEqual(['', 0, 0]);
   });
 });

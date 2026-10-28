@@ -75,7 +75,8 @@ const NO_FILTERS: Filters = {
   relationshipTypeIds: [],
   mapIds: [],
   includeReferences: false,
-  includeConnectors: false,
+  // On by default: the connectors drawn on mind maps are part of how notes connect (user request).
+  includeConnectors: true,
 };
 
 const SAVE_BATCH = 5_000;
@@ -672,6 +673,7 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
                   setFilters((current) => ({
                     ...NO_FILTERS,
                     includeReferences: current.includeReferences,
+                    includeConnectors: current.includeConnectors,
                   }));
                 }}
               >

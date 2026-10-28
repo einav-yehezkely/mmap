@@ -43,7 +43,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import type { RelationshipTypeViewDto, RelationshipViewDto } from '@mmap/contracts';
-import { ChevronDown, ChevronRight, Link2, MessageSquareText, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Link2, Lock, MessageSquareText, X } from 'lucide-react';
 import {
   memo,
   useCallback,
@@ -59,7 +59,8 @@ import {
 import { errorMessage, unwrap } from '../lib/ipc';
 import { notifyNodesChanged } from '../nodes/node-events';
 import { cn } from '../lib/utils';
-import { buildCanvasModel, facingSides, type ItemBox } from './map-model';
+import { computeAutoLayout, type LayoutDirection, type LineRoute } from './auto-layout';
+import { buildCanvasModel, facingSides, routePath, type ItemBox } from './map-model';
 import { placementColorClass } from './placement-colors';
 
 /** Positions changed by dragging or arrow keys are saved together after this pause. */
@@ -86,6 +87,8 @@ interface ConnectorEdgeData extends Record<string, unknown> {
   readonly targetNodeId: string | null;
   /** Links the connector to a relationship between the same nodes, or unlinks it (null). */
   readonly onLinkRelationship: (connectionId: string, relationshipId: string | null) => void;
+  /** Route from the last automatic layout, while both items are still where it put them. */
+  readonly route?: LineRoute['points'];
   readonly onRemove: (connectionId: string) => void;
   /** Saves the connector's note; null removes it. */
   readonly onEditLabel: (connectionId: string, label: string | null) => void;
@@ -106,7 +109,8 @@ const MAX_CONNECTOR_NOTE_LENGTH = 200;
  * connector's direction, and link it: the way to add a relationship without leaving the map.
  */
 const ConnectorEdge = memo(function ConnectorEdge(props: EdgeProps<ConnectorFlowEdge>) {
-  const [path, labelX, labelY] = getBezierPath(props);
+  const [path, labelX, labelY] =
+    props.data?.route !== undefined ? routePath(props.data.route) : getBezierPath(props);
   const { data, selected } = props;
   const [editing, setEditing] = useState(false);
   const noteInput = useRef<HTMLInputElement | null>(null);
@@ -416,7 +420,40 @@ function NewRelationshipForm({
   );
 }
 
-const EDGE_TYPES = { connector: ConnectorEdge };
+/**
+ * A semantic relationship on the map: a curved line with its type, or the route of the last
+ * automatic layout while its items are still where the layout put them.
+ */
+const RelationshipEdge = memo(function RelationshipEdge(
+  props: EdgeProps<Edge<{ readonly route?: LineRoute['points'] }>>,
+) {
+  const [path, labelX, labelY] =
+    props.data?.route !== undefined ? routePath(props.data.route) : getBezierPath(props);
+  return (
+    <BaseEdge
+      id={props.id}
+      path={path}
+      markerEnd={props.markerEnd}
+      label={props.label}
+      labelX={labelX}
+      labelY={labelY}
+      labelStyle={props.labelStyle}
+      labelShowBg={props.labelShowBg}
+      labelBgStyle={props.labelBgStyle}
+      labelBgPadding={props.labelBgPadding}
+      labelBgBorderRadius={props.labelBgBorderRadius}
+      interactionWidth={props.interactionWidth}
+    />
+  );
+});
+
+const EDGE_TYPES = { connector: ConnectorEdge, relationship: RelationshipEdge };
+
+/** Routes of an automatic layout by line, and where it put the items. */
+interface Routes {
+  readonly byEdge: ReadonlyMap<string, LineRoute>;
+  readonly at: ReadonlyMap<string, { x: number; y: number }>;
+}
 
 const PlacementNode = memo(function PlacementNode({
   data,
@@ -437,6 +474,13 @@ const PlacementNode = memo(function PlacementNode({
       <Handle id="left" type="source" position={Position.Left} />
       <Handle id="top" type="source" position={Position.Top} />
       <Handle id="bottom" type="source" position={Position.Bottom} />
+      {placement.pinned && (
+        <Lock
+          aria-label="Locked for automatic layout"
+          role="img"
+          className="size-3 shrink-0 text-muted-foreground"
+        />
+      )}
       <span dir="auto" className="min-w-0 break-words">
         {placement.nodeTitle}
       </span>
@@ -512,6 +556,17 @@ export interface MapCanvasProps {
   readonly onConnectorLabel: (connectionId: string, label: string | null) => void;
   /** Links a connector to a relationship between the same nodes; null removes the link. */
   readonly onConnectorRelationship: (connectionId: string, relationshipId: string | null) => void;
+  /** Each new request (a new `id`) arranges the map automatically in `direction`. */
+  readonly layoutRequest: { readonly id: number; readonly direction: LayoutDirection } | null;
+  /**
+   * The arrangement ended: the moves and routes to save (as the map's arrangement), and the
+   * positions before it (for Undo).
+   */
+  readonly onArranged: (
+    arrangement: NonNullable<MapViewDto['map']['arrangement']>,
+    previous: readonly { placementId: string; x: number; y: number }[],
+  ) => void;
+  readonly onLayoutFailed: (message: string) => void;
 }
 
 export function MapCanvas({
@@ -527,6 +582,9 @@ export function MapCanvas({
   onViewportChange,
   onConnectorLabel,
   onConnectorRelationship,
+  layoutRequest,
+  onArranged,
+  onLayoutFailed,
 }: MapCanvasProps) {
   // Stable for the edge data (rebuilding every edge on each render would loop), while still
   // calling the latest handler.
@@ -591,7 +649,7 @@ export function MapCanvas({
             id: line.id,
             source: line.source,
             target: line.target,
-            type: 'default',
+            type: 'relationship',
             label: line.label ?? undefined,
             ariaLabel: `Relationship: ${line.label ?? ''}${line.directed === true ? '' : ' (no direction)'}`,
             selectable: false,
@@ -644,12 +702,35 @@ export function MapCanvas({
   // a new map view arrives the copies are rebuilt from it, keeping what React Flow already knows:
   // which items are selected, their measured sizes (so 500 items are not measured again), and
   // positions of moves that are still waiting to be saved (so they do not jump back).
+  /**
+   * Routes of the last automatic layout, with the positions it gave the items. A route is drawn
+   * only while both its items are still there; once one is dragged, its lines go back to curves.
+   * They come from the map's saved arrangement, so they survive leaving and reopening the map;
+   * right after a layout, the freshly computed ones are used until the saved map comes back.
+   */
+  const [freshRoutes, setFreshRoutes] = useState<Routes | null>(null);
+  const savedRoutes = useMemo((): Routes | null => {
+    const arrangement = view.map.arrangement;
+    if (arrangement === null || view.map.mode !== 'freeform') return null;
+    return {
+      byEdge: new Map(
+        arrangement.routes.map((route) => [
+          route.lineId,
+          { sourceSide: route.sourceSide, targetSide: route.targetSide, points: route.points },
+        ]),
+      ),
+      at: new Map(arrangement.placed.map((item) => [item.placementId, { x: item.x, y: item.y }])),
+    };
+  }, [view]);
+  const routes = freshRoutes ?? savedRoutes;
   const [nodes, setNodes] = useState<PlacementFlowNode[]>(derivedNodes);
   const [edges, setEdges] = useState<Edge[]>(derivedEdges);
   const [nodesFrom, setNodesFrom] = useState(derivedNodes);
   const [edgesFrom, setEdgesFrom] = useState(derivedEdges);
   if (nodesFrom !== derivedNodes) {
     setNodesFrom(derivedNodes);
+    // A new map view carries the saved arrangement; the routes just computed are no longer needed.
+    setFreshRoutes(null);
     setNodes((current) => {
       const previous = new Map(current.map((node) => [node.id, node]));
       return derivedNodes.map((node) => {
@@ -727,8 +808,95 @@ export function MapCanvas({
     [flushMoves],
   );
 
+  // (Routes: see `routes` below.)
+
+  // Automatic layout (ADR-0012): computed from the items as drawn (their measured sizes), then
+  // animated, then saved in one request by the editor, which also offers Undo.
+  const latest = useRef({ nodes, edges, onArranged, onLayoutFailed });
+  useEffect(() => {
+    latest.current = { nodes, edges, onArranged, onLayoutFailed };
+  });
+  const handledLayout = useRef<number | null>(null);
+  useEffect(() => {
+    if (layoutRequest === null || handledLayout.current === layoutRequest.id) return;
+    handledLayout.current = layoutRequest.id;
+    const { nodes: current, edges: lines } = latest.current;
+    const items = current.map((node) => ({
+      id: node.id,
+      x: node.position.x,
+      y: node.position.y,
+      width: node.measured?.width ?? 160,
+      height: node.measured?.height ?? 40,
+      pinned: node.data.placement.pinned,
+    }));
+    const links = lines
+      .filter((edge) => edge.type === 'connector' || edge.type === 'relationship')
+      .map((edge) => ({ id: edge.id, source: edge.source, target: edge.target }));
+    let cancelled = false;
+    let frame = 0;
+    computeAutoLayout(items, links, layoutRequest.direction).then(
+      (result) => {
+        if (cancelled) return;
+        const from = new Map(current.map((node) => [node.id, node.position]));
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const duration = reduceMotion ? 0 : 450;
+        const started = performance.now();
+        const step = (now: number) => {
+          const t = duration === 0 ? 1 : Math.min(1, (now - started) / duration);
+          const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+          setNodes((nodesNow) =>
+            nodesNow.map((node) => {
+              const to = result.positions.get(node.id);
+              const start = from.get(node.id);
+              if (to === undefined || start === undefined) return node;
+              return {
+                ...node,
+                position: {
+                  x: start.x + (to.x - start.x) * eased,
+                  y: start.y + (to.y - start.y) * eased,
+                },
+              };
+            }),
+          );
+          if (t < 1) {
+            frame = requestAnimationFrame(step);
+            return;
+          }
+          setFreshRoutes({ byEdge: result.routes, at: result.positions });
+          const moves = [...result.positions].map(([placementId, point]) => ({
+            placementId,
+            ...point,
+          }));
+          const previous = moves.map(({ placementId }) => {
+            const point = from.get(placementId) ?? { x: 0, y: 0 };
+            return { placementId, x: Math.round(point.x), y: Math.round(point.y) };
+          });
+          if (moves.length > 0) {
+            latest.current.onArranged(
+              {
+                direction: layoutRequest.direction,
+                placed: moves,
+                routes: [...result.routes].map(([lineId, route]) => ({ lineId, ...route })),
+              },
+              previous,
+            );
+          }
+        };
+        frame = requestAnimationFrame(step);
+      },
+      () => {
+        if (!cancelled) latest.current.onLayoutFailed('The map could not be arranged.');
+      },
+    );
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [layoutRequest]);
+
   // Connectors and relationship lines attach to the sides of their items that face each other,
-  // following the items while they are dragged; hierarchy lines keep their fixed sides.
+  // following the items while they are dragged; hierarchy lines keep their fixed sides. Right
+  // after an automatic layout they follow its routes instead (see `routes`).
   const shownEdges = useMemo(() => {
     const boxes = new Map<string, ItemBox>(
       nodes.map((node) => [
@@ -746,10 +914,25 @@ export function MapCanvas({
       const from = boxes.get(edge.source);
       const to = boxes.get(edge.target);
       if (from === undefined || to === undefined) return edge;
+      const route = routes?.byEdge.get(edge.id);
+      const stillThere = (id: string, box: ItemBox) => {
+        const placed = routes?.at.get(id);
+        return (
+          placed !== undefined && Math.abs(placed.x - box.x) < 1 && Math.abs(placed.y - box.y) < 1
+        );
+      };
+      if (route !== undefined && stillThere(edge.source, from) && stillThere(edge.target, to)) {
+        return {
+          ...edge,
+          sourceHandle: route.sourceSide,
+          targetHandle: route.targetSide,
+          data: { ...edge.data, route: route.points },
+        };
+      }
       const sides = facingSides(from, to);
       return { ...edge, sourceHandle: sides.from, targetHandle: sides.to };
     });
-  }, [nodes, edges]);
+  }, [nodes, edges, routes]);
 
   // Only selection changes apply to edges; edges otherwise always come from the map view.
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {

@@ -15,6 +15,10 @@ files:
   - package.json
   - '!**/*.map'
 asar: true
+# License notices of bundled third-party code (EPL-2.0 for elkjs, ADR-0012), next to app.asar.
+extraResources:
+  - from: resources/licenses
+    to: licenses
 npmRebuild: false
 # No auto-update feed yet. Update checks must stay visible, configurable and content-free (PRD §8).
 publish: null

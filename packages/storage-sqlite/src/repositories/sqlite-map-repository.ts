@@ -24,6 +24,7 @@ import {
   type Revision,
   type UtcTimestamp,
   type WorkspaceId,
+  type MapArrangement,
 } from '@mmap/domain';
 import type { SQLOutputValue } from 'node:sqlite';
 
@@ -61,7 +62,8 @@ export class SqliteMapRepository implements MapRepository {
     const row = this.connections
       .forRead()
       .prepare(
-        `SELECT id, workspace_id, title, mode, viewport_json, revision, created_at, updated_at
+        `SELECT id, workspace_id, title, mode, viewport_json, arrangement_json, revision,
+                created_at, updated_at
          FROM mind_maps WHERE workspace_id = ? AND id = ?`,
       )
       .get(workspaceId, mapId);
@@ -106,6 +108,17 @@ export class SqliteMapRepository implements MapRepository {
         expectedRevision,
       );
     return Number(result.changes) === 1;
+  }
+
+  public async setArrangement(
+    workspaceId: WorkspaceId,
+    mapId: MapId,
+    arrangement: MapArrangement | null,
+  ): Promise<void> {
+    this.connections
+      .forWrite()
+      .prepare('UPDATE mind_maps SET arrangement_json = ? WHERE workspace_id = ? AND id = ?')
+      .run(arrangement === null ? '{}' : JSON.stringify(arrangement), workspaceId, mapId);
   }
 
   public async updateViewport(
@@ -337,6 +350,9 @@ export function toMindMapRecord(row: Row): MindMapRecord {
     title: String(row.title),
     mode: String(row.mode) as MapMode,
     viewport: parseViewport(String(row.viewport_json)),
+    ...(row.arrangement_json === undefined
+      ? {}
+      : { arrangement: parseArrangement(String(row.arrangement_json)) }),
     revision: Number(row.revision),
     createdAt: String(row.created_at) as UtcTimestamp,
     updatedAt: String(row.updated_at) as UtcTimestamp,
@@ -380,6 +396,26 @@ export function toMapConnectionRecord(row: Row): MapConnectionRecord {
  * Viewport and style JSON are visual state written by this app; anything unexpected (for example
  * a hand-edited database) falls back to defaults instead of failing to open the map.
  */
+/**
+ * The stored arrangement, or null for none. It was validated when saved; anything unreadable is
+ * treated as no arrangement (the map then shows ordinary curves), never as an error.
+ */
+function parseArrangement(json: string): MapArrangement | null {
+  try {
+    const value = JSON.parse(json) as Partial<MapArrangement>;
+    if (
+      typeof value.direction === 'string' &&
+      Array.isArray(value.placed) &&
+      Array.isArray(value.routes)
+    ) {
+      return value as MapArrangement;
+    }
+  } catch {
+    // Falls through to none.
+  }
+  return null;
+}
+
 function parseViewport(json: string): MapViewport {
   try {
     const value = JSON.parse(json) as Partial<MapViewport>;
@@ -399,10 +435,11 @@ function parseViewport(json: string): MapViewport {
 
 function parseStyle(json: string): PlacementStyle {
   try {
-    const value = JSON.parse(json) as { color?: unknown };
-    if (PLACEMENT_COLORS.includes(value.color as PlacementColor)) {
-      return { color: value.color as PlacementColor };
-    }
+    const value = JSON.parse(json) as { color?: unknown; pinned?: unknown };
+    const color = PLACEMENT_COLORS.includes(value.color as PlacementColor)
+      ? (value.color as PlacementColor)
+      : null;
+    return value.pinned === true ? { color, pinned: true } : { color };
   } catch {
     // Falls through to the default.
   }

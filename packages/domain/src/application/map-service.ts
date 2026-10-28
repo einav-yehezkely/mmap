@@ -45,6 +45,7 @@ import type {
   MindMapSummary,
   PlacementStyle,
   PlacementWithNode,
+  MapArrangement,
 } from '../ports/map-repository';
 import { PLACEMENT_COLORS } from '../ports/map-repository';
 import type {
@@ -142,11 +143,21 @@ export interface MapService {
     placementId: PlacementId,
     collapsed: boolean,
   ): Promise<MapView>;
+  /**
+   * Saves an automatic layout (ADR-0012): moves the arranged items and stores the routes of the
+   * lines between them, in one change. Freeform maps only.
+   */
+  saveArrangement(
+    mapId: MapId,
+    expectedRevision: Revision,
+    arrangement: MapArrangement,
+  ): Promise<MapView>;
+  /** Changes parts of an item's style (color, lock); parts not given are kept. */
   setPlacementStyle(
     mapId: MapId,
     expectedRevision: Revision,
     placementId: PlacementId,
-    style: PlacementStyle,
+    changes: Partial<PlacementStyle>,
   ): Promise<MapView>;
   addConnection(
     mapId: MapId,
@@ -252,6 +263,48 @@ export function normalizeConnectorLabel(raw: string | null | undefined): string 
   return label.length === 0 ? null : label;
 }
 
+const ARRANGEMENT_DIRECTIONS = ['right', 'down', 'left', 'up'] as const;
+const ITEM_SIDES = ['left', 'right', 'top', 'bottom'] as const;
+const LINE_ID = /^(connector|relationship):[0-9a-f-]{36}$/u;
+const MAX_ROUTES = 20_000;
+const MAX_ROUTE_POINTS = 200;
+
+/** Checks an arrangement from the renderer: known names, sane sizes, finite coordinates. */
+function validateArrangement(arrangement: MapArrangement): MapArrangement {
+  const invalid = () =>
+    new DomainError('VALIDATION_FAILED', 'This layout cannot be saved. Arrange the map again.');
+  if (!ARRANGEMENT_DIRECTIONS.includes(arrangement.direction)) throw invalid();
+  if (arrangement.placed.length === 0 || arrangement.routes.length > MAX_ROUTES) throw invalid();
+  return {
+    direction: arrangement.direction,
+    placed: arrangement.placed.map((item) => ({
+      placementId: item.placementId,
+      x: validateCoordinate(item.x),
+      y: validateCoordinate(item.y),
+    })),
+    routes: arrangement.routes.map((route) => {
+      if (
+        !LINE_ID.test(route.lineId) ||
+        !ITEM_SIDES.includes(route.sourceSide) ||
+        !ITEM_SIDES.includes(route.targetSide) ||
+        route.points.length < 2 ||
+        route.points.length > MAX_ROUTE_POINTS
+      ) {
+        throw invalid();
+      }
+      return {
+        lineId: route.lineId,
+        sourceSide: route.sourceSide,
+        targetSide: route.targetSide,
+        points: route.points.map((point) => ({
+          x: validateCoordinate(point.x),
+          y: validateCoordinate(point.y),
+        })),
+      };
+    }),
+  };
+}
+
 /** Rejects non-finite or absurd coordinates (e.g. from a corrupted drag event). */
 function validateCoordinate(value: number): number {
   if (!Number.isFinite(value) || Math.abs(value) > 1_000_000) {
@@ -275,7 +328,7 @@ function validateStyle(style: PlacementStyle): PlacementStyle {
   if (style.color !== null && !PLACEMENT_COLORS.includes(style.color)) {
     throw new DomainError('VALIDATION_FAILED', 'This color is not available.');
   }
-  return { color: style.color };
+  return style.pinned === true ? { color: style.color, pinned: true } : { color: style.color };
 }
 
 export function createMapService(dependencies: MapServiceDependencies): MapService {
@@ -564,6 +617,30 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
         );
       }),
 
+    saveArrangement: (mapId, expectedRevision, arrangement) =>
+      structuralChange(mapId, expectedRevision, async (map, placements) => {
+        if (map.mode !== 'freeform') {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            'Only freeform maps are arranged automatically.',
+          );
+        }
+        const checked = validateArrangement(arrangement);
+        const now = clock.now();
+        await maps.updatePlacements(
+          checked.placed.map((item) => ({
+            ...requirePlacement(placements, item.placementId),
+            x: item.x,
+            y: item.y,
+            updatedAt: now,
+          })),
+        );
+        await maps.setArrangement(workspaceId, map.id, checked);
+        // Returned as a change, so the view sent back carries the new arrangement, not the one
+        // read before (that made the first layout show plain curves until the next one).
+        return { arrangement: checked };
+      }),
+
     reparent: (mapId, expectedRevision, placementId, newParentId, index) =>
       structuralChange(mapId, expectedRevision, async (_map, placements) => {
         requirePlacement(placements, placementId);
@@ -584,12 +661,14 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
         ]);
       }),
 
-    setPlacementStyle: (mapId, expectedRevision, placementId, style) =>
+    setPlacementStyle: (mapId, expectedRevision, placementId, changes) =>
       structuralChange(mapId, expectedRevision, async (_map, placements) => {
+        const placement = requirePlacement(placements, placementId);
         await maps.updatePlacements([
           {
-            ...requirePlacement(placements, placementId),
-            style: validateStyle(style),
+            ...placement,
+            // Merged, so changing the color never unlocks an item (or the other way round).
+            style: validateStyle({ ...placement.style, ...changes }),
             updatedAt: clock.now(),
           },
         ]);

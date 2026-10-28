@@ -131,6 +131,8 @@ export interface MmapRendererApi {
     readonly reparent: BridgeCall<'maps:reparent'>;
     readonly setCollapsed: BridgeCall<'maps:set-collapsed'>;
     readonly setPlacementColor: BridgeCall<'maps:set-placement-color'>;
+    readonly setPlacementPinned: BridgeCall<'maps:set-placement-pinned'>;
+    readonly saveArrangement: BridgeCall<'maps:save-arrangement'>;
     readonly addConnection: BridgeCall<'maps:add-connection'>;
     readonly removeConnection: BridgeCall<'maps:remove-connection'>;
     readonly setConnectionLabel: BridgeCall<'maps:set-connection-label'>;

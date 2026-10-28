@@ -5,12 +5,15 @@
  * Opening an item opens its node in the shared detail panel, the same editor used everywhere
  * else (PRD §6); edits there show up on every map because maps only place nodes.
  *
- * Connector changes (drawing, removing, moving an end) can be undone: a notice with "Undo"
- * appears after each one, and Ctrl+Z undoes them one by one, most recent first.
+ * Connector changes (drawing, removing, moving an end) and automatic layouts can be undone: a
+ * notice with "Undo" appears after each one, and Ctrl+Z undoes them one by one, most recent first.
+ *
+ * Freeform maps have "Auto layout" (ADR-0012): it arranges the items by their connections in the
+ * chosen direction only when asked, never after an edit; locked items stay where they are.
  */
 
 import type { MapViewDto } from '@mmap/contracts';
-import { ArrowLeft, GitFork, Move, Undo2, X } from 'lucide-react';
+import { ArrowLeft, GitFork, LayoutDashboard, Lock, LockOpen, Move, Undo2, X } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -24,6 +27,7 @@ import {
 import { Button } from '../components/ui/button';
 import { notifyNodesChanged } from '../nodes/node-events';
 import { AddToMapDialog } from './add-to-map-dialog';
+import type { LayoutDirection } from './auto-layout';
 import { MapCanvas } from './map-canvas';
 import { nextFreeformPosition, planKeyboardMove } from './map-model';
 import { MapOutline } from './map-outline';
@@ -45,7 +49,11 @@ type ConnectorChange =
   | { readonly kind: 'removed'; readonly connectors: readonly ConnectorSnapshot[] }
   | { readonly kind: 'moved'; readonly connectionId: string; readonly previous: ConnectorSnapshot }
   | { readonly kind: 'noted'; readonly connectionId: string; readonly previous: string | null }
-  | { readonly kind: 'linked'; readonly connectionId: string; readonly previous: string | null };
+  | { readonly kind: 'linked'; readonly connectionId: string; readonly previous: string | null }
+  | {
+      readonly kind: 'arranged';
+      readonly previous: readonly { placementId: string; x: number; y: number }[];
+    };
 
 const UNDO_LIMIT = 20;
 /** How long the "Undo" notice stays; Ctrl+Z keeps working afterwards. */
@@ -57,6 +65,7 @@ const CHANGE_TEXT: Record<ConnectorChange['kind'], string> = {
   moved: 'Connector moved.',
   noted: 'Connector note saved.',
   linked: 'Connector link changed.',
+  arranged: 'Map arranged.',
 };
 
 export interface MapEditorProps {
@@ -110,6 +119,14 @@ function LoadedMapEditor({
   const [adding, setAdding] = useState<{ parentId: string | null } | null>(null);
   const [reviewingHierarchy, setReviewingHierarchy] = useState(false);
   const colorSelectId = useId();
+  const directionSelectId = useId();
+  const [direction, setDirection] = useState<LayoutDirection>('right');
+  /** Each click on "Auto layout" is a new request for the canvas. */
+  const [layoutRequest, setLayoutRequest] = useState<{
+    readonly id: number;
+    readonly direction: LayoutDirection;
+  } | null>(null);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<readonly ConnectorChange[]>([]);
   const [noticeVisible, setNoticeVisible] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -213,8 +230,20 @@ function LoadedMapEditor({
       case 'linked':
         await linkConnector(change.connectionId, change.previous);
         break;
+      case 'arranged':
+        // Only items still on the map are moved back (one removed since would fail the move).
+        await apply((mapId, expectedRevision, current) =>
+          window.mmap.maps.movePlacements({
+            mapId,
+            expectedRevision,
+            changes: change.previous.filter((move) =>
+              current.placements.some((placement) => placement.id === move.placementId),
+            ),
+          }),
+        );
+        break;
     }
-  }, [undoStack, createConnector, deleteConnector, writeConnectorNote, linkConnector]);
+  }, [undoStack, createConnector, deleteConnector, writeConnectorNote, linkConnector, apply]);
 
   /** Ctrl+Z anywhere in the editor, except while typing in a field. */
   const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -361,6 +390,26 @@ function LoadedMapEditor({
     });
   };
 
+  /**
+   * Saves an automatic layout (positions and routes) in one request; Undo puts every item back,
+   * and the stored routes then no longer match, so lines return to curves.
+   */
+  const onArranged = (
+    arrangement: NonNullable<MapViewDto['map']['arrangement']>,
+    previous: readonly { placementId: string; x: number; y: number }[],
+  ) => {
+    void apply((mapId, expectedRevision) =>
+      window.mmap.maps.saveArrangement({ mapId, expectedRevision, arrangement }),
+    ).then((ok) => {
+      if (ok) remember({ kind: 'arranged', previous });
+    });
+  };
+
+  const setPinned = (placementId: string, pinned: boolean) =>
+    void apply((mapId, expectedRevision) =>
+      window.mmap.maps.setPlacementPinned({ mapId, expectedRevision, placementId, pinned }),
+    );
+
   const switchToHierarchy = async (
     parents: readonly { placementId: string; parentPlacementId: string | null }[],
   ) => {
@@ -449,7 +498,59 @@ function LoadedMapEditor({
             ))}
           </select>
         </div>
+        {!isHierarchy && (
+          <div role="group" aria-label="Automatic layout" className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant={selected?.pinned === true ? 'outline' : 'ghost'}
+              aria-pressed={selected?.pinned === true}
+              disabled={selected === null}
+              title="Locked items keep their place when the map is arranged automatically"
+              onClick={() => selected !== null && setPinned(selected.id, !selected.pinned)}
+            >
+              {selected?.pinned === true ? (
+                <Lock aria-hidden="true" />
+              ) : (
+                <LockOpen aria-hidden="true" />
+              )}
+              {selected?.pinned === true ? 'Locked' : 'Lock'}
+            </Button>
+            <label htmlFor={directionSelectId} className="sr-only">
+              Layout direction
+            </label>
+            <select
+              id={directionSelectId}
+              className="h-8 rounded-md border bg-background px-2 text-sm"
+              value={direction}
+              onChange={(event) => setDirection(event.target.value as LayoutDirection)}
+            >
+              <option value="right">Left to right</option>
+              <option value="down">Top to bottom</option>
+              <option value="left">Right to left</option>
+              <option value="up">Bottom to top</option>
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={view.placements.length < 2}
+              title="Arrange the items by their connections. Locked items stay; Ctrl+Z undoes it."
+              onClick={() => {
+                setLayoutError(null);
+                setLayoutRequest((current) => ({ id: (current?.id ?? 0) + 1, direction }));
+              }}
+            >
+              <LayoutDashboard aria-hidden="true" />
+              Auto layout
+            </Button>
+          </div>
+        )}
       </div>
+
+      {layoutError !== null && (
+        <p role="alert" className="text-sm text-destructive">
+          {layoutError}
+        </p>
+      )}
 
       {document.changeError && !reviewingHierarchy && (
         <div
@@ -499,6 +600,9 @@ function LoadedMapEditor({
             onReconnect={onReconnect}
             onConnectorLabel={onConnectorLabel}
             onConnectorRelationship={onConnectorRelationship}
+            layoutRequest={layoutRequest}
+            onArranged={onArranged}
+            onLayoutFailed={setLayoutError}
             onViewportChange={document.saveViewport}
           />
         </div>

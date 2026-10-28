@@ -44,6 +44,8 @@ export const placementViewSchema = z.strictObject({
   siblingOrder: z.number().int(),
   isCollapsed: z.boolean(),
   color: colorSchema,
+  /** Locked: automatic layout leaves the item where it is. */
+  pinned: z.boolean(),
 });
 
 export const mapConnectionViewSchema = z.strictObject({
@@ -55,12 +57,38 @@ export const mapConnectionViewSchema = z.strictObject({
   relationshipTypeLabel: z.string().nullable(),
 });
 
+const itemSideSchema = z.enum(['left', 'right', 'top', 'bottom']);
+const pointSchema = z.strictObject({ x: z.number(), y: z.number() });
+
+/** The last automatic layout of a freeform map: where items were put and each line's route. */
+export const arrangementSchema = z.strictObject({
+  direction: z.enum(['right', 'down', 'left', 'up']),
+  placed: z
+    .array(z.strictObject({ placementId: z.uuid(), x: z.number(), y: z.number() }))
+    .min(1)
+    .max(MAX_PLACEMENTS_PER_REQUEST)
+    .readonly(),
+  routes: z
+    .array(
+      z.strictObject({
+        lineId: z.string().max(120),
+        sourceSide: itemSideSchema,
+        targetSide: itemSideSchema,
+        points: z.array(pointSchema).min(2).max(200).readonly(),
+      }),
+    )
+    .max(20_000)
+    .readonly(),
+});
+
 export const mapViewSchema = z.strictObject({
   map: z.strictObject({
     id: z.uuid(),
     title: z.string(),
     mode: mapModeSchema,
     viewport: z.strictObject({ x: z.number(), y: z.number(), zoom: z.number() }),
+    /** The last automatic layout (freeform maps), or null. */
+    arrangement: arrangementSchema.nullable(),
     revision: z.number().int().positive(),
     updatedAt: z.string(),
   }),
@@ -191,6 +219,16 @@ export const mapContracts = {
   },
   setPlacementColor: {
     request: z.strictObject({ ...structural, placementId: z.uuid(), color: colorSchema }),
+    response: mapViewSchema,
+  },
+  /** Locks or unlocks an item's position for automatic layout. */
+  /** Saves an automatic layout: moves the arranged items and stores the routes, as one change. */
+  saveArrangement: {
+    request: z.strictObject({ ...structural, arrangement: arrangementSchema }),
+    response: mapViewSchema,
+  },
+  setPlacementPinned: {
+    request: z.strictObject({ ...structural, placementId: z.uuid(), pinned: z.boolean() }),
     response: mapViewSchema,
   },
   addConnection: {

@@ -35,6 +35,32 @@ export type PlacementColor = (typeof PLACEMENT_COLORS)[number];
 
 export interface PlacementStyle {
   readonly color: PlacementColor | null;
+  /** Locked: automatic layout leaves the item where it is. Absent means not locked. */
+  readonly pinned?: boolean;
+}
+
+/** A side of a map item where a line attaches. */
+export type ItemSideName = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * The last automatic layout of a freeform map (ADR-0012): the positions it gave the items and
+ * the route of each line between them. A route is drawn only while both of its items are still
+ * at those positions, so later moves simply fall back to ordinary curves.
+ */
+export interface MapArrangement {
+  readonly direction: 'right' | 'down' | 'left' | 'up';
+  readonly placed: readonly {
+    readonly placementId: PlacementId;
+    readonly x: number;
+    readonly y: number;
+  }[];
+  readonly routes: readonly {
+    /** The line as the canvas names it, e.g. "connector:<id>" or "relationship:<id>". */
+    readonly lineId: string;
+    readonly sourceSide: ItemSideName;
+    readonly targetSide: ItemSideName;
+    readonly points: readonly { readonly x: number; readonly y: number }[];
+  }[];
 }
 
 export interface MindMapRecord {
@@ -43,6 +69,8 @@ export interface MindMapRecord {
   readonly title: string;
   readonly mode: MapMode;
   readonly viewport: MapViewport;
+  /** The last automatic layout, when read with the map; absent or null when there is none. */
+  readonly arrangement?: MapArrangement | null;
   /** Increases with every structural change, for optimistic concurrency (PRD §14). */
   readonly revision: Revision;
   readonly createdAt: UtcTimestamp;
@@ -145,6 +173,12 @@ export interface MapRepository {
   /** Semantic relationships whose source and target are both placed on the map. */
   listRelationships(workspaceId: WorkspaceId, mapId: MapId): Promise<readonly MapRelationship[]>;
   deleteConnection(workspaceId: WorkspaceId, connectionId: MapConnectionId): Promise<void>;
+  /** Stores (or clears, with null) the map's last automatic layout. */
+  setArrangement(
+    workspaceId: WorkspaceId,
+    mapId: MapId,
+    arrangement: MapArrangement | null,
+  ): Promise<void>;
   /** Sets or clears (null) the semantic relationship a connector refers to. */
   updateConnectionRelationship(
     workspaceId: WorkspaceId,

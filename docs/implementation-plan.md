@@ -623,3 +623,23 @@ Tests: `sqlite-connections.test.ts` (committed writes are counted, failed ones a
 smoke check "a second window opens a note, and the first shows its changes when focused" (opens a
 note in a second window, renames it there, the first window's Library shows the new title after
 focus, the second window closes and the first keeps working).
+
+## 18. Automatic layout of freeform maps (2026-10-28)
+
+[ADR-0012](adr/0012-automatic-map-layout.md). **Auto layout** in the freeform toolbar with a
+direction (left to right, top to bottom, right to left, bottom to top). Strict hierarchies get a
+tidy tree (parents centered over evenly spaced children, shared branching lines); everything else
+uses ELK.js `layered` with orthogonal routes. Items can be locked (`maps:set-placement-pinned`);
+the layout is animated, saved as one change with its routes (`maps:save-arrangement`, migration 6
+`mind_maps.arrangement_json`) and undone in one step. Stored routes are drawn only while both
+items are still where the layout put them, so they come back after reopening the map and fall
+back to curves after a move. The knowledge graph now shows map connectors by default. 94
+channels.
+
+Tests: `auto-layout.test.ts` (directions, cycles, two-way links, several parents, disconnected
+groups, locked items, stability, centered trees with uneven widths, recursive centering without
+overlaps, shared branching lines, mirrored directions, strategy choice); `map-model.test.ts`
+(`facingSides`, `routePath`); `map-service.test.ts` (locks keep the color; saving an arrangement
+moves items, returns and stores it; invalid layouts and hierarchy maps are refused); pinned
+migration checksum; packaged smoke check "auto layout arranges a messy map, keeps locked items,
+Undo restores it, and its routes are kept" (leaves and reopens the map).
