@@ -259,7 +259,7 @@ export async function runSmokeTest(
   );
   checks.push(
     await check(
-      'a connector note and a linked relationship are saved, shown and undone',
+      'a connector note, a linked and a newly created relationship are saved and shown',
       async () => {
         const outcome = (await window.webContents.executeJavaScript(`
         (async () => {
@@ -338,6 +338,25 @@ export async function runSmokeTest(
           await wait(800);
           if (!(await linked(null))) return 'undo did not remove the link';
           await window.mmap.relationships.delete({ relationshipId: relationship.id });
+
+          // Creating a relationship from inside the map: the link panel's "Create a relationship".
+          edge().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          if (!(await until(linkButton, 3000))) return 'link button missing before creating';
+          press(linkButton(), 'link button');
+          const createForm = () => [...document.querySelectorAll('[role="dialog"][aria-label="Show a relationship on this connector"] form')][0];
+          if (!(await until(() => createForm()?.querySelector('select option'), 3000))) return 'create form not offered';
+          const select = createForm().querySelector('select');
+          const optionFor = [...select.options].find((o) => o.textContent.includes('depends on'));
+          Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, optionFor.value);
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          press([...createForm().querySelectorAll('button')].find((button) => button.textContent.trim() === 'Create'), 'Create');
+          const created = async () => (await window.mmap.relationships.listForNode({ nodeId: a.id })).data.items.find((item) => item.source.id === a.id && item.target.id === b.id && item.typeLabel === 'depends on');
+          let made = null;
+          for (let attempt = 0; attempt < 30 && !made; attempt += 1) { made = await created(); if (!made) await wait(100); }
+          if (!made) return 'the relationship was not created from the map';
+          if (!(await until(() => [...document.querySelectorAll('.react-flow__edgelabel-renderer span')].some((span) => span.textContent === 'depends on'), 3000))) return 'the created relationship is not shown on the connector';
+          if (!(await linked(made.id))) return 'the created relationship was not linked';
+          await window.mmap.relationships.delete({ relationshipId: made.id });
           press(buttonWithText('All maps'), 'All maps');
           await maps.delete({ mapId });
           return 'ok';

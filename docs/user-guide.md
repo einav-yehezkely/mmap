@@ -504,6 +504,11 @@ relationship that a map connector already shows (a connector linked to it) is dr
   relationship. The connector then shows its type, and the separate relationship line is no longer
   drawn. **Remove the link** turns it back into a plain connector; the relationship stays. Ctrl+Z
   undoes this too.
+- **Create a relationship from the map**: in the same panel, under **Create a relationship**,
+  choose a type and click **Create**. The relationship goes in the connector's direction (from
+  where you started drawing), is linked to the connector, and appears in both notes, the graph and
+  every map that shows both notes. Undo removes the link; to remove the relationship itself, delete
+  it in a note's Relationships section.
 - **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
 - **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
   has focus. This removes them from the map only; the nodes stay in your library.
