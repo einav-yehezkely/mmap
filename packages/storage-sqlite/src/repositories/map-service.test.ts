@@ -22,6 +22,7 @@ import {
 } from '@mmap/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { SqliteGraphQuery } from '../graph/sqlite-graph-query';
 import { SqliteSearchIndex } from '../search/sqlite-search-index';
 import type { SqliteConnections } from '../sqlite-connections';
 import { openWorkspaceDatabase } from '../workspace-database';
@@ -597,6 +598,77 @@ describe('finding nodes to add to a map', () => {
     expect(await search.lookupTitles(WORKSPACE_A, 'planet', 50, [], other.map.id)).toHaveLength(50);
     // A map of another workspace changes nothing.
     expect(await search.lookupTitles(WORKSPACE_B, 'planet', 50, [], view.map.id)).toEqual([]);
+  });
+});
+
+describe('map connectors in the knowledge graph', () => {
+  const filters = {
+    tagIds: [],
+    relationshipTypeIds: [],
+    mapIds: [],
+    text: null,
+    includeReferences: false,
+    includeConnectors: true,
+  };
+  const limits = { maxNodes: 1_000, maxEdges: 3_000 };
+
+  it('is a layer on request: one line per direction, naming every map it is drawn on', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let first = await placeNew(maps, await maps.createMap('First'), ['A', 'B', 'C']);
+    const [a, b, c] = ['A', 'B', 'C'].map((title) => placementOf(first, title));
+    let second = await maps.createMap('Second');
+    second = await maps.addPlacement(second.map.id, second.map.revision, {
+      nodeId: a!.nodeId,
+      x: 0,
+      y: 0,
+    });
+    second = await maps.addPlacement(second.map.id, second.map.revision, {
+      nodeId: b!.nodeId,
+      x: 100,
+      y: 0,
+    });
+    const connect = async (view: MapView, from: string, to: string) =>
+      maps.addConnection(view.map.id, view.map.revision, {
+        sourcePlacementId: placementOf(view, from).id,
+        targetPlacementId: placementOf(view, to).id,
+      });
+    first = await connect(first, 'A', 'B');
+    first = await connect(first, 'B', 'A');
+    first = await connect(first, 'A', 'C');
+    second = await connect(second, 'A', 'B');
+    const graph = new SqliteGraphQuery(connections);
+
+    const plain = await graph.overview(
+      WORKSPACE_A,
+      { ...filters, includeConnectors: false },
+      limits,
+    );
+    expect(plain.connectors).toEqual([]);
+
+    const layered = await graph.overview(WORKSPACE_A, filters, limits);
+    const pairs = layered.connectors.map((connector) => ({
+      from: connector.sourceNodeId,
+      to: connector.targetNodeId,
+      maps: [...connector.mapIds].sort(),
+    }));
+    expect(pairs).toEqual(
+      expect.arrayContaining([
+        { from: a!.nodeId, to: b!.nodeId, maps: [first.map.id, second.map.id].sort() },
+        { from: b!.nodeId, to: a!.nodeId, maps: [first.map.id] },
+        { from: a!.nodeId, to: c!.nodeId, maps: [first.map.id] },
+      ]),
+    );
+    expect(pairs).toHaveLength(3);
+    expect(layered.connectorsTruncated).toBe(false);
+
+    // Expanding C finds A through the connector, though they have no relationship.
+    const around = await graph.neighborhood(WORKSPACE_A, c!.nodeId, filters, {
+      maxNeighbors: 200,
+      maxEdges: 3_000,
+    });
+    expect(around?.nodes.map((node) => node.id)).toContain(a!.nodeId);
+    // Another workspace sees none of them.
+    expect((await graph.overview(WORKSPACE_B, filters, limits)).connectors).toEqual([]);
   });
 });
 

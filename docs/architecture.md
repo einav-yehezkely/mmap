@@ -970,6 +970,10 @@ Filters:
   edges between members.
 - **Note links** (`includeReferences`): adds one line per (source note, target node) pair, with
   the number of links; a note linking to its own node is left out.
+- **Map connectors** (`includeConnectors`): adds one line per direction between two shown nodes,
+  naming every map on which a connector joins them (`map_connections` joined to the placements of
+  both ends). Drawn dotted with an arrow and labeled "on <map>" or "on N maps", so they are never
+  mistaken for relationships (solid) or note links (dashed); expanding a node also follows them.
 
 ### Simple scans, ranking in TypeScript
 

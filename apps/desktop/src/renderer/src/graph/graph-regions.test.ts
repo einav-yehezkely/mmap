@@ -44,6 +44,8 @@ function state() {
     totalNodes: 4,
     edgesTruncated: false,
     referencesTruncated: false,
+    connectors: [],
+    connectorsTruncated: false,
   };
   return stateFromOverview(slice);
 }

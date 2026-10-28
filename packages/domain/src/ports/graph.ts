@@ -37,6 +37,8 @@ export interface GraphFilters {
   readonly text: string | null;
   /** Whether to include the note-reference layer. */
   readonly includeReferences: boolean;
+  /** Whether to include the layer of mind map connectors between the shown nodes. */
+  readonly includeConnectors: boolean;
 }
 
 export interface GraphNode {
@@ -75,18 +77,32 @@ export interface GraphReference {
   readonly occurrences: number;
 }
 
+/**
+ * Mind map connectors from one node to another, on one or more maps. Connectors are visual lines
+ * drawn on maps, not relationships (PRD §4.4); the graph can show them as their own layer.
+ */
+export interface GraphConnector {
+  readonly sourceNodeId: NodeId;
+  readonly targetNodeId: NodeId;
+  /** The maps on which a connector joins the two nodes in this direction. */
+  readonly mapIds: readonly MapId[];
+}
+
 export interface GraphSlice {
   readonly nodes: readonly GraphNode[];
   /** Every mind map of the workspace, by title, so memberships can be named. */
   readonly maps: readonly GraphMap[];
   readonly edges: readonly GraphEdge[];
   readonly references: readonly GraphReference[];
+  readonly connectors: readonly GraphConnector[];
   /** Nodes that match the filters in the whole workspace (or neighbors, for an expansion). */
   readonly totalNodes: number;
   /** True when some matching relationships between the returned nodes were left out. */
   readonly edgesTruncated: boolean;
   /** True when some note references between the returned nodes were left out. */
   readonly referencesTruncated: boolean;
+  /** True when some connectors between the returned nodes were left out. */
+  readonly connectorsTruncated: boolean;
 }
 
 export interface GraphQuery {

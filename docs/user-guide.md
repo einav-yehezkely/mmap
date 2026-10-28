@@ -633,6 +633,9 @@ Above the graph:
 - With **Note links** on, note links are **dashed** lines without an arrow. They are not
   relationships, so they are drawn differently and are off by default. Several links from one note
   to the same node are one line. The List says which way each link goes.
+- With **Connectors** on, the connectors you drew on mind maps are **dotted** lines with an arrow,
+  labeled with their map ("on Thermodynamics", or "on 2 maps" when the same two notes are
+  connected on several maps). Like note links, they are not relationships and are off by default.
 - Being on the same mind map never draws a line between two nodes.
 
 The line under the graph repeats what the lines mean.

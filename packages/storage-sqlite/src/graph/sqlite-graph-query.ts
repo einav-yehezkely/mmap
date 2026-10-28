@@ -18,6 +18,7 @@
  */
 
 import type {
+  GraphConnector,
   GraphEdge,
   GraphFilters,
   GraphMap,
@@ -55,9 +56,11 @@ const EMPTY_SLICE: GraphSlice = {
   maps: [],
   edges: [],
   references: [],
+  connectors: [],
   totalNodes: 0,
   edgesTruncated: false,
   referencesTruncated: false,
+  connectorsTruncated: false,
 };
 
 export class SqliteGraphQuery implements GraphQuery {
@@ -114,6 +117,12 @@ export class SqliteGraphQuery implements GraphQuery {
       for (const reference of this.references(workspaceId)) {
         if (reference.sourceNodeId === nodeId) neighborIds.add(reference.targetNodeId);
         if (reference.targetNodeId === nodeId) neighborIds.add(reference.sourceNodeId);
+      }
+    }
+    if (filters.includeConnectors) {
+      for (const connector of this.connectors(workspaceId)) {
+        if (connector.sourceNodeId === nodeId) neighborIds.add(connector.targetNodeId);
+        if (connector.targetNodeId === nodeId) neighborIds.add(connector.sourceNodeId);
       }
     }
     neighborIds.delete(nodeId);
@@ -252,6 +261,38 @@ export class SqliteGraphQuery implements GraphQuery {
       }));
   }
 
+  /**
+   * Map connectors between nodes, grouped by direction: one entry per ordered pair of nodes, with
+   * every map that has such a connector. Connectors from a node to itself are not connections.
+   */
+  private connectors(workspaceId: WorkspaceId): GraphConnector[] {
+    const rows = this.connections
+      .forRead()
+      .prepare(
+        `SELECT source.node_id AS source_node_id, target.node_id AS target_node_id, c.map_id
+         FROM map_connections AS c
+         JOIN map_placements AS source ON source.id = c.source_placement_id
+         JOIN map_placements AS target ON target.id = c.target_placement_id
+         WHERE c.workspace_id = ? AND source.node_id <> target.node_id
+         ORDER BY source.node_id, target.node_id, c.map_id`,
+      )
+      .all(workspaceId);
+    const byPair = new Map<
+      string,
+      { sourceNodeId: NodeId; targetNodeId: NodeId; mapIds: MapId[] }
+    >();
+    for (const row of rows) {
+      const sourceNodeId = String(row.source_node_id) as NodeId;
+      const targetNodeId = String(row.target_node_id) as NodeId;
+      const mapId = String(row.map_id) as MapId;
+      const key = `${sourceNodeId}>${targetNodeId}`;
+      const entry = byPair.get(key) ?? { sourceNodeId, targetNodeId, mapIds: [] };
+      if (!entry.mapIds.includes(mapId)) entry.mapIds.push(mapId);
+      byPair.set(key, entry);
+    }
+    return [...byPair.values()];
+  }
+
   /** Relationships and (optionally) references whose both ends are among `nodes`. */
   private connectionsAmong(
     workspaceId: WorkspaceId,
@@ -259,7 +300,15 @@ export class SqliteGraphQuery implements GraphQuery {
     nodes: readonly GraphNode[],
     relationships: readonly RelationshipRow[],
     maxEdges: number,
-  ): Pick<GraphSlice, 'edges' | 'references' | 'edgesTruncated' | 'referencesTruncated'> {
+  ): Pick<
+    GraphSlice,
+    | 'edges'
+    | 'references'
+    | 'connectors'
+    | 'edgesTruncated'
+    | 'referencesTruncated'
+    | 'connectorsTruncated'
+  > {
     const shown = new Set<string>(nodes.map((node) => node.id));
     const among = relationships.filter(
       (relationship) =>
@@ -275,22 +324,23 @@ export class SqliteGraphQuery implements GraphQuery {
         typeLabel,
         directionality,
       }));
-    if (!filters.includeReferences) {
-      return {
-        edges,
-        references: [],
-        edgesTruncated: among.length > maxEdges,
-        referencesTruncated: false,
-      };
-    }
-    const references = this.references(workspaceId).filter(
-      (reference) => shown.has(reference.sourceNodeId) && shown.has(reference.targetNodeId),
-    );
+    const references = filters.includeReferences
+      ? this.references(workspaceId).filter(
+          (reference) => shown.has(reference.sourceNodeId) && shown.has(reference.targetNodeId),
+        )
+      : [];
+    const connectors = filters.includeConnectors
+      ? this.connectors(workspaceId).filter(
+          (connector) => shown.has(connector.sourceNodeId) && shown.has(connector.targetNodeId),
+        )
+      : [];
     return {
       edges,
       references: references.slice(0, maxEdges),
+      connectors: connectors.slice(0, maxEdges),
       edgesTruncated: among.length > maxEdges,
       referencesTruncated: references.length > maxEdges,
+      connectorsTruncated: connectors.length > maxEdges,
     };
   }
 }

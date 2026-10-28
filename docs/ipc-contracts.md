@@ -541,15 +541,18 @@ Filters (all optional): `tagIds` (≤ 20 UUIDs, a node must carry all of them),
 `relationshipTypeIds` (≤ 100 UUIDs; only these types, and only nodes taking part in one of them),
 `mapIds` (≤ 200 UUIDs; only nodes placed on at least one of these mind maps, the union; empty or
 absent means no map filter, so nodes on no map stay visible), `text` (`null` or a string; same
-matching rules as search over title, summary and note text) and `includeReferences` (the
-note-link layer, `false` by default). Neighborhoods apply the same filters to the neighbors.
+matching rules as search over title, summary and note text), `includeReferences` (the
+note-link layer, `false` by default) and `includeConnectors` (the layer of mind map connectors,
+`false` by default). Neighborhoods apply the same filters to the neighbors.
 
 `GraphSlice` has `nodes` (`id`, `title`, `degree`: relationships of the node within the type
 filter, across the whole workspace; `mapIds`: the mind maps that place the node), `maps` (every
 mind map of the workspace, ordered by title: `id`, `title`, `nodeCount`), `edges` (`id`,
 `sourceNodeId`, `targetNodeId`, `typeId`, `typeLabel`, `directionality`), `references`
 (`sourceNodeId`, `targetNodeId`, `occurrences`: one entry per linking note and target),
-`totalNodes`, `edgesTruncated` and `referencesTruncated`. Map membership is never expressed as an
+`connectors` (`sourceNodeId`, `targetNodeId`, `mapIds`: one entry per direction between two
+nodes, with every map on which such a connector is drawn), `totalNodes`, `edgesTruncated`,
+`referencesTruncated` and `connectorsTruncated`. Map membership is never expressed as an
 edge: two nodes on the same map are not connected unless a relationship or note link connects
 them.
 

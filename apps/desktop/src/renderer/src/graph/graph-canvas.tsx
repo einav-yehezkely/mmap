@@ -165,6 +165,18 @@ function graphStyle(): cytoscape.StylesheetJson {
       style: { 'line-style': 'dashed', 'line-dash-pattern': [5, 4], width: 1, 'line-opacity': 0.7 },
     },
     {
+      // Map connectors: dotted with an arrow, unlike relationships (solid) and note links (dashed).
+      selector: 'edge.connector',
+      style: {
+        'line-style': 'dotted',
+        width: 1.5,
+        'line-opacity': 0.8,
+        'target-arrow-shape': 'triangle',
+        'target-arrow-color': muted,
+        'arrow-scale': 0.8,
+      },
+    },
+    {
       // A collapsed mind map: its name and node count in a rounded box of the map's color.
       selector: 'node.summary',
       style: {

@@ -23,6 +23,7 @@ import {
   Minus,
   Plus,
   SlidersHorizontal,
+  Spline,
   Tags,
   SquareDashed,
   Workflow,
@@ -65,6 +66,7 @@ interface Filters {
   readonly relationshipTypeIds: readonly string[];
   readonly mapIds: readonly string[];
   readonly includeReferences: boolean;
+  readonly includeConnectors: boolean;
 }
 
 const NO_FILTERS: Filters = {
@@ -73,6 +75,7 @@ const NO_FILTERS: Filters = {
   relationshipTypeIds: [],
   mapIds: [],
   includeReferences: false,
+  includeConnectors: false,
 };
 
 const SAVE_BATCH = 5_000;
@@ -89,6 +92,7 @@ function filterRequest(filters: Filters) {
     relationshipTypeIds: [...filters.relationshipTypeIds],
     mapIds: [...filters.mapIds],
     includeReferences: filters.includeReferences,
+    includeConnectors: filters.includeConnectors,
   };
 }
 
@@ -110,6 +114,10 @@ function linksOf(state: GraphState): { source: string; target: string }[] {
     ...[...state.references.values()].map((reference) => ({
       source: reference.sourceNodeId,
       target: reference.targetNodeId,
+    })),
+    ...[...state.connectors.values()].map((connector) => ({
+      source: connector.sourceNodeId,
+      target: connector.targetNodeId,
     })),
   ];
 }
@@ -535,6 +543,18 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
           <Link2 aria-hidden="true" />
           Note links
         </Button>
+        <Button
+          size="sm"
+          variant={filters.includeConnectors ? 'outline' : 'ghost'}
+          aria-pressed={filters.includeConnectors}
+          onClick={() =>
+            setFilters((current) => ({ ...current, includeConnectors: !current.includeConnectors }))
+          }
+          title="Show the connectors drawn on mind maps as dotted lines"
+        >
+          <Spline aria-hidden="true" />
+          Connectors
+        </Button>
         <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
         <Button
           size="sm"
@@ -866,7 +886,8 @@ function GraphLegend({
     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-1 text-xs text-muted-foreground">
       <p>
         <span aria-hidden="true">→ </span>directed relationship · <span aria-hidden="true">— </span>
-        undirected · <span aria-hidden="true">┄ </span>note link
+        undirected · <span aria-hidden="true">┄ </span>note link ·{' '}
+        <span aria-hidden="true">··→ </span>map connector
       </p>
       {showMaps && maps.length > 0 && (
         <ul aria-label="Map colors" className="flex flex-wrap gap-x-2 gap-y-0.5">
