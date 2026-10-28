@@ -57,7 +57,7 @@ import {
 
 import { unwrap } from '../lib/ipc';
 import { cn } from '../lib/utils';
-import { buildCanvasModel } from './map-model';
+import { buildCanvasModel, facingSides, type ItemBox } from './map-model';
 import { placementColorClass } from './placement-colors';
 
 /** Positions changed by dragging or arrow keys are saved together after this pause. */
@@ -320,7 +320,11 @@ const PlacementNode = memo(function PlacementNode({
         selected && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
       )}
     >
-      <Handle id="in" type="target" position={Position.Left} />
+      {/* A dot on every side: connectors can start and end at any of them (loose mode, so all
+          are source handles), and each line attaches to the sides that face each other. */}
+      <Handle id="left" type="source" position={Position.Left} />
+      <Handle id="top" type="source" position={Position.Top} />
+      <Handle id="bottom" type="source" position={Position.Bottom} />
       <span dir="auto" className="min-w-0 break-words">
         {placement.nodeTitle}
       </span>
@@ -347,7 +351,7 @@ const PlacementNode = memo(function PlacementNode({
           )}
         </button>
       )}
-      <Handle id="out" type="source" position={Position.Right} />
+      <Handle id="right" type="source" position={Position.Right} />
     </div>
   );
 });
@@ -492,6 +496,9 @@ export function MapCanvas({
               source: line.source,
               target: line.target,
               type: 'smoothstep',
+              // The tree grows from left to right.
+              sourceHandle: 'right',
+              targetHandle: 'left',
               selectable: false,
               deletable: false,
               className: 'mmap-hierarchy-line',
@@ -608,6 +615,30 @@ export function MapCanvas({
     [flushMoves],
   );
 
+  // Connectors and relationship lines attach to the sides of their items that face each other,
+  // following the items while they are dragged; hierarchy lines keep their fixed sides.
+  const shownEdges = useMemo(() => {
+    const boxes = new Map<string, ItemBox>(
+      nodes.map((node) => [
+        node.id,
+        {
+          x: node.position.x,
+          y: node.position.y,
+          width: node.measured?.width ?? 160,
+          height: node.measured?.height ?? 40,
+        },
+      ]),
+    );
+    return edges.map((edge) => {
+      if (edge.sourceHandle !== undefined && edge.sourceHandle !== null) return edge;
+      const from = boxes.get(edge.source);
+      const to = boxes.get(edge.target);
+      if (from === undefined || to === undefined) return edge;
+      const sides = facingSides(from, to);
+      return { ...edge, sourceHandle: sides.from, targetHandle: sides.to };
+    });
+  }, [nodes, edges]);
+
   // Only selection changes apply to edges; edges otherwise always come from the map view.
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     setEdges((current) =>
@@ -660,7 +691,7 @@ export function MapCanvas({
     <div className="h-full" onKeyDown={onKeyDown} onDoubleClickCapture={onDoubleClickCapture}>
       <ReactFlow<PlacementFlowNode, Edge>
         nodes={nodes}
-        edges={edges}
+        edges={shownEdges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         // The line that follows the cursor while drawing or moving a connector: dashed like a
