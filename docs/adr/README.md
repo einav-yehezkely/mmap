@@ -59,6 +59,7 @@ Each serious alternative and the reason it was not chosen.
 | [0009](0009-mind-map-editing.md)                             | Mind map editing                             | Accepted | 2026-10-27 |
 | [0010](0010-graph-and-timeline.md)                           | Knowledge graph and learning timeline        | Accepted | 2026-10-27 |
 | [0011](0011-export-import.md)                                | Workspace export and import                  | Accepted | 2026-10-27 |
+| [0012](0012-automatic-map-layout.md)                         | Automatic layout of freeform maps            | Accepted | 2026-10-28 |
 
 ADR-0004 and ADR-0006 have Phase 5 amendments (signing configuration, manual updates; backup
 implementation).

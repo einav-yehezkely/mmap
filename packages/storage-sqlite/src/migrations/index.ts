@@ -8,6 +8,7 @@ import { noteSchemaV2MarkerMigration } from './0002-note-schema-v2-marker';
 import { graphLayoutMigration } from './0003-graph-layout';
 import { dropGraphViewStateMigration } from './0004-drop-graph-view-state';
 import { timelineMilestonesLearnedAtMigration } from './0005-timeline-milestones-learned-at';
+import { mapArrangementMigration } from './0006-map-arrangement';
 import type { Migration } from './migration';
 
 export const ALL_MIGRATIONS: readonly Migration[] = [
@@ -16,6 +17,7 @@ export const ALL_MIGRATIONS: readonly Migration[] = [
   graphLayoutMigration,
   dropGraphViewStateMigration,
   timelineMilestonesLearnedAtMigration,
+  mapArrangementMigration,
 ];
 
 export const LATEST_SCHEMA_VERSION = ALL_MIGRATIONS.length;

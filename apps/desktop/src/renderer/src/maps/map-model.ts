@@ -393,3 +393,54 @@ export function facingSides(from: ItemBox, to: ItemBox): { from: ItemSide; to: I
   }
   return dx >= 0 ? { from: 'right', to: 'left' } : { from: 'left', to: 'right' };
 }
+
+/**
+ * SVG path through an orthogonal route (from automatic layout), with gently rounded corners, and
+ * the point halfway along it for a label.
+ */
+export function routePath(
+  points: readonly { readonly x: number; readonly y: number }[],
+): [path: string, labelX: number, labelY: number] {
+  const first = points[0];
+  const last = points.at(-1);
+  if (first === undefined || last === undefined) return ['', 0, 0];
+  const distance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(b.x - a.x, b.y - a.y);
+  const towards = (
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    length: number,
+  ) => {
+    const total = distance(from, to);
+    return total === 0
+      ? from
+      : {
+          x: from.x + ((to.x - from.x) * length) / total,
+          y: from.y + ((to.y - from.y) * length) / total,
+        };
+  };
+  let path = `M ${first.x} ${first.y}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const before = points[index - 1]!;
+    const corner = points[index]!;
+    const after = points[index + 1]!;
+    const radius = Math.min(8, distance(before, corner) / 2, distance(corner, after) / 2);
+    const start = towards(corner, before, radius);
+    const end = towards(corner, after, radius);
+    path += ` L ${start.x} ${start.y} Q ${corner.x} ${corner.y} ${end.x} ${end.y}`;
+  }
+  path += ` L ${last.x} ${last.y}`;
+
+  // The label sits halfway along the route.
+  const lengths = points.slice(1).map((point, index) => distance(points[index]!, point));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  for (let index = 0; index < lengths.length; index += 1) {
+    const length = lengths[index]!;
+    if (remaining <= length) {
+      const at = towards(points[index]!, points[index + 1]!, remaining);
+      return [path, at.x, at.y];
+    }
+    remaining -= length;
+  }
+  return [path, last.x, last.y];
+}

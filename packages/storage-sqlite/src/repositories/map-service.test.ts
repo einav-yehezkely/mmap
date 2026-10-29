@@ -353,6 +353,26 @@ describe('placements of canonical nodes', () => {
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
+
+  it('locks an item for automatic layout without losing its color, and the other way round', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A']);
+    const a = placementOf(view, 'A').id;
+    view = await maps.setPlacementStyle(view.map.id, view.map.revision, a, { color: 'blue' });
+    view = await maps.setPlacementStyle(view.map.id, view.map.revision, a, { pinned: true });
+    expect(placementOf(view, 'A').style).toEqual({ color: 'blue', pinned: true });
+
+    view = await maps.setPlacementStyle(view.map.id, view.map.revision, a, { color: 'red' });
+    expect(placementOf(view, 'A').style).toEqual({ color: 'red', pinned: true });
+    // Stored and read back.
+    expect(placementOf(await maps.getMap(view.map.id), 'A').style).toEqual({
+      color: 'red',
+      pinned: true,
+    });
+
+    view = await maps.setPlacementStyle(view.map.id, view.map.revision, a, { pinned: false });
+    expect(placementOf(view, 'A').style).toEqual({ color: 'red' });
+  });
 });
 
 describe('hierarchy', () => {
@@ -669,6 +689,89 @@ describe('map connectors in the knowledge graph', () => {
     expect(around?.nodes.map((node) => node.id)).toContain(a!.nodeId);
     // Another workspace sees none of them.
     expect((await graph.overview(WORKSPACE_B, filters, limits)).connectors).toEqual([]);
+  });
+});
+
+describe('saving an automatic layout (ADR-0012)', () => {
+  it('moves the items and keeps the routes with the map', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B']);
+    view = await maps.addConnection(view.map.id, view.map.revision, {
+      sourcePlacementId: placementOf(view, 'A').id,
+      targetPlacementId: placementOf(view, 'B').id,
+    });
+    const lineId = `connector:${view.connections[0]!.id}`;
+    const arrangement = {
+      direction: 'down' as const,
+      placed: [
+        { placementId: placementOf(view, 'A').id, x: 100, y: 0 },
+        { placementId: placementOf(view, 'B').id, x: 100, y: 200 },
+      ],
+      routes: [
+        {
+          lineId,
+          sourceSide: 'bottom' as const,
+          targetSide: 'top' as const,
+          points: [
+            { x: 170, y: 40 },
+            { x: 170, y: 200 },
+          ],
+        },
+      ],
+    };
+    view = await maps.saveArrangement(view.map.id, view.map.revision, arrangement);
+
+    expect(placementOf(view, 'B')).toMatchObject({ x: 100, y: 200 });
+    // The view returned by the save already has it (regression: it had the previous one).
+    expect(view.map.arrangement).toEqual(arrangement);
+    const reopened = await maps.getMap(view.map.id);
+    expect(reopened.map.arrangement).toEqual(arrangement);
+    // Moving items afterwards keeps the stored arrangement (the canvas decides when it applies).
+    const moved = await maps.movePlacements(reopened.map.id, reopened.map.revision, [
+      { placementId: placementOf(view, 'B').id, x: 0, y: 0 },
+    ]);
+    expect((await maps.getMap(moved.map.id)).map.arrangement).toEqual(arrangement);
+  });
+
+  it('refuses invalid layouts and hierarchy maps', async () => {
+    const { maps } = services(WORKSPACE_A);
+    const view = await placeNew(maps, await maps.createMap('Map'), ['A']);
+    const placed = [{ placementId: placementOf(view, 'A').id, x: 0, y: 0 }];
+    const route = (lineId: string) => ({
+      lineId,
+      sourceSide: 'right' as const,
+      targetSide: 'left' as const,
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+      ],
+    });
+    await expect(
+      maps.saveArrangement(view.map.id, view.map.revision, {
+        direction: 'right',
+        placed,
+        routes: [route('<script>')],
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      maps.saveArrangement(view.map.id, view.map.revision, {
+        direction: 'right',
+        placed: [
+          { placementId: 'b0000000-0000-4000-8000-000000000999' as PlacementId, x: 0, y: 0 },
+        ],
+        routes: [],
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    const tree = await maps.createMap('Tree', 'hierarchical');
+    const placedTree = await placeNew(maps, tree, ['T']);
+    await expect(
+      maps.saveArrangement(placedTree.map.id, placedTree.map.revision, {
+        direction: 'down',
+        placed: [{ placementId: placementOf(placedTree, 'T').id, x: 0, y: 0 }],
+        routes: [],
+      }),
+    ).rejects.toMatchObject({ code: 'INVARIANT_VIOLATION' });
   });
 });
 

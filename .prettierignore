@@ -6,3 +6,6 @@ coverage
 package-lock.json
 docs/PRD-desktop
 docs/PRD-web.md
+
+# Third-party license texts are kept verbatim.
+apps/desktop/resources/licenses/*-LICENSE.md

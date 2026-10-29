@@ -509,6 +509,19 @@ relationship that a map connector already shows (a connector linked to it) is dr
   where you started drawing), is linked to the connector, and appears in both notes, the graph and
   every map that shows both notes. Undo removes the link; to remove the relationship itself, delete
   it in a note's Relationships section.
+- **Auto layout** tidies the whole map in one step. Choose a direction next to the button (Left
+  to right, Top to bottom, Right to left or Bottom to top) and click **Auto layout**. The items
+  glide to their new places and the lines become straight, right-angled routes. When the
+  connectors form a plain tree (each item has at most one incoming connector and there are no
+  loops), every parent is centered over its children, which sit in one evenly spaced row and
+  branch from a shared line. Other maps (loops, items with several parents, cross-links) are
+  arranged in layers with as few crossings as possible. Separate groups and loose items are
+  placed side by side. **Undo** (or Ctrl+Z) puts every item back.
+- **Lock** an item to keep it where it is: select it and click **Lock** (a lock icon appears on
+  it; click **Locked** to unlock). Auto layout arranges the other items next to the locked ones.
+- The clean routes are saved with the map and come back when you open it again. When you move
+  an item afterwards, its lines go back to ordinary curves; the rest stay as arranged. Locks and
+  routes are not part of ZIP exports.
 - **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
 - **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
   has focus. This removes them from the map only; the nodes stay in your library.
@@ -633,9 +646,10 @@ Above the graph:
 - With **Note links** on, note links are **dashed** lines without an arrow. They are not
   relationships, so they are drawn differently and are off by default. Several links from one note
   to the same node are one line. The List says which way each link goes.
-- With **Connectors** on, the connectors you drew on mind maps are **dotted** lines with an arrow,
+- With **Connectors** on (the default), the connectors you drew on mind maps are **dotted** lines with an arrow,
   labeled with their map ("on Thermodynamics", or "on 2 maps" when the same two notes are
-  connected on several maps). Like note links, they are not relationships and are off by default.
+  connected on several maps). Like note links, they are not relationships. Click **Connectors** to
+  hide them.
 - Being on the same mind map never draws a line between two nodes.
 
 The line under the graph repeats what the lines mean.

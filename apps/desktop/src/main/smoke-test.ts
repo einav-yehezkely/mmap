@@ -462,6 +462,101 @@ export async function runSmokeTest(
     ),
   );
   checks.push(
+    await check(
+      'auto layout arranges a messy map, keeps locked items, Undo restores it, and its routes are kept',
+      async () => {
+        const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { maps } = window.mmap;
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const until = async (predicate, timeoutMs) => {
+            const start = performance.now();
+            while (performance.now() - start < timeoutMs) {
+              if (await predicate()) return true;
+              await wait(50);
+            }
+            return false;
+          };
+          const buttonWithText = (text) =>
+            [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === text);
+          const press = (element, what) => {
+            if (!element) throw new Error(what + ' not found');
+            element.click();
+          };
+          // A messy map: five items piled up, connected in a chain, plus one locked item.
+          let view = (await maps.create({ title: 'Smoke auto layout' })).data;
+          for (const [index, title] of ['One', 'Two', 'Three', 'Four', 'Five', 'Locked'].entries()) {
+            view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
+              newNodeTitle: 'Smoke layout ' + title, x: 40 + (index % 2) * 15, y: 30 + index * 6 })).data;
+          }
+          const id = (title) => view.placements.find((p) => p.nodeTitle === 'Smoke layout ' + title).id;
+          for (const [from, to] of [['One', 'Two'], ['Two', 'Three'], ['Three', 'Four'], ['Four', 'Five'], ['Five', 'Two']]) {
+            view = (await maps.addConnection({ mapId: view.map.id, expectedRevision: view.map.revision,
+              sourcePlacementId: id(from), targetPlacementId: id(to) })).data;
+          }
+          view = (await maps.setPlacementPinned({ mapId: view.map.id, expectedRevision: view.map.revision,
+            placementId: id('Locked'), pinned: true })).data;
+          const before = new Map(view.placements.map((p) => [p.id, { x: p.x, y: p.y }]));
+          const mapId = view.map.id;
+          press(buttonWithText('Home'), 'Home');
+          await wait(300);
+          press(buttonWithText('Mind Maps'), 'Mind Maps');
+          const opened = await until(() => {
+            const button = document.querySelector('main')?.textContent.includes('New map')
+              ? [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Smoke auto layout'))
+              : undefined;
+            button?.click();
+            return Boolean(button);
+          }, 3000);
+          if (!opened) return 'map list did not show the map';
+          if (!(await until(() => document.querySelectorAll('.react-flow__node').length === 6, 5000))) return 'map not shown';
+          await wait(500);
+          press(buttonWithText('Auto layout'), 'Auto layout');
+          const arranged = async () => {
+            const current = (await maps.get({ mapId })).data;
+            const at = (title) => current.placements.find((p) => p.nodeTitle === 'Smoke layout ' + title);
+            // The chain One → Two → Three runs left to right; the cycle Two → … → Five → Two is broken
+            // where ELK chooses, so only the part outside it is checked.
+            return at('One').x < at('Two').x && at('Two').x < at('Three').x ? current : null;
+          };
+          let after = null;
+          for (let attempt = 0; attempt < 60 && !after; attempt += 1) { after = await arranged(); if (!after) await wait(100); }
+          if (!after) return 'the map was not arranged left to right';
+          const locked = after.placements.find((p) => p.id === id('Locked'));
+          if (locked.x !== before.get(locked.id).x || locked.y !== before.get(locked.id).y) return 'the locked item moved';
+          if (document.body.textContent.includes('could not be arranged')) return 'layout reported a failure';
+          press(buttonWithText('Undo'), 'Undo');
+          const restored = await until(async () => {
+            const current = (await maps.get({ mapId })).data;
+            return current.placements.every((p) => p.x === before.get(p.id).x && p.y === before.get(p.id).y);
+          }, 5000);
+          if (!restored) return 'Undo did not put the items back';
+
+          // Arranged again, the clean routes are kept with the map: they come back after leaving.
+          const routed = () =>
+            [...document.querySelectorAll('.react-flow__edge.mmap-connector-line path.react-flow__edge-path')].some(
+              (path) => (path.getAttribute('d') ?? '').includes(' L '),
+            );
+          press(buttonWithText('Auto layout'), 'Auto layout');
+          if (!(await until(async () => Boolean(await arranged()) && routed(), 5000))) return 'second layout not drawn with routes';
+          await wait(500);
+          press(buttonWithText('All maps'), 'All maps');
+          const reopened = await until(() => {
+            const button = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Smoke auto layout'));
+            button?.click();
+            return Boolean(button);
+          }, 3000);
+          if (!reopened) return 'could not reopen the map';
+          if (!(await until(() => document.querySelectorAll('.react-flow__node').length === 6 && routed(), 5000))) return 'the routes were not kept after leaving the map';
+          press(buttonWithText('All maps'), 'All maps');
+          await maps.delete({ mapId });
+          return 'ok';
+        })()`)) as string;
+        if (outcome !== 'ok') throw new Error(outcome);
+      },
+    ),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",
