@@ -203,6 +203,46 @@ export async function checkGraphRelationship(window: BrowserWindow): Promise<voi
   if (outcome !== 'ok') throw new Error(outcome);
 }
 
+/**
+ * Maps as drawn: two maps that share a note are drawn as two groups in the graph, the shared note
+ * once plus a copy.
+ */
+export async function checkGraphMapGroups(window: BrowserWindow): Promise<void> {
+  const outcome = (await window.webContents.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const until = async (predicate, timeoutMs) => {
+      const start = performance.now();
+      while (performance.now() - start < timeoutMs) {
+        if (predicate()) return true;
+        await wait(20);
+      }
+      return false;
+    };
+    const buttonWithText = (text) =>
+      [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === text);
+    const { maps } = window.mmap;
+    let first = (await maps.create({ title: 'Smoke groups A' })).data;
+    first = (await maps.addPlacement({ mapId: first.map.id, expectedRevision: first.map.revision, newNodeTitle: 'Smoke shared note', x: 0, y: 0 })).data;
+    first = (await maps.addPlacement({ mapId: first.map.id, expectedRevision: first.map.revision, newNodeTitle: 'Smoke child note', x: 0, y: 120 })).data;
+    first = (await maps.addConnection({ mapId: first.map.id, expectedRevision: first.map.revision, sourcePlacementId: first.placements[0].id, targetPlacementId: first.placements[1].id })).data;
+    let second = (await maps.create({ title: 'Smoke groups B', mode: 'hierarchical' })).data;
+    second = (await maps.addPlacement({ mapId: second.map.id, expectedRevision: second.map.revision, nodeId: first.placements[0].nodeId, x: 0, y: 0 })).data;
+    buttonWithText('Home')?.click();
+    await wait(300);
+    buttonWithText('Knowledge Graph')?.click();
+    const canvas = () => document.querySelector('[data-map-groups]');
+    const shown = await until(() => Number(canvas()?.dataset.mapGroups) >= 2 && Number(canvas()?.dataset.mapCopies) >= 1, 8000);
+    const result = shown
+      ? (!document.body.textContent.includes('maps shown as drawn') ? 'no maps-as-drawn statement' : document.querySelector('[aria-current="page"]')?.textContent.trim() !== 'Knowledge Graph' ? 'the sidebar does not mark Knowledge Graph as the current page' : 'ok')
+      : 'groups not drawn (' + (canvas()?.dataset.mapGroups ?? 'none') + ' groups, ' + (canvas()?.dataset.mapCopies ?? 'none') + ' copies)';
+    await maps.delete({ mapId: first.map.id });
+    await maps.delete({ mapId: second.map.id });
+    buttonWithText('Home')?.click();
+    return result;
+  })()`)) as string;
+  if (outcome !== 'ok') throw new Error(outcome);
+}
+
 export async function checkTimeline(window: BrowserWindow): Promise<void> {
   const outcome = (await window.webContents.executeJavaScript(`
     (async () => {

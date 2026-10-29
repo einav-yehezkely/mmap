@@ -643,3 +643,15 @@ overlaps, shared branching lines, mirrored directions, strategy choice); `map-mo
 moves items, returns and stores it; invalid layouts and hierarchy maps are refused); pinned
 migration checksum; packaged smoke check "auto layout arranges a messy map, keeps locked items,
 Undo restores it, and its routes are kept" (leaves and reopens the map).
+
+## 19. Maps as drawn in the knowledge graph (2026-10-29)
+
+[ADR-0010 amendment](adr/0010-graph-and-timeline.md#amendment-2026-10-29-maps-as-drawn). The
+graph toolbar's **Maps as drawn** (on by default) shows every mind map as a framed group laid out
+as on the map, with its connectors and hierarchy lines; notes on several maps have dashed copies
+linked to the note; notes on no map keep their arrangement below the groups; double-clicking a
+group opens the map. No new channels.
+
+Tests: `graph-map-groups.test.ts` (groups with map positions, copies and same-node lines,
+hierarchy and arranged lines, loose notes below, hidden connectors, empty maps); packaged smoke
+check "the knowledge graph shows each mind map as drawn, with copies of shared notes".

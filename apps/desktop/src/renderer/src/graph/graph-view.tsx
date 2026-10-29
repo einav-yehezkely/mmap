@@ -10,15 +10,21 @@
  * out only on the first visit and when the user asks (Rearrange).
  *
  * Map membership is shown on nodes (badges) and in the side panel, list and tooltip. It is never
- * drawn as an edge, and a node appears once however many maps place it.
+ * drawn as an edge between two notes.
+ *
+ * Maps as drawn (on by default): every mind map is a framed group showing the map as it is laid
+ * out, with its lines; a note on several maps has linked copies in the other groups, and notes on
+ * no map keep their own arrangement below the groups (see `graph-map-groups.ts`). Positions then
+ * come from the maps, so dragging is not saved and Rearrange, Regions and collapsing are off.
  */
 
-import type { GraphSliceDto, RelationshipTypeViewDto } from '@mmap/contracts';
+import type { GraphSliceDto, MapViewDto, RelationshipTypeViewDto } from '@mmap/contracts';
 import {
   Focus,
   Info,
   LayoutGrid,
   Link2,
+  Map as MapIcon,
   Maximize,
   Minus,
   Plus,
@@ -41,6 +47,7 @@ import { TagFilterBar, type TagOption } from '../nodes/tag-filter-bar';
 import { GraphCanvas, type GraphCanvasHandle } from './graph-canvas';
 import { placeNodes, type Point } from './graph-layout';
 import { GraphMapFilter } from './graph-map-filter';
+import { withMapGroups } from './graph-map-groups';
 import {
   buildGraphList,
   computeEmphasis,
@@ -59,6 +66,12 @@ import { collapseMaps, isSummaryId, regionSpecs, SUMMARY_PREFIX } from './graph-
 
 /** Most regions drawn at once; beyond that overlapping outlines stop being readable. */
 const MAX_REGIONS = 12;
+/** Maps as drawn: most maps loaded as groups, and most map items in all of them. */
+const MAX_GROUP_MAPS = 40;
+const MAX_GROUP_ITEMS = 4_000;
+
+/** Positions in "Maps as drawn" come from the maps; drags there are not saved. */
+const ignorePositions = () => undefined;
 
 interface Filters {
   readonly text: string;
@@ -153,6 +166,13 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
   /** Map regions drawn behind the graph, and maps collapsed into summary nodes. */
   const [showRegions, setShowRegions] = useState(false);
   const [collapsedMapIds, setCollapsedMapIds] = useState<ReadonlySet<string>>(new Set());
+  /** Maps as drawn, and the map views it shows (null while loading). */
+  const [mapsAsDrawn, setMapsAsDrawn] = useState(true);
+  const [mapViews, setMapViews] = useState<{
+    readonly views: readonly MapViewDto[];
+    /** Maps that would be shown without the limits. */
+    readonly wanted: number;
+  } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /**
    * The node whose side panel has the "Add relationship" form open. While it matches the
@@ -263,6 +283,32 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
   useNodesChanged(reload);
 
+  // Maps as drawn: loads the maps to show (the chosen maps when the map filter is used), in title
+  // order, within the limits. Reloaded with the graph, so map changes show up too.
+  useEffect(() => {
+    if (!mapsAsDrawn || state === null) return;
+    let cancelled = false;
+    const chosen = new Set(filters.mapIds);
+    const wanted = state.maps.filter((map) => chosen.size === 0 || chosen.has(map.id));
+    const load = async () => {
+      const views: MapViewDto[] = [];
+      let items = 0;
+      for (const map of wanted.slice(0, MAX_GROUP_MAPS)) {
+        const view = await unwrap(window.mmap.maps.get({ mapId: map.id }));
+        if (items + view.placements.length > MAX_GROUP_ITEMS) break;
+        items += view.placements.length;
+        views.push(view);
+      }
+      if (!cancelled) setMapViews({ views, wanted: wanted.length });
+    };
+    load().catch((caught: unknown) => {
+      if (!cancelled) setError(errorMessage(caught));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mapsAsDrawn, state, filters.mapIds]);
+
   const expand = async (nodeId: string) => {
     try {
       const slice = await unwrap(
@@ -305,19 +351,25 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
 
   const colors = useMemo(() => mapColors(state?.maps ?? []), [state]);
   const collapse = useMemo(
-    () => (state === null ? null : collapseMaps(state, collapsedMapIds)),
-    [state, collapsedMapIds],
+    () => (state === null || mapsAsDrawn ? null : collapseMaps(state, collapsedMapIds)),
+    [state, collapsedMapIds, mapsAsDrawn],
   );
-  const elements = useMemo(
-    () =>
-      state === null
-        ? []
-        : toCytoscapeElements(state, positions, { showMaps, collapse: collapse ?? undefined }),
-    [state, positions, showMaps, collapse],
-  );
+  const mapGroups = useMemo(() => {
+    if (state === null || !mapsAsDrawn || mapViews === null) return null;
+    return withMapGroups(toCytoscapeElements(state, positions, { showMaps }), mapViews.views, {
+      colors,
+      showConnectors: filters.includeConnectors,
+    });
+  }, [state, positions, showMaps, mapsAsDrawn, mapViews, colors, filters.includeConnectors]);
+  const elements = useMemo(() => {
+    if (state === null) return [];
+    // Maps as drawn waits for the maps, so the graph does not open in the other arrangement.
+    if (mapsAsDrawn) return mapGroups?.elements ?? [];
+    return toCytoscapeElements(state, positions, { showMaps, collapse: collapse ?? undefined });
+  }, [state, positions, showMaps, collapse, mapsAsDrawn, mapGroups]);
   const regionView = useMemo(
     () =>
-      state === null || !showRegions
+      state === null || !showRegions || mapsAsDrawn
         ? { regions: [], omitted: 0 }
         : regionSpecs(
             state,
@@ -327,7 +379,7 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
             filters.mapIds,
             MAX_REGIONS,
           ),
-    [state, showRegions, colors, collapsedMapIds, collapse, filters.mapIds],
+    [state, showRegions, colors, collapsedMapIds, collapse, filters.mapIds, mapsAsDrawn],
   );
   const toggleCollapsed = (mapId: string) =>
     setCollapsedMapIds((current) => {
@@ -495,13 +547,31 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
         <Button
           size="sm"
           variant="ghost"
+          disabled={mapsAsDrawn}
           onClick={() => canvas.current?.rearrange()}
-          title="Lay out the visible graph again (your current arrangement is replaced)"
+          title={
+            mapsAsDrawn
+              ? 'Maps are shown as drawn; turn off Maps as drawn to rearrange the graph'
+              : 'Lay out the visible graph again (your current arrangement is replaced)'
+          }
         >
           <LayoutGrid aria-hidden="true" />
           Rearrange
         </Button>
         <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+        <Button
+          size="sm"
+          variant={mapsAsDrawn ? 'outline' : 'ghost'}
+          aria-pressed={mapsAsDrawn}
+          onClick={() => {
+            setMapsAsDrawn((value) => !value);
+            setMapViews(null);
+          }}
+          title="Show each mind map as a group, laid out as on the map"
+        >
+          <MapIcon aria-hidden="true" />
+          Maps as drawn
+        </Button>
         <Button
           size="sm"
           variant={showMaps ? 'outline' : 'ghost'}
@@ -516,8 +586,13 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
           size="sm"
           variant={showRegions ? 'outline' : 'ghost'}
           aria-pressed={showRegions}
+          disabled={mapsAsDrawn}
           onClick={() => setShowRegions((value) => !value)}
-          title="Outline the members of each mind map (maps can overlap)"
+          title={
+            mapsAsDrawn
+              ? 'Maps are already shown as groups'
+              : 'Outline the members of each mind map (maps can overlap)'
+          }
         >
           <SquareDashed aria-hidden="true" />
           Regions
@@ -715,7 +790,17 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
               </Button>
             </span>
           )}
-          {collapsedMapIds.size > 0 && (
+          {mapsAsDrawn && mapGroups !== null && mapViews !== null && (
+            <span>
+              {mapGroups.groupCount === 1
+                ? '1 map shown as drawn.'
+                : `${mapGroups.groupCount} maps shown as drawn.`}
+              {mapViews.views.length < mapViews.wanted &&
+                ` ${mapViews.wanted - mapViews.views.length} more not shown (limit); choose maps in Filters.`}
+              {filterCount > 0 && ' Maps are shown in full; filters apply to the other notes.'}
+            </span>
+          )}
+          {!mapsAsDrawn && collapsedMapIds.size > 0 && (
             <span className="flex items-center gap-1 text-foreground">
               {collapsedMapIds.size === 1
                 ? '1 map collapsed.'
@@ -755,6 +840,8 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
           <div className={cn('h-full', tab !== 'graph' && 'hidden')}>
             {canvasSetup !== null && (
               <GraphCanvas
+                // A new canvas when the arrangement changes: nodes change groups and places.
+                key={mapsAsDrawn ? 'maps' : 'graph'}
                 ref={canvas}
                 elements={elements}
                 emphasis={emphasis}
@@ -763,12 +850,14 @@ export function GraphView({ onOpenNode, onOpenMap }: GraphViewProps) {
                 showAllLabels={showAllLabels}
                 regions={regionView.regions}
                 fitRequest={fitRequest}
-                arrangeOnLoad={canvasSetup.arrangeOnLoad}
+                arrangeOnLoad={!mapsAsDrawn && canvasSetup.arrangeOnLoad}
+                followPositions={mapsAsDrawn}
                 onSelect={onCanvasSelect}
                 onOpenNode={(id) => {
                   if (!isSummaryId(id)) onOpenNode(id);
                 }}
-                onPositionsChanged={onPositionsChanged}
+                onOpenMap={onOpenMap}
+                onPositionsChanged={mapsAsDrawn ? ignorePositions : onPositionsChanged}
               />
             )}
             {state !== null && state.nodes.size === 0 && (
