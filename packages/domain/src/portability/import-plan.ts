@@ -2,7 +2,7 @@
  * Plans an import of archive data into a workspace (PRD §5.11), without touching storage.
  *
  * Rules:
- * - **New records, new IDs.** Every node, relationship, map, placement, connector, timeline
+ * - **New records, new IDs.** Every node, relationship, map, placement, connector, region, timeline
  *   event and attachment gets a new ID, and every internal reference is rewritten through an
  *   explicit ID mapping: relationship endpoints, map hierarchy, connectors, tags, timeline events,
  *   graph positions, and the wikilinks and attachments inside note JSON. Archive IDs are never
@@ -31,6 +31,7 @@ import type {
   IdGenerator,
   MapConnectionId,
   MapId,
+  MapRegionId,
   NodeId,
   PlacementId,
   RelationshipId,
@@ -39,7 +40,12 @@ import type {
   TimelineEventId,
   WorkspaceId,
 } from '../ids';
-import { normalizeMapTitle, normalizeConnectorLabel } from '../application/map-service';
+import {
+  MIN_REGION_SIZE,
+  normalizeConnectorLabel,
+  normalizeMapTitle,
+  normalizeRegionTitle,
+} from '../application/map-service';
 import { normalizeRelationshipDescription } from '../application/relationship-service';
 import { normalizeMilestoneTitle, normalizeReflection } from '../application/timeline-service';
 import { normalizeNodeSummary, normalizeNodeTitle } from '../knowledge/node-fields';
@@ -53,6 +59,7 @@ import type { GraphNodePosition } from '../ports/graph';
 import {
   PLACEMENT_COLORS,
   type MapConnectionRecord,
+  type MapRegionRecord,
   type MindMapRecord,
   type PlacementColor,
   type PlacementRecord,
@@ -112,6 +119,7 @@ export interface ImportSummary {
   readonly maps: number;
   readonly placements: number;
   readonly connections: number;
+  readonly regions: number;
   readonly timelineEvents: number;
   readonly attachments: number;
 }
@@ -126,6 +134,7 @@ export interface ImportPlan {
   /** Parents come before their children. */
   readonly placements: readonly PlacementRecord[];
   readonly connections: readonly MapConnectionRecord[];
+  readonly regions: readonly MapRegionRecord[];
   readonly timelineEvents: readonly TimelineEventRecord[];
   readonly attachments: readonly PlannedAttachment[];
   readonly graphPositions: readonly GraphNodePosition[];
@@ -432,6 +441,30 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
     };
   });
 
+  const regionIds = new Set<string>();
+  const regions = (data.regions ?? []).map((region): MapRegionRecord => {
+    if (regionIds.has(region.id)) inconsistent(`region ${region.id} repeats`);
+    regionIds.add(region.id);
+    const mapId = mapIdMap.get(region.mapId);
+    if (mapId === undefined) inconsistent('a region refers to a map that is not in the archive');
+    if (!(region.width >= MIN_REGION_SIZE && region.height >= MIN_REGION_SIZE)) {
+      inconsistent('a region is too small');
+    }
+    return {
+      id: newId() as MapRegionId,
+      workspaceId,
+      mapId,
+      title: normalizeRegionTitle(region.title),
+      color: toPlacementColor(region.color),
+      x: region.x,
+      y: region.y,
+      width: region.width,
+      height: region.height,
+      createdAt: timestamp(region.createdAt, 'region'),
+      updatedAt: timestamp(region.updatedAt, 'region'),
+    };
+  });
+
   // --- Timeline --------------------------------------------------------------------------------
   const eventIds = new Set<string>();
   const timelineEvents = data.timelineEvents.map((event): TimelineEventRecord => {
@@ -497,6 +530,7 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
     maps,
     placements,
     connections,
+    regions,
     timelineEvents,
     attachments,
     graphPositions,
@@ -511,6 +545,7 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
       maps: maps.length,
       placements: placements.length,
       connections: connections.length,
+      regions: regions.length,
       timelineEvents: timelineEvents.length,
       attachments: attachments.length,
     },

@@ -11,6 +11,7 @@ import type {
   MapArrangement,
   MapConnectionId,
   MapId,
+  MapRegionId,
   MapService,
   MapView,
   NodeId,
@@ -37,6 +38,15 @@ export function toMapViewDto(view: MapView): MapViewDto {
       revision: map.revision,
       updatedAt: map.updatedAt,
     },
+    regions: view.regions.map((region) => ({
+      id: region.id,
+      title: region.title,
+      color: region.color,
+      x: region.x,
+      y: region.y,
+      width: region.width,
+      height: region.height,
+    })),
     placements: view.placements.map((placement) => ({
       id: placement.id,
       nodeId: placement.nodeId,
@@ -183,13 +193,33 @@ export function createMapIpcServices(manager: WorkspaceManager): Pick<IpcService
           },
         ),
       ),
-    'maps:save-arrangement': async ({ mapId, expectedRevision, arrangement }) =>
+    'maps:save-arrangement': async ({ mapId, expectedRevision, arrangement, regions }) =>
       toMapViewDto(
         await maps().saveArrangement(
           mapId as MapId,
           expectedRevision,
           arrangement as MapArrangement,
+          (regions ?? []).map((bounds) => ({
+            ...bounds,
+            regionId: bounds.regionId as MapRegionId,
+          })),
         ),
+      ),
+    'maps:add-region': async ({ mapId, expectedRevision, ...input }) =>
+      toMapViewDto(await maps().addRegion(mapId as MapId, expectedRevision, input)),
+    'maps:update-region': async ({ mapId, expectedRevision, regionId, changes, moves }) =>
+      toMapViewDto(
+        await maps().updateRegion(
+          mapId as MapId,
+          expectedRevision,
+          regionId as MapRegionId,
+          changes,
+          (moves ?? []).map((move) => ({ ...move, placementId: move.placementId as PlacementId })),
+        ),
+      ),
+    'maps:remove-region': async ({ mapId, expectedRevision, regionId }) =>
+      toMapViewDto(
+        await maps().removeRegion(mapId as MapId, expectedRevision, regionId as MapRegionId),
       ),
     'maps:set-placement-pinned': async ({ mapId, expectedRevision, placementId, pinned }) =>
       toMapViewDto(

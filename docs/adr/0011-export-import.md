@@ -101,6 +101,8 @@ wikilink target IDs and attachment IDs ([ADR-0008](0008-wikilinks-and-note-schem
 - Validation reads the whole data file into memory (bounded at 256 MiB). The import's records
   are written in a worker thread (amendment of 2026-10-28), so the window keeps responding; there
   is no progress reporting yet.
+- Version 2 (2026-10-29, [ADR-0013](0013-map-regions.md)) added `regions` to `data/workspace.json`;
+  version 1 archives, which have none, still import.
 - `formatVersion` must be raised whenever the archive layout or data shape changes; older builds
   then refuse newer archives with an actionable message.
 - Map viewports, placement coordinates, colors and collapse states, and graph positions are

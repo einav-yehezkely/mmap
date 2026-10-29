@@ -26,6 +26,7 @@ import { toAttachmentRecord } from '../repositories/sqlite-attachment-repository
 import { toKnowledgeNodeRecord } from '../repositories/sqlite-knowledge-node-repository';
 import {
   toMapConnectionRecord,
+  toMapRegionRecord,
   toMindMapRecord,
   toPlacementRecord,
 } from '../repositories/sqlite-map-repository';
@@ -96,6 +97,9 @@ function readAll(database: DatabaseSync, workspaceId: WorkspaceId): WorkspaceSna
     connections: all(
       'SELECT * FROM map_connections WHERE workspace_id = ? ORDER BY map_id, created_at, id',
     ).map(toMapConnectionRecord),
+    regions: all(
+      'SELECT * FROM map_regions WHERE workspace_id = ? ORDER BY map_id, created_at, id',
+    ).map(toMapRegionRecord),
     timelineEvents: all(
       'SELECT * FROM timeline_events WHERE workspace_id = ? ORDER BY occurred_at, id',
     ).map(toTimelineEventRecord),

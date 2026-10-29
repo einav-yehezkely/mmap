@@ -48,6 +48,11 @@ function fitPadding(cy: cytoscape.Core): number {
 }
 const SAVE_DELAY_MS = 500;
 
+/** Map groups and regions are frames around items, not notes. */
+function isFrame(node: cytoscape.NodeSingular): boolean {
+  return node.hasClass('map-group') || node.hasClass('map-region');
+}
+
 /** The knowledge node a canvas node stands for (a copy's node, or the node itself). */
 function keyOf(node: cytoscape.NodeSingular): string {
   return nodeKeyOf(node.data() as Record<string, unknown>);
@@ -254,6 +259,27 @@ function graphStyle(): cytoscape.StylesheetJson {
         'font-size': 12,
       },
     },
+    {
+      // A region of a map: a dashed frame in the region's color, inside the map's group.
+      selector: 'node.map-region',
+      style: {
+        shape: 'round-rectangle',
+        'background-color': 'data(color)',
+        'background-opacity': 0.08,
+        'border-color': 'data(color)',
+        'border-width': 1.5,
+        'border-style': 'dashed',
+        padding: '18px',
+        label: 'data(label)',
+        'text-valign': 'top',
+        'text-halign': 'center',
+        'text-margin-y': -4,
+        'font-size': 11,
+        'font-weight': 'bold',
+        color: 'data(color)',
+        'text-max-width': '300px',
+      },
+    },
     { selector: 'node.map-item.in-maps', style: { 'pie-size': '30%' } },
     { selector: 'node.copy', style: { 'border-style': 'dashed' } },
     {
@@ -455,7 +481,7 @@ export function GraphCanvas({
       reportPositions(visible.nodes());
       if (container.current !== null) {
         container.current.dataset.renderedNodes = String(
-          cy.nodes(':visible').not('.map-group, .copy').length,
+          cy.nodes(':visible').not('.map-group, .map-region, .copy').length,
         );
       }
     });
@@ -501,14 +527,14 @@ export function GraphCanvas({
     cy.on('tap', 'node', (event) => {
       const node = event.target as cytoscape.NodeSingular;
       // A map group is a frame, not a node: a click on it is like a click on the background.
-      latest.current.onSelect(node.hasClass('map-group') ? null : keyOf(node));
+      latest.current.onSelect(isFrame(node) ? null : keyOf(node));
     });
     cy.on('tap', (event) => {
       if (event.target === cy) latest.current.onSelect(null);
     });
     cy.on('dbltap', 'node', (event) => {
       const node = event.target as cytoscape.NodeSingular;
-      if (node.hasClass('map-group')) latest.current.onOpenMap?.(String(node.data('mapId')));
+      if (isFrame(node)) latest.current.onOpenMap?.(String(node.data('mapId')));
       else latest.current.onOpenNode(keyOf(node));
     });
     cy.on('mouseover', 'node', (event) => {
@@ -518,7 +544,7 @@ export function GraphCanvas({
         x: position.x,
         y: position.y,
         title: String(node.data('label')),
-        maps: node.hasClass('map-group') ? '' : String(node.data('mapsText') ?? ''),
+        maps: isFrame(node) ? '' : String(node.data('mapsText') ?? ''),
       });
     });
     cy.on('mouseout', 'node', () => setTooltip(null));
@@ -636,13 +662,13 @@ export function GraphCanvas({
         fitCapped(cy, followPositions);
         if (container.current !== null) {
           container.current.dataset.renderedNodes = String(
-            cy.nodes().not('.map-group, .copy').length,
+            cy.nodes().not('.map-group, .map-region, .copy').length,
           );
         }
       }
     } else if (container.current !== null) {
       container.current.dataset.renderedNodes = String(
-        cy.nodes(':visible').not('.map-group, .copy').length,
+        cy.nodes(':visible').not('.map-group, .map-region, .copy').length,
       );
     }
     // Only element changes trigger a synchronization; the other values are read once on load.
@@ -655,14 +681,17 @@ export function GraphCanvas({
     if (cy === null) return;
     cy.batch(() => {
       cy.elements().removeClass('dimmed emphasized focus-hidden');
-      const items = cy.nodes().not('.map-group');
+      const items = cy.nodes().not('.map-group, .map-region');
       if (focusNodeIds !== null) {
         items.forEach((node) => {
           if (!focusNodeIds.has(keyOf(node))) node.addClass('focus-hidden');
         });
-        cy.nodes('.map-group').forEach((group) => {
-          if (group.children().not('.focus-hidden').empty()) group.addClass('focus-hidden');
-        });
+        // Innermost frames first, so a map whose regions are all hidden is hidden too.
+        for (const frames of ['.map-region', '.map-group']) {
+          cy.nodes(frames).forEach((frame) => {
+            if (frame.children().not('.focus-hidden').empty()) frame.addClass('focus-hidden');
+          });
+        }
       }
       if (emphasis.nodes !== null) {
         items.forEach((node) => {

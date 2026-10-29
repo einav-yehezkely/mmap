@@ -521,7 +521,20 @@ relationship that a map connector already shows (a connector linked to it) is dr
   it; click **Locked** to unlock). Auto layout arranges the other items next to the locked ones.
 - The clean routes are saved with the map and come back when you open it again. When you move
   an item afterwards, its lines go back to ordinary curves; the rest stay as arranged. Locks and
-  routes are not part of ZIP exports.
+  routes are not part of ZIP exports (regions are).
+- **Regions** group items by subject. Select the items (Ctrl+click, or Shift and drag a box) and
+  click **Add region**: a region is drawn around them and its name opens for typing; press Enter
+  to save it. With nothing selected, the region appears in the middle of the view. An item is in a
+  region when its middle is inside it, so drag an item in or out to change its region.
+  - **Move** a region by dragging it: the items inside move with it.
+  - **Resize** it with the handles that appear when it is selected.
+  - **Rename** it by double-clicking its name; choose a **Color** for it while it is selected.
+  - **Remove** it with the × button or Delete; its items stay on the map.
+  - **Auto layout** arranges each region's items inside it, fits the region around them, and keeps
+    regions apart. A region with a locked item stays as it is.
+  - Ctrl+Z undoes region changes too. Regions are shown only in freeform mode (they come back when
+    you switch back from a hierarchy), are copied with the map, and are part of ZIP exports. In the
+    knowledge graph's **Maps as drawn** view they appear as frames inside their map.
 - **Select several items** with Ctrl+click, or by holding Shift and dragging a box around them.
 - **Remove** the selected items or connectors with **Delete** (or Backspace) while the map canvas
   has focus. This removes them from the map only; the nodes stay in your library.

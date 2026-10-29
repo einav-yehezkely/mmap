@@ -21,6 +21,7 @@ export type TagId = Brand<string, 'TagId'>;
 export type MapId = Brand<string, 'MapId'>;
 export type PlacementId = Brand<string, 'PlacementId'>;
 export type MapConnectionId = Brand<string, 'MapConnectionId'>;
+export type MapRegionId = Brand<string, 'MapRegionId'>;
 export type TimelineEventId = Brand<string, 'TimelineEventId'>;
 export type AttachmentId = Brand<string, 'AttachmentId'>;
 export type TransferJobId = Brand<string, 'TransferJobId'>;

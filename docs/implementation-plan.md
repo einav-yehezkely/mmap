@@ -655,3 +655,20 @@ group opens the map. No new channels.
 Tests: `graph-map-groups.test.ts` (groups with map positions, copies and same-node lines,
 hierarchy and arranged lines, loose notes below, hidden connectors, empty maps); packaged smoke
 check "the knowledge graph shows each mind map as drawn, with copies of shared notes".
+
+## 20. Regions on freeform maps (2026-10-29)
+
+[ADR-0013](adr/0013-map-regions.md). Named, colored rectangles that group items by subject:
+**Add region** (around the selection or in the view), drag to move with the items inside, resize,
+rename, color, remove, all undoable. Membership is geometric (smallest region around an item's
+center). Auto layout arranges each region's items inside it and the regions as blocks. Migration 7
+(`map_regions`); `maps:add-region`, `maps:update-region`, `maps:remove-region` (97 channels);
+`maps:save-arrangement` takes region bounds. Archive format version 2 carries regions. The graph's
+Maps as drawn view nests regions in their map's group.
+
+Tests: `map-service.test.ts` (add, change with carried items, remove; invalid input, hierarchy
+maps, stale revisions; duplication, arrangement bounds, deletion); `round-trip.test.ts` (regions
+survive export and import); `auto-layout.test.ts` (region owners, items kept inside fitted
+regions, locked and empty regions left alone); `graph-map-groups.test.ts` (nested region frames);
+pinned migration checksum; packaged smoke check "regions: added from the toolbar and renamed, kept
+together by auto layout, and undone".

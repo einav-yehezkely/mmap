@@ -34,6 +34,32 @@ export const mapSummarySchema = z.strictObject({
   updatedAt: z.string(),
 });
 
+/** A region of a freeform map: a named rectangle; items are in it when their center is inside. */
+export const mapRegionViewSchema = z.strictObject({
+  id: z.uuid(),
+  title: z.string(),
+  color: colorSchema,
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+
+const regionSize = z.number().finite().min(40).max(1_000_000);
+const regionChangesSchema = z.strictObject({
+  title: titleInput.optional(),
+  color: colorSchema.optional(),
+  x: coordinate.optional(),
+  y: coordinate.optional(),
+  width: regionSize.optional(),
+  height: regionSize.optional(),
+});
+const positionChangeSchema = z.strictObject({
+  placementId: z.uuid(),
+  x: coordinate,
+  y: coordinate,
+});
+
 export const placementViewSchema = z.strictObject({
   id: z.uuid(),
   nodeId: z.uuid(),
@@ -94,6 +120,8 @@ export const mapViewSchema = z.strictObject({
   }),
   placements: z.array(placementViewSchema).readonly(),
   connections: z.array(mapConnectionViewSchema).readonly(),
+  /** Regions (freeform maps), oldest first. */
+  regions: z.array(mapRegionViewSchema).readonly(),
   /** Semantic relationships between nodes on the map; shown, never stored as map data. */
   relationships: z
     .array(
@@ -224,7 +252,50 @@ export const mapContracts = {
   /** Locks or unlocks an item's position for automatic layout. */
   /** Saves an automatic layout: moves the arranged items and stores the routes, as one change. */
   saveArrangement: {
-    request: z.strictObject({ ...structural, arrangement: arrangementSchema }),
+    request: z.strictObject({
+      ...structural,
+      arrangement: arrangementSchema,
+      /** New bounds of the regions the layout arranged. */
+      regions: z
+        .array(
+          z.strictObject({
+            regionId: z.uuid(),
+            x: coordinate,
+            y: coordinate,
+            width: regionSize,
+            height: regionSize,
+          }),
+        )
+        .max(200)
+        .readonly()
+        .optional(),
+    }),
+    response: mapViewSchema,
+  },
+  addRegion: {
+    request: z.strictObject({
+      ...structural,
+      title: titleInput,
+      color: colorSchema.optional(),
+      x: coordinate,
+      y: coordinate,
+      width: regionSize,
+      height: regionSize,
+    }),
+    response: mapViewSchema,
+  },
+  /** Changes a region; `moves` are items moved with it (one change, one Undo step). */
+  updateRegion: {
+    request: z.strictObject({
+      ...structural,
+      regionId: z.uuid(),
+      changes: regionChangesSchema,
+      moves: z.array(positionChangeSchema).max(MAX_PLACEMENTS_PER_REQUEST).readonly().optional(),
+    }),
+    response: mapViewSchema,
+  },
+  removeRegion: {
+    request: z.strictObject({ ...structural, regionId: z.uuid() }),
     response: mapViewSchema,
   },
   setPlacementPinned: {

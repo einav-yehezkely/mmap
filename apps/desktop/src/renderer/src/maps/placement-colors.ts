@@ -28,3 +28,17 @@ const COLOR_CLASSES: Record<PlacementColor, string> = {
 export function placementColorClass(color: PlacementViewDto['color']): string {
   return color === null ? 'border-border' : COLOR_CLASSES[color];
 }
+
+/** Regions: a light wash and a dashed border in the chosen color, so items stay readable on top. */
+const REGION_CLASSES: Record<PlacementColor, string> = {
+  gray: 'border-zinc-400 bg-zinc-500/10',
+  blue: 'border-blue-500 bg-blue-500/10',
+  green: 'border-green-600 bg-green-500/10',
+  amber: 'border-amber-500 bg-amber-500/10',
+  red: 'border-red-500 bg-red-500/10',
+  violet: 'border-violet-500 bg-violet-500/10',
+};
+
+export function regionColorClass(color: PlacementViewDto['color']): string {
+  return color === null ? 'border-muted-foreground/50 bg-muted/40' : REGION_CLASSES[color];
+}

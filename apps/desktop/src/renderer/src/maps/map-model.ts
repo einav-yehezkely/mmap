@@ -444,3 +444,30 @@ export function routePath(
   }
   return [path, last.x, last.y];
 }
+
+/**
+ * The region each item belongs to: the smallest region that contains the item's center (regions
+ * may overlap or nest; the most specific one wins). Items outside every region are absent.
+ */
+export function regionOwners(
+  items: readonly { readonly id: string; x: number; y: number; width: number; height: number }[],
+  regions: readonly { readonly id: string; x: number; y: number; width: number; height: number }[],
+): Map<string, string> {
+  const bySize = [...regions].sort(
+    (a, b) => a.width * a.height - b.width * b.height || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  const owners = new Map<string, string>();
+  for (const item of items) {
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+    const region = bySize.find(
+      (candidate) =>
+        cx >= candidate.x &&
+        cx <= candidate.x + candidate.width &&
+        cy >= candidate.y &&
+        cy <= candidate.y + candidate.height,
+    );
+    if (region !== undefined) owners.set(item.id, region.id);
+  }
+  return owners;
+}

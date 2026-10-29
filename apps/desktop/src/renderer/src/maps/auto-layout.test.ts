@@ -8,10 +8,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   computeAutoLayout,
+  computeLayoutWithRegions,
   type AutoLayoutResult,
   type LayoutItem,
   type LayoutLine,
 } from './auto-layout';
+import { regionOwners } from './map-model';
 
 const WIDTH = 140;
 const HEIGHT = 40;
@@ -279,5 +281,105 @@ describe('tree layout for strict hierarchies', () => {
     ).toBe('tree');
     // Several separate trees and lone items are still a hierarchy.
     expect((await computeAutoLayout(items, [line('a', 'b')], 'down')).strategy).toBe('tree');
+  });
+});
+
+describe('regions', () => {
+  const inside = (
+    box: { x: number; y: number; width: number; height: number },
+    id: string,
+    result: AutoLayoutResult,
+  ) => {
+    const point = position(result, id);
+    return (
+      point.x >= box.x &&
+      point.y >= box.y &&
+      point.x + WIDTH <= box.x + box.width &&
+      point.y + HEIGHT <= box.y + box.height
+    );
+  };
+
+  it('assigns each item to the smallest region around its center', () => {
+    const owners = regionOwners(
+      [item('a', 10, 10), item('b', 500, 10), item('c', 1_000, 1_000)],
+      [
+        { id: 'big', x: 0, y: 0, width: 900, height: 300 },
+        { id: 'small', x: 0, y: 0, width: 300, height: 200 },
+      ],
+    );
+    expect(owners).toEqual(
+      new Map([
+        ['a', 'small'],
+        ['b', 'big'],
+      ]),
+    );
+  });
+
+  it('keeps each region’s items together inside the region, fitted around them', async () => {
+    // Two subjects, each a small tree, plus a line between them and an item outside both.
+    const items = [
+      item('cpu', 0, 0),
+      item('cores', 0, 100),
+      item('cache', 300, 100),
+      item('exam', 900, 0),
+      item('notes', 900, 200),
+      item('loose', 2_000, 2_000),
+    ];
+    const regions = [
+      { id: 'hardware', x: -40, y: -60, width: 600, height: 300 },
+      { id: 'study', x: 860, y: -60, width: 300, height: 400 },
+    ];
+    const result = await computeLayoutWithRegions(
+      items,
+      [line('cpu', 'cores'), line('cpu', 'cache'), line('exam', 'notes'), line('cache', 'exam')],
+      regions,
+      'down',
+    );
+
+    const hardware = result.regions.get('hardware')!;
+    const study = result.regions.get('study')!;
+    for (const id of ['cpu', 'cores', 'cache']) expect(inside(hardware, id, result)).toBe(true);
+    for (const id of ['exam', 'notes']) expect(inside(study, id, result)).toBe(true);
+    // The regions do not overlap each other.
+    const apart =
+      hardware.x + hardware.width <= study.x ||
+      study.x + study.width <= hardware.x ||
+      hardware.y + hardware.height <= study.y ||
+      study.y + study.height <= hardware.y;
+    expect(apart).toBe(true);
+    // Inside a region the tree rules still apply: the parent is centered over its children.
+    const center = (id: string) => position(result, id).x + WIDTH / 2;
+    expect(Math.abs(center('cpu') - (center('cores') + center('cache')) / 2)).toBeLessThanOrEqual(
+      1,
+    );
+    // Lines inside a region keep their routes; the line between regions is left to the canvas.
+    expect(result.routes.has('cpu->cores')).toBe(true);
+    expect(result.routes.has('cache->exam')).toBe(false);
+    expect(result.positions.has('loose')).toBe(true);
+  });
+
+  it('leaves a region with a locked item, and an empty region, exactly where they are', async () => {
+    const items = [item('a', 0, 0, true), item('b', 0, 100), item('c', 800, 800)];
+    const result = await computeLayoutWithRegions(
+      items,
+      [line('a', 'b')],
+      [
+        { id: 'locked', x: -20, y: -20, width: 300, height: 300 },
+        { id: 'empty', x: 2_000, y: 0, width: 200, height: 200 },
+      ],
+      'right',
+    );
+    expect(result.regions.size).toBe(0);
+    expect(result.positions.has('a')).toBe(false);
+    expect(result.positions.has('b')).toBe(false);
+    expect(result.positions.has('c')).toBe(true);
+  });
+
+  it('is the plain layout without regions', async () => {
+    const items = [item('a'), item('b', 10, 10)];
+    const plain = await computeAutoLayout(items, [line('a', 'b')], 'right');
+    const withRegions = await computeLayoutWithRegions(items, [line('a', 'b')], [], 'right');
+    expect(withRegions.positions).toEqual(plain.positions);
+    expect(withRegions.regions.size).toBe(0);
   });
 });

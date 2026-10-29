@@ -32,21 +32,21 @@ writes the same tables through the repositories in one transaction (`ImportServi
 `packages/domain/src/application/import-service.ts`); see
 [Export archive](#export-archive-and-backup-layouts).
 
-| Table                                            | Status | Written by                                                                                                                                                                                                                                                                |
-| ------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workspaces`                                     | Used   | `WorkspaceService.initialize` (create), `rename`, `setTimezone`; read on every open to check the manifest ID; `timezone` read by timeline date filters                                                                                                                    |
-| `knowledge_nodes`                                | Used   | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders                                                                                                                                                                  |
-| `knowledge_nodes_fts`                            | Used   | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`) and by the graph text filter                                                                                                                                                |
-| `relationship_types`                             | Used   | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction                                                                                                                                                              |
-| `tags`, `node_tags`                              | Used   | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search                                                                                                                                                                        |
-| `timeline_events`                                | Used   | `node_created`, `note_updated` (grouped by session), `relationship_created`; `TimelineService` writes `reviewed` and `milestone` events, edits their title and reflection, deletes them, sets or clears `learned_at` on any event, and lists all events (Timeline screen) |
-| `attachments`                                    | Used   | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                                                                                                                                                                                         |
-| `relationships`                                  | Used   | `RelationshipService`: create, update (type, description, reverse), delete, list for a node; read by `SqliteGraphQuery` for the graph                                                                                                                                     |
-| `note_references`                                | Used   | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks, delete preview and the graph's note-link layer                                                                                                                                      |
-| `mind_maps`, `map_placements`, `map_connections` | Used   | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below); read by `SqliteGraphQuery` for map membership and the graph's map filter                                                                                       |
-| `graph_node_positions` (migration 3)             | Used   | `GraphService.savePositions` through `SqliteGraphLayoutRepository` (`graph:save-positions`); read by `graph:get-positions`; rows cascade when a node is deleted                                                                                                           |
-| `transfer_jobs`                                  | Used   | `SqliteImportHistoryRepository`: one `import_zip` row per completed import, written in the import's transaction; read to detect re-imports of the same archive                                                                                                            |
-| `schema_migrations`                              | Used   | Migration runner                                                                                                                                                                                                                                                          |
+| Table                                                           | Status | Written by                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspaces`                                                    | Used   | `WorkspaceService.initialize` (create), `rename`, `setTimezone`; read on every open to check the manifest ID; `timezone` read by timeline date filters                                                                                                                    |
+| `knowledge_nodes`                                               | Used   | `KnowledgeNodeService`: create, update, duplicate, delete; keyset-paginated listing in three sort orders                                                                                                                                                                  |
+| `knowledge_nodes_fts`                                           | Used   | Kept in sync by triggers on every node write; queried by `SqliteSearchIndex` (`search:query`) and by the graph text filter                                                                                                                                                |
+| `relationship_types`                                            | Used   | Seeded by `WorkspaceService.initialize`; `RelationshipService` creates, renames, archives, changes direction                                                                                                                                                              |
+| `tags`, `node_tags`                                             | Used   | `TagService`; `KnowledgeNodeService.duplicate` copies assignments; tag filters in lists and search                                                                                                                                                                        |
+| `timeline_events`                                               | Used   | `node_created`, `note_updated` (grouped by session), `relationship_created`; `TimelineService` writes `reviewed` and `milestone` events, edits their title and reflection, deletes them, sets or clears `learned_at` on any event, and lists all events (Timeline screen) |
+| `attachments`                                                   | Used   | `AttachmentService` (register, list, remove); rows cascade when a node is deleted                                                                                                                                                                                         |
+| `relationships`                                                 | Used   | `RelationshipService`: create, update (type, description, reverse), delete, list for a node; read by `SqliteGraphQuery` for the graph                                                                                                                                     |
+| `note_references`                                               | Used   | Rebuilt by `KnowledgeNodeService` in every note-save transaction; read for backlinks, delete preview and the graph's note-link layer                                                                                                                                      |
+| `mind_maps`, `map_placements`, `map_connections`, `map_regions` | Used   | `MapService` (Phase 3) through `SqliteMapRepository`; node deletion promotes child placements (see below); read by `SqliteGraphQuery` for map membership and the graph's map filter                                                                                       |
+| `graph_node_positions` (migration 3)                            | Used   | `GraphService.savePositions` through `SqliteGraphLayoutRepository` (`graph:save-positions`); read by `graph:get-positions`; rows cascade when a node is deleted                                                                                                           |
+| `transfer_jobs`                                                 | Used   | `SqliteImportHistoryRepository`: one `import_zip` row per completed import, written in the import's transaction; read to detect re-imports of the same archive                                                                                                            |
+| `schema_migrations`                                             | Used   | Migration runner                                                                                                                                                                                                                                                          |
 
 ## Three kinds of connection
 
@@ -361,6 +361,17 @@ always `{}`: connectors have no styling yet. Removing either placement deletes t
 cascade. Connectors are listed by `created_at`, then `id`, with the referenced relationship's type
 label from a `LEFT JOIN`.
 
+### `map_regions` (map regions, migration 7)
+
+Named rectangles on freeform maps that group items by subject
+([ADR-0013](adr/0013-map-regions.md)): `title` (1 to 100 characters), `color` (one of the
+placement colors, or `NULL`), `x`, `y`, `width`, `height` (sides greater than 0; the service
+requires at least 40), timestamps, and a cascade with the map. Membership is not stored: an item is
+in the smallest region that contains its center. Regions are written only in structural changes of
+their map (`addRegion`, `updateRegion` with the items carried along, `removeRegion`,
+`saveArrangement`), are listed by `created_at`, then `id`, and are copied with the map. A map has
+at most 200.
+
 ### `timeline_events` (TimelineEvent)
 
 Recorded learning activity and the user's own learning entries: `event_type` (`node_created`,
@@ -556,7 +567,7 @@ both mirror this schema.
 [ADR-0011](adr/0011-export-import.md)):
 
 ```
-manifest.json            format "mmap-workspace-export", formatVersion 1, exportId, exportedAt,
+manifest.json            format "mmap-workspace-export", formatVersion 2, exportId, exportedAt,
                          appVersion, schemaVersion, workspace { id, name, timezone }, counts,
                          files [{ path, byteSize, sha256 }]
 data/workspace.json      nodes, tags, nodeTags, relationshipTypes, relationships, maps,
@@ -628,6 +639,8 @@ installed build cannot be missing one. The strategy and its reasons are recorded
 | 3       | `0003-graph-layout.ts`                   | Creates `graph_node_positions` and `graph_view_state` for the knowledge graph ([above](#graph_node_positions-graph-layout)).                                                                                                                                                                                                                                                                                                                                                                            |
 | 4       | `0004-drop-graph-view-state.ts`          | `DROP TABLE graph_view_state;`. The graph now always opens fitted to view, so the saved viewport is no longer used.                                                                                                                                                                                                                                                                                                                                                                                     |
 | 5       | `0005-timeline-milestones-learned-at.ts` | Rebuilds `timeline_events` ([above](#timeline_events-timelineevent)), because SQLite cannot change a `CHECK` constraint in place: creates the new table with `milestone` allowed in `event_type` and the new columns `learned_at` and `title`, copies every row (with both new columns `NULL`), drops the old table, renames the new one, recreates the three indexes and both workspace triggers, and adds the index `timeline_events_by_effective_time`. No other table references `timeline_events`. |
+| 6       | `0006-map-arrangement.ts`                | Adds `mind_maps.arrangement_json` (default `{}`): the last automatic layout of a freeform map and its line routes ([ADR-0012](adr/0012-automatic-map-layout.md)).                                                                                                                                                                                                                                                                                                                                       |
+| 7       | `0007-map-regions.ts`                    | Creates `map_regions` and its index ([above](#map_regions-map-regions-migration-7), [ADR-0013](adr/0013-map-regions.md)).                                                                                                                                                                                                                                                                                                                                                                               |
 
 Opening a Phase 1 workspace with a Phase 2 build therefore takes a verified backup to `recovery/`
 and applies migration 2. After that, a Phase 1 build cannot open the workspace. In the same way,
@@ -641,7 +654,7 @@ every applied migration with the shipped code and refuses a workspace whose hist
 (`MigrationHistoryError`), so editing migration 3 would have locked that workspace out. The change
 was therefore made as a new migration, and migration 3 keeps its original SQL (its header comment
 explains this). `packages/storage-sqlite/src/migrations/checksums.test.ts` now pins the checksum
-of every shipped migration (1 to 5), so such an edit fails in the test suite instead of on a
+of every shipped migration (1 to 7), so such an edit fails in the test suite instead of on a
 user's workspace. For the same reason the timeline redesign added migration 5 instead of changing
 migration 1.
 
