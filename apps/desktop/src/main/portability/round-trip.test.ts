@@ -226,10 +226,18 @@ async function buildSourceWorkspace(manager: WorkspaceManager) {
   map = await maps.setCollapsed(map.map.id, map.map.revision, root, true);
   await maps.setViewport(map.map.id, { x: 12, y: -8, zoom: 1.5 });
   const freeform = await maps.createMap('Scratch');
-  await maps.addPlacement(freeform.map.id, freeform.map.revision, {
+  const placed = await maps.addPlacement(freeform.map.id, freeform.map.revision, {
     nodeId: lonely.id,
     x: 10,
     y: 20,
+  });
+  await maps.addRegion(placed.map.id, placed.map.revision, {
+    title: 'Loose ends',
+    color: 'violet',
+    x: -20,
+    y: -10,
+    width: 300,
+    height: 160,
   });
 
   await timeline.markReviewed(heat.id, 'Finally clear.', '2026-10-01T08:00:00.000Z');
@@ -502,6 +510,18 @@ describe('workspace export and import (criterion 12)', () => {
       x: 10,
       y: 20,
     });
+    // Regions (archive format version 2).
+    expect(imported.regions).toEqual([
+      expect.objectContaining({
+        mapId: scratch.id,
+        title: 'Loose ends',
+        color: 'violet',
+        x: -20,
+        y: -10,
+        width: 300,
+        height: 160,
+      }),
+    ]);
 
     // Timeline: history kept and marked as imported.
     const events = imported.timelineEvents.filter((event) => event.isImported);

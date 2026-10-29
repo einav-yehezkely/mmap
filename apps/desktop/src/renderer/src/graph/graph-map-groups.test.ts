@@ -63,6 +63,7 @@ function map(
       relationshipTypeLabel: null,
     })),
     relationships: [],
+    regions: [],
   };
 }
 
@@ -214,6 +215,42 @@ describe('withMapGroups', () => {
     expect(groupCount).toBe(1);
     expect(elements[0]!.classes).toBe('map-group');
     expect(elements.some((element) => (element.classes ?? '').includes('map-line'))).toBe(false);
+  });
+
+  it('nests regions in their map, around the items inside them on the map', () => {
+    const withRegions: MapViewDto = {
+      ...PC,
+      regions: [
+        {
+          id: uuid(401),
+          title: 'Processing',
+          color: 'blue',
+          x: -20,
+          y: 100,
+          width: 140,
+          height: 80,
+        },
+        { id: uuid(402), title: 'Empty', color: null, x: 5_000, y: 5_000, width: 100, height: 100 },
+      ],
+    };
+    const { elements, groupCount } = withMapGroups(BASE, [withRegions], options);
+    const all = byId(elements);
+    const processing = `region:${uuid(401)}`;
+
+    expect(groupCount).toBe(1);
+    expect(all.get(processing)).toMatchObject({
+      data: { label: 'Processing', parent: groupId(PC.map.id), color: '#3b82f6' },
+      classes: 'map-region',
+    });
+    // CPU is inside the region; the motherboard and RAM are not.
+    expect(all.get(NODE.cpu)!.data.parent).toBe(processing);
+    expect(all.get(NODE.motherboard)!.data.parent).toBe(groupId(PC.map.id));
+    expect(all.get(NODE.ram)!.data.parent).toBe(groupId(PC.map.id));
+    // A region with no items is not drawn.
+    expect(all.has(`region:${uuid(402)}`)).toBe(false);
+    // Frames come before the items they contain.
+    const order = elements.map((element) => String(element.data.id));
+    expect(order.indexOf(processing)).toBeLessThan(order.indexOf(NODE.cpu));
   });
 
   it('changes nothing without maps', () => {

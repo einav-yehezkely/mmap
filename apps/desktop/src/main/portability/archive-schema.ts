@@ -149,6 +149,22 @@ export const archiveDataSchema = z.strictObject({
     }),
     MAX_RECORDS,
   ),
+  // Format version 2; version 1 archives have no regions.
+  regions: many(
+    z.strictObject({
+      id: archiveId,
+      mapId: archiveId,
+      title: text(2_000),
+      color: text(50).nullable(),
+      x: coordinate,
+      y: coordinate,
+      width: coordinate,
+      height: coordinate,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }),
+    MAX_RECORDS,
+  ).optional(),
   timelineEvents: many(
     z.strictObject({
       id: archiveId,

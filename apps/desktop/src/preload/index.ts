@@ -138,6 +138,9 @@ const api: MmapRendererApi = {
     setPlacementPinned: (request) =>
       ipcRenderer.invoke(IPC_CHANNELS.mapsSetPlacementPinned, request),
     saveArrangement: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsSaveArrangement, request),
+    addRegion: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsAddRegion, request),
+    updateRegion: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsUpdateRegion, request),
+    removeRegion: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRemoveRegion, request),
     addConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsAddConnection, request),
     removeConnection: (request) => ipcRenderer.invoke(IPC_CHANNELS.mapsRemoveConnection, request),
     setConnectionLabel: (request) =>

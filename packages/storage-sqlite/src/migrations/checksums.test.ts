@@ -21,6 +21,7 @@ const PINNED_CHECKSUMS: Readonly<Record<number, string>> = {
   4: '3b9ddac96a4eb2f288ad582733249aaedd2475073fcaf279152cd59f215670c3',
   5: '307baa5a1811f4a7bcbb59a0394ac65155d2f50c711653cbb7c12070e1f506c4',
   6: '86a7f2814dae445546d0f3a7b38cf9dd7410a8f384e0171d6b9984c8a7af1753',
+  7: '35efa234bd729ed820e3daebaa3331d97cfecc5262403c01ebeb7e7bfa9a51cc',
 };
 
 describe('migration checksums', () => {

@@ -21,8 +21,8 @@ architecture project. All run on plain Node 24; none of them start Electron. Tes
 | `desktop`        | `apps/desktop/src/**/*.test.ts`            | Security and IPC (renderer location, origins, CSP, `app://` paths, IPC handler); workspace manager; attachment file store, preview resolver and attachment services with real files; external links; Phase 2, map, graph and timeline channel handlers; the autosave state machine; the editor/schema contract; wikilink rendering; the map, graph and timeline view models; the timeline axis (windows, ticks, marker layout); stable graph placement; the Phase 1 acceptance test; export and import round trip, hostile archives, Markdown export; backups and restore; the Home page helpers. | 310 (+2 skipped) |
 | `architecture`   | `tests/**/*.test.ts`                       | Module boundary scan driven by `tooling/architecture-rules.mjs` (the same rules ESLint uses), plus a test of the import extractor itself.                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 6                |
 
-The total on `main` (2026-10-29) is **1,211 passing tests in 71 files, plus two benchmark
-files (4 tests) that are skipped by default**: 73 files, 1,215 tests. The skipped files are the
+The total on `main` (2026-10-29) is **1,223 passing tests in 71 files, plus two benchmark
+files (4 tests) that are skipped by default**: 73 files, 1,227 tests. The skipped files are the
 [search benchmark](#search-benchmark) (`storage-sqlite`) and the
 [portability benchmark](#portability-benchmark) (`desktop`). Earlier totals: Phase 4 ended with
 1,053 in 57 files (1,007 in 54 before the timeline redesign), Phase 3 with 882 in 45 files, Phase 2

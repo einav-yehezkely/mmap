@@ -102,6 +102,18 @@ export function toArchiveData(snapshot: WorkspaceSnapshot): ArchiveData {
       createdAt: attachment.createdAt,
       updatedAt: attachment.updatedAt,
     })),
+    regions: snapshot.regions.map((region) => ({
+      id: region.id,
+      mapId: region.mapId,
+      title: region.title,
+      color: region.color,
+      x: region.x,
+      y: region.y,
+      width: region.width,
+      height: region.height,
+      createdAt: region.createdAt,
+      updatedAt: region.updatedAt,
+    })),
     graphPositions: snapshot.graphPositions.map((position) => ({
       nodeId: position.nodeId,
       x: position.x,

@@ -60,6 +60,7 @@ function mapView(
     placements,
     connections,
     relationships,
+    regions: [],
   };
 }
 

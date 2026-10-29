@@ -10,7 +10,12 @@
 import type { UtcTimestamp } from '../clock';
 import type { NodeId, TagId, WorkspaceId } from '../ids';
 import type { GraphNodePosition } from './graph';
-import type { MapConnectionRecord, MindMapRecord, PlacementRecord } from './map-repository';
+import type {
+  MapConnectionRecord,
+  MapRegionRecord,
+  MindMapRecord,
+  PlacementRecord,
+} from './map-repository';
 import type {
   AttachmentRecord,
   KnowledgeNodeRecord,
@@ -38,6 +43,7 @@ export interface WorkspaceSnapshot {
   readonly maps: readonly MindMapRecord[];
   readonly placements: readonly PlacementRecord[];
   readonly connections: readonly MapConnectionRecord[];
+  readonly regions: readonly MapRegionRecord[];
   readonly timelineEvents: readonly TimelineEventRecord[];
   readonly attachments: readonly AttachmentRecord[];
   readonly graphPositions: readonly GraphNodePosition[];

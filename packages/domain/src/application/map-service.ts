@@ -11,6 +11,8 @@
  *   removing a branch.
  * - Switching to hierarchical mode applies a parent assignment the user reviewed; freeform
  *   positions are never overwritten, so switching back restores them.
+ * - Regions are rectangles on freeform maps; an item belongs to a region by position only, so a
+ *   region never changes the hierarchy, connectors or knowledge.
  * - Every structural change requires the map revision the caller saw (PRD §14 "Require revision
  *   checks for both nodes and map structure"); the viewport is visual state without revisions.
  */
@@ -21,6 +23,7 @@ import type {
   IdGenerator,
   MapConnectionId,
   MapId,
+  MapRegionId,
   NodeId,
   PlacementId,
   RelationshipId,
@@ -37,6 +40,7 @@ import type {
   MapConnectionRecord,
   MapConnectionWithRelationship,
   MapOfNode,
+  MapRegionRecord,
   MapRelationship,
   MapMode,
   MapRepository,
@@ -57,6 +61,10 @@ import type { TransactionRunner } from '../ports/transaction';
 
 export const MAX_MAP_TITLE_LENGTH = 200;
 export const MAX_CONNECTOR_LABEL_LENGTH = 200;
+export const MAX_REGION_TITLE_LENGTH = 100;
+export const MAX_REGIONS_PER_MAP = 200;
+/** Smallest region side: room for its title. */
+export const MIN_REGION_SIZE = 40;
 
 export interface MapServiceDependencies {
   readonly workspaceId: WorkspaceId;
@@ -81,6 +89,26 @@ export interface MapView {
   readonly connections: readonly MapConnectionWithRelationship[];
   /** Semantic relationships between nodes on the map (derived, see `MapRelationship`). */
   readonly relationships: readonly MapRelationship[];
+  readonly regions: readonly MapRegionRecord[];
+}
+
+/** Where a region is and how it looks. */
+export interface RegionInput {
+  readonly title: string;
+  readonly color?: MapRegionRecord['color'];
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** New bounds of a region (automatic layout). */
+export interface RegionBounds {
+  readonly regionId: MapRegionId;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 /**
@@ -151,7 +179,23 @@ export interface MapService {
     mapId: MapId,
     expectedRevision: Revision,
     arrangement: MapArrangement,
+    regions?: readonly RegionBounds[],
   ): Promise<MapView>;
+  /** Adds a region to a freeform map. */
+  addRegion(mapId: MapId, expectedRevision: Revision, input: RegionInput): Promise<MapView>;
+  /**
+   * Changes a region's title, color or bounds. `moves` are item positions changed with it (a
+   * region dragged with its items), so the whole move is one change and one Undo step.
+   */
+  updateRegion(
+    mapId: MapId,
+    expectedRevision: Revision,
+    regionId: MapRegionId,
+    changes: Partial<RegionInput>,
+    moves?: readonly PositionChange[],
+  ): Promise<MapView>;
+  /** Removes a region; its items stay where they are. */
+  removeRegion(mapId: MapId, expectedRevision: Revision, regionId: MapRegionId): Promise<MapView>;
   /** Changes parts of an item's style (color, lock); parts not given are kept. */
   setPlacementStyle(
     mapId: MapId,
@@ -305,6 +349,29 @@ function validateArrangement(arrangement: MapArrangement): MapArrangement {
   };
 }
 
+/** Validates a region title: required, single line, at most 100 characters. */
+export function normalizeRegionTitle(raw: string): string {
+  const title = normalizeMapText(raw, MAX_REGION_TITLE_LENGTH, 'Region titles');
+  if (title.length === 0) {
+    throw new DomainError('VALIDATION_FAILED', 'A region needs a title.');
+  }
+  return title;
+}
+
+function validateRegionSize(value: number): number {
+  if (!Number.isFinite(value) || value < MIN_REGION_SIZE || value > 1_000_000) {
+    throw new DomainError('VALIDATION_FAILED', 'This region size is not supported.');
+  }
+  return value;
+}
+
+function validateRegionColor(color: MapRegionRecord['color']): MapRegionRecord['color'] {
+  if (color !== null && !PLACEMENT_COLORS.includes(color)) {
+    throw new DomainError('VALIDATION_FAILED', 'This color is not available.');
+  }
+  return color;
+}
+
 /** Rejects non-finite or absurd coordinates (e.g. from a corrupted drag event). */
 function validateCoordinate(value: number): number {
   if (!Number.isFinite(value) || Math.abs(value) > 1_000_000) {
@@ -344,12 +411,13 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
   }
 
   async function viewOf(map: MindMapRecord): Promise<MapView> {
-    const [placements, connections, relationships] = await Promise.all([
+    const [placements, connections, relationships, regions] = await Promise.all([
       maps.listPlacements(workspaceId, map.id),
       maps.listConnections(workspaceId, map.id),
       maps.listRelationships(workspaceId, map.id),
+      maps.listRegions(workspaceId, map.id),
     ]);
-    return { map, placements, connections, relationships };
+    return { map, placements, connections, relationships, regions };
   }
 
   /**
@@ -417,6 +485,39 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
         ...requirePlacement(placements, change.id as PlacementId),
         parentPlacementId: change.parentId as PlacementId | null,
         siblingOrder: change.siblingOrder,
+        updatedAt: now,
+      })),
+    );
+  }
+
+  async function requireRegion(mapId: MapId, regionId: MapRegionId): Promise<MapRegionRecord> {
+    const region = (await maps.listRegions(workspaceId, mapId)).find(
+      (item) => item.id === regionId,
+    );
+    if (region === undefined) {
+      throw new DomainError('NOT_FOUND', 'This region is no longer on the map.');
+    }
+    return region;
+  }
+
+  function requireFreeform(map: MindMapRecord): void {
+    if (map.mode !== 'freeform') {
+      throw new DomainError('INVARIANT_VIOLATION', 'Regions are available on freeform maps.');
+    }
+  }
+
+  /** Stores item positions (validated), for moves and region drags. */
+  async function moveItems(
+    placements: readonly PlacementWithNode[],
+    changes: readonly PositionChange[],
+  ): Promise<void> {
+    if (changes.length === 0) return;
+    const now = clock.now();
+    await maps.updatePlacements(
+      changes.map((change) => ({
+        ...requirePlacement(placements, change.placementId),
+        x: validateCoordinate(change.x),
+        y: validateCoordinate(change.y),
         updatedAt: now,
       })),
     );
@@ -506,6 +607,15 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
             updatedAt: now,
           });
           queue.push(...orderedChildren(items, placement.id).map((item) => item.id));
+        }
+        for (const region of source.regions) {
+          await maps.insertRegion({
+            ...region,
+            id: ids.newId() as MapRegionId,
+            mapId: copy.id,
+            createdAt: now,
+            updatedAt: now,
+          });
         }
         for (const connection of source.connections) {
           await maps.insertConnection({
@@ -605,19 +715,63 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
       }),
 
     movePlacements: (mapId, expectedRevision, changes) =>
-      structuralChange(mapId, expectedRevision, async (_map, placements) => {
+      structuralChange(mapId, expectedRevision, (_map, placements) =>
+        moveItems(placements, changes),
+      ),
+
+    addRegion: (mapId, expectedRevision, input) =>
+      structuralChange(mapId, expectedRevision, async (map) => {
+        requireFreeform(map);
+        const existing = await maps.listRegions(workspaceId, map.id);
+        if (existing.length >= MAX_REGIONS_PER_MAP) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `A map can have at most ${MAX_REGIONS_PER_MAP} regions.`,
+          );
+        }
         const now = clock.now();
-        await maps.updatePlacements(
-          changes.map((change) => ({
-            ...requirePlacement(placements, change.placementId),
-            x: validateCoordinate(change.x),
-            y: validateCoordinate(change.y),
-            updatedAt: now,
-          })),
-        );
+        await maps.insertRegion({
+          id: ids.newId() as MapRegionId,
+          workspaceId,
+          mapId: map.id,
+          title: normalizeRegionTitle(input.title),
+          color: validateRegionColor(input.color ?? null),
+          x: validateCoordinate(input.x),
+          y: validateCoordinate(input.y),
+          width: validateRegionSize(input.width),
+          height: validateRegionSize(input.height),
+          createdAt: now,
+          updatedAt: now,
+        });
       }),
 
-    saveArrangement: (mapId, expectedRevision, arrangement) =>
+    updateRegion: (mapId, expectedRevision, regionId, changes, moves = []) =>
+      structuralChange(mapId, expectedRevision, async (map, placements) => {
+        requireFreeform(map);
+        const region = await requireRegion(map.id, regionId);
+        await maps.updateRegions([
+          {
+            ...region,
+            title: changes.title === undefined ? region.title : normalizeRegionTitle(changes.title),
+            color: changes.color === undefined ? region.color : validateRegionColor(changes.color),
+            x: changes.x === undefined ? region.x : validateCoordinate(changes.x),
+            y: changes.y === undefined ? region.y : validateCoordinate(changes.y),
+            width: changes.width === undefined ? region.width : validateRegionSize(changes.width),
+            height:
+              changes.height === undefined ? region.height : validateRegionSize(changes.height),
+            updatedAt: clock.now(),
+          },
+        ]);
+        await moveItems(placements, moves);
+      }),
+
+    removeRegion: (mapId, expectedRevision, regionId) =>
+      structuralChange(mapId, expectedRevision, async (map) => {
+        await requireRegion(map.id, regionId);
+        await maps.deleteRegion(workspaceId, regionId);
+      }),
+
+    saveArrangement: (mapId, expectedRevision, arrangement, regions = []) =>
       structuralChange(mapId, expectedRevision, async (map, placements) => {
         if (map.mode !== 'freeform') {
           throw new DomainError(
@@ -635,6 +789,27 @@ export function createMapService(dependencies: MapServiceDependencies): MapServi
             updatedAt: now,
           })),
         );
+        if (regions.length > 0) {
+          const stored = new Map(
+            (await maps.listRegions(workspaceId, map.id)).map((region) => [region.id, region]),
+          );
+          await maps.updateRegions(
+            regions.map((bounds) => {
+              const region = stored.get(bounds.regionId);
+              if (region === undefined) {
+                throw new DomainError('NOT_FOUND', 'This region is no longer on the map.');
+              }
+              return {
+                ...region,
+                x: validateCoordinate(bounds.x),
+                y: validateCoordinate(bounds.y),
+                width: validateRegionSize(bounds.width),
+                height: validateRegionSize(bounds.height),
+                updatedAt: now,
+              };
+            }),
+          );
+        }
         await maps.setArrangement(workspaceId, map.id, checked);
         // Returned as a change, so the view sent back carries the new arrangement, not the one
         // read before (that made the first layout show plain curves until the next one).

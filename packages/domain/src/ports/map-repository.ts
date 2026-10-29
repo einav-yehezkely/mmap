@@ -11,6 +11,7 @@ import type { UtcTimestamp } from '../clock';
 import type {
   MapConnectionId,
   MapId,
+  MapRegionId,
   NodeId,
   PlacementId,
   RelationshipId,
@@ -139,6 +140,24 @@ export interface MapRelationship {
   readonly directionality: RelationshipDirectionality;
 }
 
+/**
+ * A region of a freeform map: a named, optionally colored rectangle that groups items by subject.
+ * Membership is not stored: an item is in a region when its center lies inside the rectangle.
+ */
+export interface MapRegionRecord {
+  readonly id: MapRegionId;
+  readonly workspaceId: WorkspaceId;
+  readonly mapId: MapId;
+  readonly title: string;
+  readonly color: PlacementColor | null;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly createdAt: UtcTimestamp;
+  readonly updatedAt: UtcTimestamp;
+}
+
 /** A map that shows a given node (for the node panel's "Mind maps" list). */
 export interface MapOfNode {
   readonly id: MapId;
@@ -173,6 +192,12 @@ export interface MapRepository {
   /** Semantic relationships whose source and target are both placed on the map. */
   listRelationships(workspaceId: WorkspaceId, mapId: MapId): Promise<readonly MapRelationship[]>;
   deleteConnection(workspaceId: WorkspaceId, connectionId: MapConnectionId): Promise<void>;
+  /** Regions of the map, oldest first (so later regions are drawn above earlier ones). */
+  listRegions(workspaceId: WorkspaceId, mapId: MapId): Promise<readonly MapRegionRecord[]>;
+  insertRegion(record: MapRegionRecord): Promise<void>;
+  /** Updates title, color and bounds of each given region. */
+  updateRegions(records: readonly MapRegionRecord[]): Promise<void>;
+  deleteRegion(workspaceId: WorkspaceId, regionId: MapRegionId): Promise<void>;
   /** Stores (or clears, with null) the map's last automatic layout. */
   setArrangement(
     workspaceId: WorkspaceId,

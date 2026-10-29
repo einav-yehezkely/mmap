@@ -16,8 +16,11 @@
  */
 
 export const ARCHIVE_FORMAT = 'mmap-workspace-export';
-/** Bump when the archive layout or data shape changes; older readers reject newer versions. */
-export const ARCHIVE_FORMAT_VERSION = 1;
+/**
+ * Bump when the archive layout or data shape changes; older readers reject newer versions.
+ * Version 2 added map regions (`regions`); version 1 archives, which have none, still import.
+ */
+export const ARCHIVE_FORMAT_VERSION = 2;
 
 export const ARCHIVE_MANIFEST_PATH = 'manifest.json';
 export const ARCHIVE_DATA_PATH = 'data/workspace.json';
@@ -145,6 +148,19 @@ export interface ArchiveConnection {
   readonly updatedAt: string;
 }
 
+export interface ArchiveRegion {
+  readonly id: string;
+  readonly mapId: string;
+  readonly title: string;
+  readonly color: string | null;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface ArchiveTimelineEvent {
   readonly id: string;
   /** Null when the node was deleted before the export; the title snapshot keeps it readable. */
@@ -187,6 +203,8 @@ export interface ArchiveData {
   readonly maps: readonly ArchiveMap[];
   readonly placements: readonly ArchivePlacement[];
   readonly connections: readonly ArchiveConnection[];
+  /** Map regions (format version 2); absent in version 1 archives. */
+  readonly regions?: readonly ArchiveRegion[];
   readonly timelineEvents: readonly ArchiveTimelineEvent[];
   readonly attachments: readonly ArchiveAttachment[];
   /** Where nodes were left in the global graph (visual state). */

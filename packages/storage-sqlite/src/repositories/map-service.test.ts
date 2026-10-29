@@ -775,6 +775,100 @@ describe('saving an automatic layout (ADR-0012)', () => {
   });
 });
 
+describe('regions', () => {
+  const box = { x: -20, y: -20, width: 400, height: 300 };
+
+  it('adds, changes and removes a region; moving it carries its items in the same change', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A', 'B']);
+    view = await maps.addRegion(view.map.id, view.map.revision, {
+      title: '  Hardware  ',
+      color: 'blue',
+      ...box,
+    });
+    expect(view.regions).toHaveLength(1);
+    const region = view.regions[0]!;
+    expect(region).toMatchObject({ title: 'Hardware', color: 'blue', ...box });
+
+    const before = view.map.revision;
+    const a = placementOf(view, 'A');
+    view = await maps.updateRegion(
+      view.map.id,
+      view.map.revision,
+      region.id,
+      { x: 80, title: 'Computer parts' },
+      [{ placementId: a.id, x: a.x + 100, y: a.y }],
+    );
+    expect(view.map.revision).toBe(before + 1);
+    expect(view.regions[0]).toMatchObject({
+      title: 'Computer parts',
+      color: 'blue',
+      x: 80,
+      y: -20,
+    });
+    expect(placementOf(view, 'A').x).toBe(a.x + 100);
+
+    view = await maps.removeRegion(view.map.id, view.map.revision, region.id);
+    expect(view.regions).toEqual([]);
+    // The items stay.
+    expect(view.placements).toHaveLength(2);
+  });
+
+  it('refuses invalid regions, hierarchy maps and stale revisions', async () => {
+    const { maps } = services(WORKSPACE_A);
+    const view = await maps.createMap('Map');
+    await expect(
+      maps.addRegion(view.map.id, view.map.revision, { title: '   ', ...box }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      maps.addRegion(view.map.id, view.map.revision, { title: 'Tiny', ...box, width: 10 }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      maps.addRegion(view.map.id, view.map.revision, {
+        title: 'Odd',
+        color: 'pink' as never,
+        ...box,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      maps.addRegion(view.map.id, view.map.revision + 1, { title: 'Late', ...box }),
+    ).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+
+    const tree = await maps.createMap('Tree', 'hierarchical');
+    await expect(
+      maps.addRegion(tree.map.id, tree.map.revision, { title: 'Nope', ...box }),
+    ).rejects.toMatchObject({ code: 'INVARIANT_VIOLATION' });
+  });
+
+  it('is copied with the map, resized by automatic layout, and removed with the map', async () => {
+    const { maps } = services(WORKSPACE_A);
+    let view = await placeNew(maps, await maps.createMap('Map'), ['A']);
+    view = await maps.addRegion(view.map.id, view.map.revision, { title: 'Zone', ...box });
+    const region = view.regions[0]!;
+
+    const copy = await maps.duplicateMap(view.map.id);
+    expect(copy.regions).toHaveLength(1);
+    expect(copy.regions[0]).toMatchObject({ title: 'Zone', ...box });
+    expect(copy.regions[0]!.id).not.toBe(region.id);
+
+    view = await maps.saveArrangement(
+      view.map.id,
+      view.map.revision,
+      {
+        direction: 'right',
+        placed: [{ placementId: placementOf(view, 'A').id, x: 10, y: 10 }],
+        routes: [],
+      },
+      [{ regionId: region.id, x: 0, y: 0, width: 200, height: 120 }],
+    );
+    expect(view.regions[0]).toMatchObject({ x: 0, y: 0, width: 200, height: 120 });
+
+    await maps.deleteMap(view.map.id);
+    // The copy keeps its own region.
+    expect((await maps.getMap(copy.map.id)).regions).toHaveLength(1);
+  });
+});
+
 describe('duplicating a map', () => {
   it('copies placements, hierarchy and connectors over the same canonical nodes', async () => {
     const { maps } = services(WORKSPACE_A);

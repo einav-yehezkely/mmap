@@ -26,7 +26,7 @@
 
 import ELK, { type ElkExtendedEdge, type ElkNode, type ElkPoint } from 'elkjs/lib/elk.bundled.js';
 
-import type { ItemSide } from './map-model';
+import { regionOwners, type ItemSide } from './map-model';
 
 export type LayoutDirection = 'right' | 'down' | 'left' | 'up';
 
@@ -415,4 +415,135 @@ export async function computeAutoLayout(
     routes.set(id, { ...route, points: route.points.map(shift) });
   }
   return { positions, routes, strategy: tree ? 'tree' : 'layered' };
+}
+
+/** A region of the map (see `regionOwners`): a rectangle that keeps its items together. */
+export interface LayoutRegion {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface RegionBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface RegionLayoutResult extends AutoLayoutResult {
+  /** New bounds of the regions that were arranged (regions left in place are absent). */
+  readonly regions: ReadonlyMap<string, RegionBox>;
+}
+
+/** Space inside a region around its items, and above them for the region's title. */
+const REGION_PADDING = 32;
+const REGION_TITLE_SPACE = 40;
+const REGION_PREFIX = 'region:';
+
+/**
+ * Automatic layout of a map with regions. Each region's items are arranged inside it first (the
+ * region then fits them, with room for its title), and the map is then arranged with every region
+ * as one block, so subjects stay together. A region with a locked item, or with no items, stays
+ * exactly as it is. Lines inside a region keep their routes; lines between regions are not routed
+ * (they are drawn as ordinary curves).
+ */
+export async function computeLayoutWithRegions(
+  items: readonly LayoutItem[],
+  lines: readonly LayoutLine[],
+  regions: readonly LayoutRegion[],
+  direction: LayoutDirection,
+): Promise<RegionLayoutResult> {
+  if (regions.length === 0) {
+    return { ...(await computeAutoLayout(items, lines, direction)), regions: new Map() };
+  }
+  const owners = regionOwners(items, regions);
+  const members = new Map<string, LayoutItem[]>();
+  for (const item of items) {
+    const owner = owners.get(item.id);
+    if (owner !== undefined) members.set(owner, [...(members.get(owner) ?? []), item]);
+  }
+
+  // Inside each region.
+  const blocks: LayoutItem[] = [];
+  const inner = new Map<
+    string,
+    { readonly result: AutoLayoutResult; readonly minX: number; readonly minY: number }
+  >();
+  for (const region of regions) {
+    const inside = members.get(region.id) ?? [];
+    const fixed = inside.length === 0 || inside.some((item) => item.pinned);
+    const blockId = `${REGION_PREFIX}${region.id}`;
+    if (fixed) {
+      blocks.push({ ...region, id: blockId, pinned: true });
+      continue;
+    }
+    const ids = new Set(inside.map((item) => item.id));
+    const result = await computeAutoLayout(
+      inside,
+      lines.filter((line) => ids.has(line.source) && ids.has(line.target)),
+      direction,
+    );
+    const placed = inside.map((item) => ({ ...item, ...(result.positions.get(item.id) ?? item) }));
+    const box = bounds(placed);
+    inner.set(region.id, { result, minX: box.minX, minY: box.minY });
+    blocks.push({
+      id: blockId,
+      x: region.x,
+      y: region.y,
+      width: box.maxX - box.minX + 2 * REGION_PADDING,
+      height: box.maxY - box.minY + REGION_PADDING + REGION_TITLE_SPACE,
+      pinned: false,
+    });
+  }
+
+  // The whole map, with each region as one block.
+  const blockOf = (id: string) => {
+    const owner = owners.get(id);
+    return owner === undefined ? id : `${REGION_PREFIX}${owner}`;
+  };
+  const topItems = [...blocks, ...items.filter((item) => !owners.has(item.id))];
+  const topLines = lines
+    .map((line) => ({ ...line, source: blockOf(line.source), target: blockOf(line.target) }))
+    .filter((line) => line.source !== line.target);
+  const top = await computeAutoLayout(topItems, topLines, direction);
+
+  const positions = new Map<string, ElkPoint>();
+  const routes = new Map<string, LineRoute>();
+  const regionBoxes = new Map<string, RegionBox>();
+  for (const item of items) {
+    if (!owners.has(item.id)) {
+      const point = top.positions.get(item.id);
+      if (point !== undefined) positions.set(item.id, point);
+    }
+  }
+  // Routes between items outside regions are kept as computed.
+  for (const line of lines) {
+    if (owners.has(line.source) || owners.has(line.target)) continue;
+    const route = top.routes.get(line.id);
+    if (route !== undefined) routes.set(line.id, route);
+  }
+  for (const block of blocks) {
+    const regionId = block.id.slice(REGION_PREFIX.length);
+    const arranged = inner.get(regionId);
+    const corner = top.positions.get(block.id);
+    if (arranged === undefined || corner === undefined) continue;
+    regionBoxes.set(regionId, {
+      x: corner.x,
+      y: corner.y,
+      width: block.width,
+      height: block.height,
+    });
+    const shift = (point: ElkPoint): ElkPoint => ({
+      x: Math.round(point.x - arranged.minX + corner.x + REGION_PADDING),
+      y: Math.round(point.y - arranged.minY + corner.y + REGION_TITLE_SPACE),
+    });
+    for (const [id, point] of arranged.result.positions) positions.set(id, shift(point));
+    for (const [id, route] of arranged.result.routes) {
+      routes.set(id, { ...route, points: route.points.map(shift) });
+    }
+  }
+  return { positions, routes, regions: regionBoxes, strategy: top.strategy };
 }

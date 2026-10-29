@@ -10,16 +10,30 @@
  * joined to the node by a faint `same-node` line. Selecting, opening or finding a copy acts on
  * its node.
  *
+ * Regions of a freeform map are frames nested in its group (`region:<id>`), around the items whose
+ * center is inside them on the map; a region with no items is not drawn.
+ *
  * Pure and unit-tested; the view loads the map views and the canvas draws the result.
  */
 
 import type { MapViewDto } from '@mmap/contracts';
 
-import { buildCanvasModel } from '../maps/map-model';
+import { buildCanvasModel, regionOwners } from '../maps/map-model';
 import type { CytoscapeElement } from './graph-model';
 
 export const GROUP_PREFIX = 'group:';
 export const COPY_PREFIX = 'copy:';
+export const REGION_PREFIX = 'region:';
+
+/** Region colors on the graph canvas (Cytoscape needs plain color values). */
+const REGION_COLORS: Record<string, string> = {
+  gray: '#a1a1aa',
+  blue: '#3b82f6',
+  green: '#16a34a',
+  amber: '#f59e0b',
+  red: '#ef4444',
+  violet: '#8b5cf6',
+};
 
 /** Size of a map item, estimated from its title (the map editor measures the real box). */
 const ITEM_HEIGHT = 40;
@@ -51,7 +65,7 @@ export function nodeKeyOf(data: { readonly id?: unknown; readonly nodeId?: unkno
 
 export interface MapGroupsResult {
   readonly elements: CytoscapeElement[];
-  /** Maps drawn as groups (maps without items are left out). */
+  /** Maps drawn as groups (maps without items are left out); regions are not counted. */
   readonly groupCount: number;
 }
 
@@ -115,6 +129,40 @@ export function withMapGroups(
       classes: 'map-group',
     });
 
+    // Regions (freeform maps): the frame each item sits in, the smallest one around its center.
+    const owners =
+      view.map.mode === 'freeform'
+        ? regionOwners(
+            boxes.map(({ item, width: itemWidth }) => ({
+              id: item.placement.id,
+              x: item.position.x,
+              y: item.position.y,
+              width: itemWidth,
+              height: ITEM_HEIGHT,
+            })),
+            view.regions,
+          )
+        : new Map<string, string>();
+    for (const region of view.regions) {
+      if (![...owners.values()].includes(region.id)) continue;
+      groups.push({
+        group: 'nodes',
+        data: {
+          id: `${REGION_PREFIX}${region.id}`,
+          parent,
+          label: region.title,
+          mapId: view.map.id,
+          color: REGION_COLORS[region.color ?? ''] ?? '#94a3b8',
+          mapsText: `Region of ${view.map.title}`,
+        },
+        classes: 'map-region',
+      });
+    }
+    const parentOf = (placementId: string) => {
+      const owner = owners.get(placementId);
+      return owner === undefined ? parent : `${REGION_PREFIX}${owner}`;
+    };
+
     const elementOf = new Map<string, string>();
     for (const { item, width: itemWidth } of boxes) {
       const { placement } = item;
@@ -136,7 +184,7 @@ export function withMapGroups(
               mapCount: 1,
               mapsText: view.map.title,
             }),
-            parent,
+            parent: parentOf(placement.id),
           },
           position,
           classes: `${known?.classes ?? ''} map-item`.trim(),
@@ -153,7 +201,7 @@ export function withMapGroups(
             degree: 0,
             mapCount: Number(known?.data.mapCount ?? 1),
             mapsText: String(known?.data.mapsText ?? view.map.title),
-            parent,
+            parent: parentOf(placement.id),
           },
           position,
           classes: 'map-item copy',
@@ -221,6 +269,6 @@ export function withMapGroups(
   return {
     // Groups first: a compound node must exist before its children are added.
     elements: [...groups, ...items, ...looseNodes, ...lines, ...baseEdges],
-    groupCount: groups.length,
+    groupCount: groups.filter((element) => element.classes === 'map-group').length,
   };
 }

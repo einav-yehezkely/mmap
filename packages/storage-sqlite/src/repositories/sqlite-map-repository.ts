@@ -6,6 +6,8 @@ import {
   type MapConnectionRecord,
   type MapConnectionWithRelationship,
   type MapOfNode,
+  type MapRegionId,
+  type MapRegionRecord,
   type MapRelationship,
   type RelationshipDirectionality,
   type MapId,
@@ -304,6 +306,71 @@ export class SqliteMapRepository implements MapRepository {
       );
   }
 
+  public async listRegions(
+    workspaceId: WorkspaceId,
+    mapId: MapId,
+  ): Promise<readonly MapRegionRecord[]> {
+    return this.connections
+      .forRead()
+      .prepare(
+        `SELECT * FROM map_regions WHERE workspace_id = ? AND map_id = ?
+         ORDER BY created_at, id`,
+      )
+      .all(workspaceId, mapId)
+      .map(toMapRegionRecord);
+  }
+
+  public async insertRegion(record: MapRegionRecord): Promise<void> {
+    this.connections
+      .forWrite()
+      .prepare(
+        `INSERT INTO map_regions
+           (id, workspace_id, map_id, title, color, x, y, width, height, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        record.id,
+        record.workspaceId,
+        record.mapId,
+        record.title,
+        record.color,
+        record.x,
+        record.y,
+        record.width,
+        record.height,
+        record.createdAt,
+        record.updatedAt,
+      );
+  }
+
+  public async updateRegions(records: readonly MapRegionRecord[]): Promise<void> {
+    const statement = this.connections.forWrite().prepare(
+      `UPDATE map_regions
+       SET title = ?, color = ?, x = ?, y = ?, width = ?, height = ?, updated_at = ?
+       WHERE workspace_id = ? AND id = ?`,
+    );
+    for (const record of records) {
+      statement.run(
+        record.title,
+        record.color,
+        record.x,
+        record.y,
+        record.width,
+        record.height,
+        record.updatedAt,
+        record.workspaceId,
+        record.id,
+      );
+    }
+  }
+
+  public async deleteRegion(workspaceId: WorkspaceId, regionId: MapRegionId): Promise<void> {
+    this.connections
+      .forWrite()
+      .prepare('DELETE FROM map_regions WHERE workspace_id = ? AND id = ?')
+      .run(workspaceId, regionId);
+  }
+
   public async deleteConnection(
     workspaceId: WorkspaceId,
     connectionId: MapConnectionId,
@@ -341,6 +408,25 @@ export class SqliteMapRepository implements MapRepository {
       )
       .run(label, updatedAt, workspaceId, connectionId);
   }
+}
+
+export function toMapRegionRecord(row: Row): MapRegionRecord {
+  const color = row.color === null ? null : String(row.color);
+  return {
+    id: String(row.id) as MapRegionId,
+    workspaceId: String(row.workspace_id) as WorkspaceId,
+    mapId: String(row.map_id) as MapId,
+    title: String(row.title),
+    color: (PLACEMENT_COLORS as readonly string[]).includes(color ?? '')
+      ? (color as PlacementColor)
+      : null,
+    x: Number(row.x),
+    y: Number(row.y),
+    width: Number(row.width),
+    height: Number(row.height),
+    createdAt: String(row.created_at) as UtcTimestamp,
+    updatedAt: String(row.updated_at) as UtcTimestamp,
+  };
 }
 
 export function toMindMapRecord(row: Row): MindMapRecord {

@@ -13,6 +13,10 @@
  * dashed line follows the cursor. A connector is easy to hit (wide invisible stroke); a selected one shows a remove button.
  * Dragging either end of a connector onto another item moves it there; dropping the end on empty
  * canvas removes it. The editor offers Undo for all of these.
+ *
+ * Regions (freeform mode, see `map-region-node.tsx`) are nodes drawn behind the items. Dragging a
+ * region moves the items whose center is inside it along, and the whole move is saved as one
+ * change; resizing, renaming and removing a region are saved the same way.
  */
 
 import '@xyflow/react/dist/style.css';
@@ -41,6 +45,7 @@ import {
   type NodeProps,
   type OnSelectionChangeParams,
   useReactFlow,
+  useStore,
 } from '@xyflow/react';
 import type { RelationshipTypeViewDto, RelationshipViewDto } from '@mmap/contracts';
 import { ChevronDown, ChevronRight, Link2, Lock, MessageSquareText, X } from 'lucide-react';
@@ -59,8 +64,9 @@ import {
 import { errorMessage, unwrap } from '../lib/ipc';
 import { notifyNodesChanged } from '../nodes/node-events';
 import { cn } from '../lib/utils';
-import { computeAutoLayout, type LayoutDirection, type LineRoute } from './auto-layout';
-import { buildCanvasModel, facingSides, routePath, type ItemBox } from './map-model';
+import { computeLayoutWithRegions, type LayoutDirection, type LineRoute } from './auto-layout';
+import { buildCanvasModel, facingSides, regionOwners, routePath, type ItemBox } from './map-model';
+import { isRegionNodeId, regionNodeId, RegionNode, type RegionFlowNode } from './map-region-node';
 import { placementColorClass } from './placement-colors';
 
 /** Positions changed by dragging or arrow keys are saved together after this pause. */
@@ -74,6 +80,27 @@ interface PlacementNodeData extends Record<string, unknown> {
 }
 
 type PlacementFlowNode = Node<PlacementNodeData, 'placement'>;
+type CanvasNode = PlacementFlowNode | RegionFlowNode;
+
+const isPlacementNode = (node: CanvasNode): node is PlacementFlowNode => node.type === 'placement';
+const isRegionNode = (node: CanvasNode): node is RegionFlowNode => node.type === 'region';
+
+/** Where a region is: its bounds as drawn now (while dragging or resizing too). */
+interface Bounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+function boundsOf(node: CanvasNode): Bounds {
+  return {
+    x: node.position.x,
+    y: node.position.y,
+    width: node.width ?? node.measured?.width ?? 160,
+    height: node.height ?? node.measured?.height ?? 40,
+  };
+}
 
 interface ConnectorEdgeData extends Record<string, unknown> {
   readonly connectionId: string;
@@ -512,7 +539,65 @@ const PlacementNode = memo(function PlacementNode({
   );
 });
 
-const NODE_TYPES = { placement: PlacementNode };
+const NODE_TYPES = { placement: PlacementNode, region: RegionNode };
+
+/** Size of a region added with nothing selected, and the room kept around selected items. */
+const NEW_REGION_WIDTH = 420;
+const NEW_REGION_HEIGHT = 280;
+const NEW_REGION_PADDING = 32;
+const NEW_REGION_TITLE_SPACE = 40;
+
+/**
+ * Turns each "add region" request into bounds: around the selected items, or a region of the
+ * default size in the middle of the view. Rendered inside React Flow to reach the viewport.
+ */
+function AddRegionOnRequest({
+  request,
+  nodes,
+  onAdd,
+}: {
+  request: { readonly id: number } | null;
+  nodes: readonly CanvasNode[];
+  onAdd: (bounds: Bounds) => void;
+}) {
+  const { getViewport } = useReactFlow();
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const handled = useRef<number | null>(null);
+  const latestNodes = useRef(nodes);
+  useEffect(() => {
+    latestNodes.current = nodes;
+  });
+  useEffect(() => {
+    if (request === null || handled.current === request.id) return;
+    handled.current = request.id;
+    const selected = latestNodes.current.filter((node) => isPlacementNode(node) && node.selected);
+    if (selected.length > 0) {
+      const boxes = selected.map(boundsOf);
+      const minX = Math.min(...boxes.map((box) => box.x));
+      const minY = Math.min(...boxes.map((box) => box.y));
+      const maxX = Math.max(...boxes.map((box) => box.x + box.width));
+      const maxY = Math.max(...boxes.map((box) => box.y + box.height));
+      onAdd({
+        x: Math.round(minX - NEW_REGION_PADDING),
+        y: Math.round(minY - NEW_REGION_TITLE_SPACE),
+        width: Math.round(maxX - minX + 2 * NEW_REGION_PADDING),
+        height: Math.round(maxY - minY + NEW_REGION_PADDING + NEW_REGION_TITLE_SPACE),
+      });
+      return;
+    }
+    const viewport = getViewport();
+    const centerX = (width / 2 - viewport.x) / viewport.zoom;
+    const centerY = (height / 2 - viewport.y) / viewport.zoom;
+    onAdd({
+      x: Math.round(centerX - NEW_REGION_WIDTH / 2),
+      y: Math.round(centerY - NEW_REGION_HEIGHT / 2),
+      width: NEW_REGION_WIDTH,
+      height: NEW_REGION_HEIGHT,
+    });
+  }, [request, getViewport, width, height, onAdd]);
+  return null;
+}
 
 /** A map whose viewport was never saved still has the default; it opens fitted to its items. */
 function isDefaultViewport(viewport: MapViewDto['map']['viewport']): boolean {
@@ -565,8 +650,29 @@ export interface MapCanvasProps {
   readonly onArranged: (
     arrangement: NonNullable<MapViewDto['map']['arrangement']>,
     previous: readonly { placementId: string; x: number; y: number }[],
+    regions: readonly RegionChange[],
+    previousRegions: readonly RegionChange[],
   ) => void;
   readonly onLayoutFailed: (message: string) => void;
+  /** The region selected on the canvas (when no item is), or null. */
+  readonly onSelectRegion: (regionId: string | null) => void;
+  /** Each new request (a new `id`) adds a region around the selected items, or in the view. */
+  readonly regionRequest: { readonly id: number } | null;
+  readonly onAddRegion: (bounds: Bounds) => void;
+  /** A region was moved, resized or renamed; `moves` are the items carried along. */
+  readonly onRegionChange: (
+    regionId: string,
+    changes: Partial<Bounds & { title: string }>,
+    moves: readonly { placementId: string; x: number; y: number }[],
+  ) => void;
+  readonly onRemoveRegion: (regionId: string) => void;
+  /** A region just added by the user: its title opens for editing. */
+  readonly newRegionId: string | null;
+}
+
+/** New bounds of a region (automatic layout). */
+export interface RegionChange extends Bounds {
+  readonly regionId: string;
 }
 
 export function MapCanvas({
@@ -585,7 +691,32 @@ export function MapCanvas({
   layoutRequest,
   onArranged,
   onLayoutFailed,
+  onSelectRegion,
+  regionRequest,
+  onAddRegion,
+  onRegionChange,
+  onRemoveRegion,
+  newRegionId,
 }: MapCanvasProps) {
+  // Region callbacks for the region nodes' data: stable, calling the latest handlers.
+  const latestRegionHandlers = useRef({ onRegionChange, onRemoveRegion });
+  useEffect(() => {
+    latestRegionHandlers.current = { onRegionChange, onRemoveRegion };
+  }, [onRegionChange, onRemoveRegion]);
+  const renameRegion = useCallback(
+    (regionId: string, title: string) =>
+      latestRegionHandlers.current.onRegionChange(regionId, { title }, []),
+    [],
+  );
+  const resizeRegion = useCallback(
+    (regionId: string, bounds: Bounds) =>
+      latestRegionHandlers.current.onRegionChange(regionId, bounds, []),
+    [],
+  );
+  const removeRegion = useCallback(
+    (regionId: string) => latestRegionHandlers.current.onRemoveRegion(regionId),
+    [],
+  );
   // Stable for the edge data (rebuilding every edge on each render would loop), while still
   // calling the latest handler.
   const latestOnRemove = useRef(onRemove);
@@ -628,16 +759,44 @@ export function MapCanvas({
   const pendingMoves = useRef(new Map<string, { x: number; y: number }>());
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const derivedNodes = useMemo<PlacementFlowNode[]>(
-    () =>
-      model.items.map(({ placement, position, childCount }) => ({
+  const derivedNodes = useMemo<CanvasNode[]>(
+    () => [
+      // Regions first and below everything (freeform maps only).
+      ...(isFreeform ? view.regions : []).map((region): RegionFlowNode => ({
+        id: regionNodeId(region.id),
+        type: 'region',
+        position: { x: region.x, y: region.y },
+        width: region.width,
+        height: region.height,
+        zIndex: -1,
+        ariaLabel: `Region: ${region.title}`,
+        data: {
+          region,
+          autoEdit: region.id === newRegionId,
+          onRename: renameRegion,
+          onResized: resizeRegion,
+          onRemove: removeRegion,
+        },
+      })),
+      ...model.items.map(({ placement, position, childCount }): PlacementFlowNode => ({
         id: placement.id,
         type: 'placement',
         position,
         ariaLabel: placement.nodeTitle,
         data: { placement, childCount, mode: view.map.mode, onToggleCollapse },
       })),
-    [model, view.map.mode, onToggleCollapse],
+    ],
+    [
+      model,
+      view.map.mode,
+      view.regions,
+      isFreeform,
+      newRegionId,
+      onToggleCollapse,
+      renameRegion,
+      resizeRegion,
+      removeRegion,
+    ],
   );
   const derivedEdges = useMemo<Edge[]>(
     () =>
@@ -723,7 +882,7 @@ export function MapCanvas({
     };
   }, [view]);
   const routes = freshRoutes ?? savedRoutes;
-  const [nodes, setNodes] = useState<PlacementFlowNode[]>(derivedNodes);
+  const [nodes, setNodes] = useState<CanvasNode[]>(derivedNodes);
   const [edges, setEdges] = useState<Edge[]>(derivedEdges);
   const [nodesFrom, setNodesFrom] = useState(derivedNodes);
   const [edgesFrom, setEdgesFrom] = useState(derivedEdges);
@@ -736,6 +895,7 @@ export function MapCanvas({
       return derivedNodes.map((node) => {
         const old = previous.get(node.id);
         if (old === undefined) return node;
+        if (isRegionNode(node)) return { ...node, selected: old.selected };
         return {
           ...node,
           selected: old.selected,
@@ -792,11 +952,93 @@ export function MapCanvas({
     [flushMoves],
   );
 
+  /**
+   * A region being dragged: where it started and the items inside it then (their center inside
+   * the region), with their positions at the start. They follow the region while it moves.
+   */
+  const regionDrag = useRef<{
+    readonly nodeId: string;
+    readonly start: { x: number; y: number };
+    readonly members: ReadonlyMap<string, { x: number; y: number }>;
+  } | null>(null);
+  const latestNodes = useRef(nodes);
+  useEffect(() => {
+    latestNodes.current = nodes;
+  });
+
   const onNodesChange = useCallback(
-    (changes: NodeChange<PlacementFlowNode>[]) => {
-      setNodes((current) => applyNodeChanges(changes, current));
+    (changes: NodeChange<CanvasNode>[]) => {
+      const regionMoves = changes.filter(
+        (change) =>
+          change.type === 'position' &&
+          isRegionNodeId(change.id) &&
+          change.dragging !== undefined &&
+          change.position !== undefined,
+      );
+      let carried: { id: string; position: { x: number; y: number } }[] = [];
+      for (const change of regionMoves) {
+        if (change.type !== 'position' || change.position === undefined) continue;
+        const current = latestNodes.current;
+        if (regionDrag.current?.nodeId !== change.id) {
+          const region = current.find((node) => node.id === change.id);
+          if (region === undefined) continue;
+          const box = boundsOf(region);
+          const items = current.filter(isPlacementNode);
+          // An item nested in a smaller region inside this one still moves along.
+          const inside = regionOwners(
+            items.map((node) => ({ id: node.id, ...boundsOf(node) })),
+            [{ id: 'dragged', ...box }],
+          );
+          regionDrag.current = {
+            nodeId: change.id,
+            start: { ...region.position },
+            members: new Map(
+              items.filter((node) => inside.has(node.id)).map((node) => [node.id, node.position]),
+            ),
+          };
+        }
+        const drag = regionDrag.current;
+        const dx = change.position.x - drag.start.x;
+        const dy = change.position.y - drag.start.y;
+        carried = [...drag.members].map(([id, start]) => ({
+          id,
+          position: { x: start.x + dx, y: start.y + dy },
+        }));
+        if (change.dragging === false) {
+          regionDrag.current = null;
+          // The carried items are saved with the region, not as separate moves.
+          for (const { id } of carried) pendingMoves.current.delete(id);
+          if (dx !== 0 || dy !== 0) {
+            latestRegionHandlers.current.onRegionChange(
+              change.id.slice('region:'.length),
+              { x: Math.round(change.position.x), y: Math.round(change.position.y) },
+              carried.map(({ id, position }) => ({
+                placementId: id,
+                x: Math.round(position.x),
+                y: Math.round(position.y),
+              })),
+            );
+          }
+        }
+      }
+      const carriedIds = new Set(carried.map(({ id }) => id));
+      setNodes((current) => {
+        const next = applyNodeChanges(changes, current);
+        if (carried.length === 0) return next;
+        const at = new Map(carried.map(({ id, position }) => [id, position]));
+        return next.map((node) => {
+          const position = at.get(node.id);
+          return position === undefined ? node : { ...node, position };
+        });
+      });
       for (const change of changes) {
-        if (change.type === 'position' && change.dragging === false && change.position) {
+        if (
+          change.type === 'position' &&
+          change.dragging === false &&
+          change.position &&
+          !isRegionNodeId(change.id) &&
+          !carriedIds.has(change.id)
+        ) {
           pendingMoves.current.set(change.id, change.position);
         }
       }
@@ -820,7 +1062,13 @@ export function MapCanvas({
   useEffect(() => {
     if (layoutRequest === null || handledLayout.current === layoutRequest.id) return;
     handledLayout.current = layoutRequest.id;
-    const { nodes: current, edges: lines } = latest.current;
+    const { nodes: all, edges: lines } = latest.current;
+    const current = all.filter(isPlacementNode);
+    const regionNodes = all.filter(isRegionNode);
+    const regionsBefore = regionNodes.map((node) => ({
+      id: node.data.region.id,
+      ...boundsOf(node),
+    }));
     const items = current.map((node) => ({
       id: node.id,
       x: node.position.x,
@@ -834,18 +1082,31 @@ export function MapCanvas({
       .map((edge) => ({ id: edge.id, source: edge.source, target: edge.target }));
     let cancelled = false;
     let frame = 0;
-    computeAutoLayout(items, links, layoutRequest.direction).then(
+    computeLayoutWithRegions(items, links, regionsBefore, layoutRequest.direction).then(
       (result) => {
         if (cancelled) return;
         const from = new Map(current.map((node) => [node.id, node.position]));
+        const regionFrom = new Map(regionsBefore.map((region) => [region.id, region]));
         const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const duration = reduceMotion ? 0 : 450;
         const started = performance.now();
         const step = (now: number) => {
           const t = duration === 0 ? 1 : Math.min(1, (now - started) / duration);
           const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+          const mix = (a: number, b: number) => a + (b - a) * eased;
           setNodes((nodesNow) =>
             nodesNow.map((node) => {
+              if (isRegionNode(node)) {
+                const goal = result.regions.get(node.data.region.id);
+                const begin = regionFrom.get(node.data.region.id);
+                if (goal === undefined || begin === undefined) return node;
+                return {
+                  ...node,
+                  position: { x: mix(begin.x, goal.x), y: mix(begin.y, goal.y) },
+                  width: mix(begin.width, goal.width),
+                  height: mix(begin.height, goal.height),
+                };
+              }
               const to = result.positions.get(node.id);
               const start = from.get(node.id);
               if (to === undefined || start === undefined) return node;
@@ -879,6 +1140,11 @@ export function MapCanvas({
                 routes: [...result.routes].map(([lineId, route]) => ({ lineId, ...route })),
               },
               previous,
+              [...result.regions].map(([regionId, box]) => ({ regionId, ...box })),
+              [...result.regions.keys()].map((regionId) => ({
+                regionId,
+                ...(regionFrom.get(regionId) ?? { x: 0, y: 0, width: 0, height: 0 }),
+              })),
             );
           }
         };
@@ -899,7 +1165,7 @@ export function MapCanvas({
   // after an automatic layout they follow its routes instead (see `routes`).
   const shownEdges = useMemo(() => {
     const boxes = new Map<string, ItemBox>(
-      nodes.map((node) => [
+      nodes.filter(isPlacementNode).map((node) => [
         node.id,
         {
           x: node.position.x,
@@ -947,10 +1213,13 @@ export function MapCanvas({
   // React Flow requires a stable callback here. The last selected item becomes the selection
   // used by the toolbar and the outline.
   const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes }: OnSelectionChangeParams<PlacementFlowNode, Edge>) => {
-      onSelect(selectedNodes.at(-1)?.id ?? null);
+    ({ nodes: selectedNodes }: OnSelectionChangeParams<CanvasNode, Edge>) => {
+      const items = selectedNodes.filter(isPlacementNode);
+      const regions = selectedNodes.filter(isRegionNode);
+      onSelect(items.at(-1)?.id ?? null);
+      onSelectRegion(items.length === 0 ? (regions.at(-1)?.data.region.id ?? null) : null);
     },
-    [onSelect],
+    [onSelect, onSelectRegion],
   );
 
   // Delete/Backspace remove the selected items from this map (never their nodes) and the
@@ -960,13 +1229,20 @@ export function MapCanvas({
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, select, [contenteditable="true"]') !== null) return;
-    const placementIds = nodes.filter((node) => node.selected).map((node) => node.id);
+    const placementIds = nodes
+      .filter((node) => node.selected && isPlacementNode(node))
+      .map((node) => node.id);
+    const regionIds = nodes
+      .filter(isRegionNode)
+      .filter((node) => node.selected)
+      .map((node) => node.data.region.id);
     const connectionIds = edges
       .filter((edge) => edge.selected && edge.id.startsWith('connector:'))
       .map((edge) => edge.id.slice('connector:'.length));
-    if (placementIds.length === 0 && connectionIds.length === 0) return;
+    if (placementIds.length === 0 && connectionIds.length === 0 && regionIds.length === 0) return;
     event.preventDefault();
-    onRemove(placementIds, connectionIds);
+    for (const regionId of regionIds) onRemoveRegion(regionId);
+    if (placementIds.length > 0 || connectionIds.length > 0) onRemove(placementIds, connectionIds);
   };
 
   // Double-clicking an item opens it. Caught on the way down: in hierarchy mode items cannot be
@@ -977,14 +1253,15 @@ export function MapCanvas({
     if (target.closest('button, .react-flow__handle') !== null) return;
     const id = target.closest('.react-flow__node')?.getAttribute('data-id');
     const node = id ? nodes.find((candidate) => candidate.id === id) : undefined;
-    if (node === undefined) return;
+    // A region handles its own double-click (renaming); it is not a note to open.
+    if (node === undefined || !isPlacementNode(node)) return;
     event.stopPropagation();
     onOpenNode(node.data.placement.nodeId);
   };
 
   return (
     <div className="h-full" onKeyDown={onKeyDown} onDoubleClickCapture={onDoubleClickCapture}>
-      <ReactFlow<PlacementFlowNode, Edge>
+      <ReactFlow<CanvasNode, Edge>
         nodes={nodes}
         edges={shownEdges}
         nodeTypes={NODE_TYPES}
@@ -1049,6 +1326,7 @@ export function MapCanvas({
         <Background />
         <Controls showInteractive={false} />
         <FitViewOnModeChange mode={view.map.mode} />
+        <AddRegionOnRequest request={regionRequest} nodes={nodes} onAdd={onAddRegion} />
       </ReactFlow>
     </div>
   );

@@ -562,6 +562,110 @@ export async function runSmokeTest(
     ),
   );
   checks.push(
+    await check(
+      'regions: added from the toolbar and renamed, kept together by auto layout, and undone',
+      async () => {
+        const outcome = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const { maps } = window.mmap;
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const until = async (predicate, timeoutMs) => {
+            const start = performance.now();
+            while (performance.now() - start < timeoutMs) {
+              if (await predicate()) return true;
+              await wait(50);
+            }
+            return false;
+          };
+          const buttonWithText = (text) =>
+            [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === text);
+          const press = (element, what) => {
+            if (!element) throw new Error(what + ' not found');
+            element.click();
+          };
+          const items = () => document.querySelectorAll('.react-flow__node-placement').length;
+          const regionsShown = () => [...document.querySelectorAll('.react-flow__node-region')];
+          const openMap = async () => {
+            const opened = await until(() => {
+              const button = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Smoke regions'));
+              button?.click();
+              return Boolean(button);
+            }, 3000);
+            return opened && (await until(() => items() === 3, 5000));
+          };
+
+          let view = (await maps.create({ title: 'Smoke regions' })).data;
+          for (const [title, x, y] of [['CPU', 0, 0], ['Cores', 10, 150], ['Exam', 900, 0]]) {
+            view = (await maps.addPlacement({ mapId: view.map.id, expectedRevision: view.map.revision,
+              newNodeTitle: 'Smoke region ' + title, x, y })).data;
+          }
+          const id = (title) => view.placements.find((p) => p.nodeTitle === 'Smoke region ' + title).id;
+          view = (await maps.addConnection({ mapId: view.map.id, expectedRevision: view.map.revision,
+            sourcePlacementId: id('CPU'), targetPlacementId: id('Cores') })).data;
+          const mapId = view.map.id;
+          press(buttonWithText('Home'), 'Home');
+          await wait(300);
+          press(buttonWithText('Mind Maps'), 'Mind Maps');
+          if (!(await openMap())) return 'map not shown';
+          await wait(400);
+
+          // Add a region from the toolbar; its title opens for editing, and Enter saves it.
+          press(buttonWithText('Add region'), 'Add region');
+          const editing = await until(() => document.querySelector('input[aria-label="Region title"]'), 5000);
+          if (!editing) return 'the new region did not open its title';
+          const field = document.querySelector('input[aria-label="Region title"]');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Smoke hardware');
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          const named = await until(async () => (await maps.get({ mapId })).data.regions[0]?.title === 'Smoke hardware', 5000);
+          if (!named) return 'the region title was not saved';
+          if (!(await until(() => regionsShown()[0]?.textContent.includes('Smoke hardware'), 3000))) return 'the region is not drawn with its title';
+
+          // Put the region around CPU and Cores, then reopen the map.
+          let current = (await maps.get({ mapId })).data;
+          const regionId = current.regions[0].id;
+          const placed = { x: -40, y: -60, width: 380, height: 320 };
+          current = (await maps.updateRegion({ mapId, expectedRevision: current.map.revision, regionId,
+            changes: placed })).data;
+          press(buttonWithText('All maps'), 'All maps');
+          if (!(await openMap())) return 'map not shown again';
+          await wait(400);
+
+          // Auto layout keeps the region's items together inside it, and Exam outside.
+          press(buttonWithText('Auto layout'), 'Auto layout');
+          const center = (p) => ({ x: p.x + 60, y: p.y + 18 });
+          const insideOf = (region, p) => {
+            const c = center(p);
+            return c.x >= region.x && c.x <= region.x + region.width && c.y >= region.y && c.y <= region.y + region.height;
+          };
+          let arranged = null;
+          await until(async () => {
+            const now = (await maps.get({ mapId })).data;
+            const region = now.regions[0];
+            const at = (title) => now.placements.find((p) => p.nodeTitle === 'Smoke region ' + title);
+            const moved = region.x !== placed.x || region.width !== placed.width;
+            if (moved && insideOf(region, at('CPU')) && insideOf(region, at('Cores')) && !insideOf(region, at('Exam'))) {
+              arranged = now;
+            }
+            return arranged !== null;
+          }, 6000);
+          if (arranged === null) return 'auto layout did not keep the region items together';
+
+          press(buttonWithText('Undo'), 'Undo');
+          const undone = await until(async () => {
+            const region = (await maps.get({ mapId })).data.regions[0];
+            return region.x === placed.x && region.y === placed.y && region.width === placed.width && region.height === placed.height;
+          }, 5000);
+          if (!undone) return 'Undo did not put the region back';
+          press(buttonWithText('All maps'), 'All maps');
+          await maps.delete({ mapId });
+          return 'ok';
+        })()`)) as string;
+        if (outcome !== 'ok') throw new Error(outcome);
+      },
+    ),
+  );
+  checks.push(
     await check('renderer has no Node.js access', async () => {
       const exposed = (await window.webContents.executeJavaScript(
         "[typeof require, typeof process, typeof module].join(',')",
