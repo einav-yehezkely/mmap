@@ -392,7 +392,10 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
       parentPlacementId,
       siblingOrder: placement.siblingOrder,
       isCollapsed: placement.isCollapsed,
-      style: { color: toPlacementColor(placement.color) },
+      style:
+        placement.pinned === true
+          ? { color: toPlacementColor(placement.color), pinned: true }
+          : { color: toPlacementColor(placement.color) },
       createdAt: timestamp(placement.createdAt, 'placement'),
       updatedAt: timestamp(placement.updatedAt, 'placement'),
     };
@@ -400,6 +403,7 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
   const placements = parentsFirst(unorderedPlacements);
 
   const connectionIds = new Set<string>();
+  const connectionIdMap = new Map<string, MapConnectionId>();
   const connections = data.connections.map((connection): MapConnectionRecord => {
     if (connectionIds.has(connection.id)) inconsistent(`connector ${connection.id} repeats`);
     connectionIds.add(connection.id);
@@ -428,8 +432,10 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
       }
       relationshipId = relationship.id;
     }
+    const id = newId() as MapConnectionId;
+    connectionIdMap.set(connection.id, id);
     return {
-      id: newId() as MapConnectionId,
+      id,
       workspaceId,
       mapId,
       sourcePlacementId: placementIdMap.get(connection.sourcePlacementId)!,
@@ -439,6 +445,31 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
       createdAt: timestamp(connection.createdAt, 'connector'),
       updatedAt: timestamp(connection.updatedAt, 'connector'),
     };
+  });
+
+  // Each map's last automatic layout, with its IDs rewritten. It is a drawing hint: items or lines
+  // it names that are not on the map are left out, and a layout with no items left is dropped.
+  const arrangedMaps = maps.map((record, index): MindMapRecord => {
+    const archived = data.maps[index]!.arrangement;
+    if (archived === undefined || archived === null) return record;
+    const placed = archived.placed.flatMap((item) => {
+      const id = placementIdMap.get(item.placementId);
+      return id !== undefined && placementMapIds.get(item.placementId) === data.maps[index]!.id
+        ? [{ placementId: id, x: item.x, y: item.y }]
+        : [];
+    });
+    if (placed.length === 0) return record;
+    const routes = archived.routes.flatMap((route) => {
+      const [kind, archiveId] = route.lineId.split(':');
+      const id =
+        kind === 'connector'
+          ? connectionIdMap.get(archiveId ?? '')
+          : kind === 'relationship'
+            ? relationshipMap.get(archiveId ?? '')?.id
+            : undefined;
+      return id === undefined ? [] : [{ ...route, lineId: `${kind}:${id}` }];
+    });
+    return { ...record, arrangement: { direction: archived.direction, placed, routes } };
   });
 
   const regionIds = new Set<string>();
@@ -527,7 +558,7 @@ export function planImport(data: ArchiveData, context: ImportContext): ImportPla
     nodeTags,
     relationshipTypes,
     relationships,
-    maps,
+    maps: arrangedMaps,
     placements,
     connections,
     regions,

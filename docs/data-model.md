@@ -567,7 +567,7 @@ both mirror this schema.
 [ADR-0011](adr/0011-export-import.md)):
 
 ```
-manifest.json            format "mmap-workspace-export", formatVersion 2, exportId, exportedAt,
+manifest.json            format "mmap-workspace-export", formatVersion 3, exportId, exportedAt,
                          appVersion, schemaVersion, workspace { id, name, timezone }, counts,
                          files [{ path, byteSize, sha256 }]
 data/workspace.json      nodes, tags, nodeTags, relationshipTypes, relationships, maps,

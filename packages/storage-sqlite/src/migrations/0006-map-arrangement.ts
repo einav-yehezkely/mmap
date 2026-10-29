@@ -4,7 +4,7 @@
  * `arrangement_json` keeps the routes ELK computed for the map's lines and the positions it gave
  * the items, so the clean orthogonal lines come back when the map is opened again. A route is
  * shown only while both of its items are still at those positions; `{}` means none. It is visual
- * state, like `viewport_json`, and is not part of exports.
+ * state, like `viewport_json`; ZIP exports carry it since archive format version 3.
  *
  * `ADD COLUMN` keeps every row and needs no table rebuild; the default fills existing maps.
  */

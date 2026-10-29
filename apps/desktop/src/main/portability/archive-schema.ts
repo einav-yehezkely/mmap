@@ -30,6 +30,23 @@ const many = <Item extends z.ZodType>(item: Item, max: number) => z.array(item).
 
 const MAX_RECORDS = 1_000_000;
 
+const side = z.enum(['left', 'right', 'top', 'bottom']);
+const point = z.strictObject({ x: coordinate, y: coordinate });
+/** A map's last automatic layout (ADR-0012); IDs are remapped on import. */
+const arrangementSchema = z.strictObject({
+  direction: z.enum(['right', 'down', 'left', 'up']),
+  placed: many(z.strictObject({ placementId: archiveId, x: coordinate, y: coordinate }), 100_000),
+  routes: many(
+    z.strictObject({
+      lineId: text(200),
+      sourceSide: side,
+      targetSide: side,
+      points: many(point, 200).min(2),
+    }),
+    20_000,
+  ),
+});
+
 export const archiveManifestSchema = z.strictObject({
   format: z.literal(ARCHIVE_FORMAT),
   formatVersion: z.number().int().positive(),
@@ -115,6 +132,8 @@ export const archiveDataSchema = z.strictObject({
         y: coordinate,
         zoom: z.number().finite().positive().max(1_000),
       }),
+      // Format version 3.
+      arrangement: arrangementSchema.nullable().optional(),
       createdAt: timestamp,
       updatedAt: timestamp,
     }),
@@ -131,6 +150,8 @@ export const archiveDataSchema = z.strictObject({
       siblingOrder: z.number().int().min(-1_000_000_000).max(1_000_000_000),
       isCollapsed: z.boolean(),
       color: text(50).nullable(),
+      // Format version 3.
+      pinned: z.boolean().optional(),
       createdAt: timestamp,
       updatedAt: timestamp,
     }),

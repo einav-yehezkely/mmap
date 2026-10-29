@@ -43,8 +43,9 @@ reopening the map. Hierarchy maps already have their own automatic tree layout
    `mind_maps.arrangement_json`: the direction, the positions the layout gave, and each line's
    route. The canvas draws a stored route only while both of its items are still at those
    positions (within 1 px); after a drag, Undo or new lines, the affected lines go back to curves
-   without any extra bookkeeping. The arrangement is visual state like the viewport: it is not
-   exported and duplicating a map does not copy it.
+   without any extra bookkeeping. The arrangement is visual state like the viewport; duplicating
+   a map does not copy it. ZIP exports carry it, and the item locks, since archive format version 3
+   (2026-10-29); import rewrites its IDs and drops routes or items it cannot match.
 
 ## Consequences
 
@@ -52,6 +53,6 @@ reopening the map. Hierarchy maps already have their own automatic tree layout
   top-left corner of the items it moved.
 - Line routes are a hint, not structure: nothing else reads them, and a malformed stored value is
   treated as none.
-- ZIP exports keep item positions and colors but not locks or routes; an imported map shows
-  curves until it is arranged again.
+- ZIP exports keep item positions, colors, locks and routes (format version 3); archives from
+  before version 3 import without locks, and their maps show curves until arranged again.
 - The ELK bundle adds about 1.6 MB to the renderer code.

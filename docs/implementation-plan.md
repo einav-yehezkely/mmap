@@ -672,3 +672,13 @@ survive export and import); `auto-layout.test.ts` (region owners, items kept ins
 regions, locked and empty regions left alone); `graph-map-groups.test.ts` (nested region frames);
 pinned migration checksum; packaged smoke check "regions: added from the toolbar and renamed, kept
 together by auto layout, and undone".
+
+## 21. Polish: map title line, locks and layouts in exports (2026-10-29)
+
+The map editor shows the map's title on its own line above the tools, so a full toolbar no longer
+cuts it short. ZIP archives (format version 3) now carry item locks (`pinned`) and each map's last
+automatic layout (`arrangement`); import rewrites the layout's placement, connector and
+relationship IDs and drops anything it cannot match. Version 1 and 2 archives still import.
+
+Tests: `round-trip.test.ts` (a locked item and a saved layout with a route survive export and
+import with new IDs, in the main process and through the worker connection).
