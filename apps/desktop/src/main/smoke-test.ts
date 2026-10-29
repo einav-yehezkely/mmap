@@ -16,7 +16,12 @@ import { verifySchemaOnFreshDatabase } from '@mmap/storage-sqlite';
 import type { BrowserWindow } from 'electron';
 
 import { checkAttachmentPreview } from './smoke-attachments';
-import { checkGraphRelationship, checkGraphRendering, checkTimeline } from './smoke-graph-timeline';
+import {
+  checkGraphMapGroups,
+  checkGraphRelationship,
+  checkGraphRendering,
+  checkTimeline,
+} from './smoke-graph-timeline';
 import type { ImportRecordWriter } from './portability/import-writer';
 import { checkExportImport } from './smoke-transfer';
 import { checkBackupAndRestore } from './smoke-backups';
@@ -597,6 +602,12 @@ export async function runSmokeTest(
     await check(
       'a relationship is added from the knowledge graph (Find and a click on the node)',
       () => checkGraphRelationship(window),
+    ),
+  );
+  checks.push(
+    await check(
+      'the knowledge graph shows each mind map as drawn, with copies of shared notes',
+      () => checkGraphMapGroups(window),
     ),
   );
   checks.push(

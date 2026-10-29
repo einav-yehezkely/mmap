@@ -1081,6 +1081,21 @@ change while the expanded node is still in the overview. Cytoscape is bundled li
 renderer dependency, and the packaged smoke check renders a 1,000-node graph under the production
 CSP.
 
+#### Maps as drawn
+
+The default arrangement (toolbar **Maps as drawn**, ADR-0010 amendment). The view loads the maps
+with `maps:get` (at most 40 maps and 4,000 items) and `graph-map-groups.ts` (pure, unit-tested)
+turns them into Cytoscape elements: one compound node per map (`group:<mapId>`) whose children are
+the map's items at their map positions (from `buildCanvasModel`, the same model the map editor
+draws, so hierarchy maps use the editor's tree layout), with the map's hierarchy lines and
+connectors (`taxi` edges for hierarchies and arranged maps). A node's first placement is the node's
+own element; later placements are copies (`copy:<placementId>`, with `nodeId` in their data)
+joined to it by a `same-node` edge. The canvas maps every copy to its node for selection, opening,
+emphasis and Focus (`nodeKeyOf`), moves nodes whose group changed, follows positions from the maps
+(`followPositions`), opens fitted to the groups, and counts only knowledge nodes in
+`data-rendered-nodes` (`data-map-groups` and `data-map-copies` count the rest). Positions in this
+mode are never saved as graph positions; the canvas is remounted when the mode changes.
+
 #### Map regions and collapsing
 
 Mind map membership overlaps, so maps are never turned into an exclusive hierarchy (Cytoscape

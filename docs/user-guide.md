@@ -629,7 +629,9 @@ Above the graph:
   now; choose one (or press Enter for the first) to select it and move the view to it.
 - **−** and **+** zoom out and in; **Fit** shows the whole graph again.
 - **Rearrange** lays out the visible graph again. It replaces the positions you gave those nodes
-  by dragging.
+  by dragging. It is off while **Maps as drawn** is on.
+- **Maps as drawn** (on by default) shows each mind map as it is laid out (see
+  [Maps as drawn](#maps-as-drawn)).
 - **Show Maps** marks which mind maps each node is on (see [Mind maps in the graph](#mind-maps-in-the-graph)).
 - **All labels** writes the relationship type on every line (otherwise labels appear when you
   point at a line or select a node).
@@ -737,9 +739,31 @@ Click the empty background, or the panel's close button, to clear the selection.
 mmap keeps your expansions when the graph reloads, for example after you change a filter or edit
 a note. They are removed when you leave the Knowledge Graph.
 
+### Maps as drawn
+
+With **Maps as drawn** on (the default), every mind map appears in the graph as a framed group
+with the map's name above it, in the map's color. Inside, the notes are boxes placed as they are
+on the map, joined by the map's own lines: the connectors you drew (with clean right-angled
+branches when the map was arranged with **Auto layout**) and, for hierarchy maps, the tree lines.
+Groups are side by side; notes that are on no map keep their own arrangement below the groups.
+The graph opens zoomed to the maps; press **Fit** to see everything.
+
+- A note on several maps appears in each of their groups. Its first appearance is the note
+  itself, with its relationships; the others are **dashed** copies, joined to it by a faint dotted
+  line. Clicking or double-clicking a copy selects or opens the note itself.
+- **Double-click a group's frame** to open that map in **Mind Maps**.
+- Relationships and note links are drawn between the notes as usual.
+- Maps are shown in full; the filters apply to the other notes. Choose maps in **Filters** to show
+  only some maps. Up to 40 maps (4,000 map items) are shown at once; the line above the graph says
+  when more exist.
+- Positions come from the maps, so dragging here is not remembered: move items on the map
+  instead. **Regions** and collapsing maps are for the other arrangement and are off here.
+
+Turn **Maps as drawn** off for the free graph described below, where each note appears once.
+
 ### Mind maps in the graph
 
-The graph shows each node once, however many maps it is on.
+With **Maps as drawn** off, the graph shows each node once, however many maps it is on.
 
 - Turn on **Show Maps** to color nodes by map: a node on maps is drawn as a small pie with one
   slice per map. A node on more than six maps gets six colored slices and one gray slice. The line

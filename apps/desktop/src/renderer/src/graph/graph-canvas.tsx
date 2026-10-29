@@ -21,6 +21,11 @@
  * node shared by several maps sits inside each of their regions while remaining one node. The
  * layer is redrawn whenever Cytoscape renders (pan, zoom, drag).
  *
+ * Maps as drawn (optional, see `graph-map-groups.ts`): maps are compound "group" nodes and a node
+ * on several maps has copies. A copy acts as its node (`nodeId`) for selection, opening, emphasis
+ * and Focus; double-clicking a group opens the map. In this mode positions come from the maps
+ * (`followPositions`), so existing nodes move when a map changed.
+ *
  * The canvas itself is not keyboard-operable; the List view presents the same information and
  * actions (PRD §6).
  */
@@ -29,6 +34,7 @@ import cytoscape from 'cytoscape';
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 
 import type { CytoscapeElement, Emphasis } from './graph-model';
+import { nodeKeyOf } from './graph-map-groups';
 import { convexHull, type RegionSpec } from './graph-regions';
 
 /** Largest zoom used when fitting automatically (Fit to View, Rearrange, first visit). */
@@ -41,6 +47,11 @@ function fitPadding(cy: cytoscape.Core): number {
   return Math.min(FIT_PADDING, Math.round(Math.min(cy.width(), cy.height()) * 0.08));
 }
 const SAVE_DELAY_MS = 500;
+
+/** The knowledge node a canvas node stands for (a copy's node, or the node itself). */
+function keyOf(node: cytoscape.NodeSingular): string {
+  return nodeKeyOf(node.data() as Record<string, unknown>);
+}
 const BADGE_SLICES = 7;
 
 export interface GraphCanvasHandle {
@@ -66,6 +77,10 @@ export interface GraphCanvasProps {
   readonly fitRequest: number;
   /** Lay out the whole graph once after loading (first visit: nothing saved yet). */
   readonly arrangeOnLoad: boolean;
+  /** Maps as drawn: existing nodes move to the positions given (they come from the maps). */
+  readonly followPositions?: boolean;
+  /** Double-click on a map group. */
+  readonly onOpenMap?: (mapId: string) => void;
   readonly onSelect: (nodeId: string | null) => void;
   readonly onOpenNode: (nodeId: string) => void;
   readonly onPositionsChanged: (
@@ -97,6 +112,7 @@ function graphStyle(): cytoscape.StylesheetJson {
   const muted = themeColor('--muted-foreground', '#9ca3af');
   const background = themeColor('--background', '#0b0d12');
   const primary = themeColor('--primary', '#60a5fa');
+  const card = themeColor('--card', '#16181d');
   const pie: Record<string, string> = {};
   for (let index = 1; index <= BADGE_SLICES; index += 1) {
     pie[`pie-${index}-background-color`] = `data(pie${index}Color)`;
@@ -199,6 +215,80 @@ function graphStyle(): cytoscape.StylesheetJson {
       selector: 'edge.aggregate',
       style: { width: 3, 'line-opacity': 0.6, label: 'data(label)' },
     },
+    {
+      // Maps as drawn: a map is a framed group named after the map, in the map's color.
+      selector: 'node.map-group',
+      style: {
+        shape: 'round-rectangle',
+        'background-color': 'data(color)',
+        'background-opacity': 0.06,
+        'border-color': 'data(color)',
+        'border-width': 1.5,
+        'border-opacity': 0.7,
+        padding: '28px',
+        label: 'data(label)',
+        'text-valign': 'top',
+        'text-halign': 'center',
+        'text-margin-y': -6,
+        'font-size': 13,
+        'font-weight': 'bold',
+        color: 'data(color)',
+        'text-max-width': '400px',
+      },
+    },
+    {
+      // An item of a map group: a box with its title, like on the map.
+      selector: 'node.map-item',
+      style: {
+        shape: 'round-rectangle',
+        width: 'label',
+        height: 'label',
+        padding: '9px',
+        'background-color': card,
+        'background-opacity': 1,
+        'border-color': muted,
+        'border-width': 1,
+        'text-valign': 'center',
+        'text-margin-y': 0,
+        'text-max-width': '220px',
+        'font-size': 12,
+      },
+    },
+    { selector: 'node.map-item.in-maps', style: { 'pie-size': '30%' } },
+    { selector: 'node.copy', style: { 'border-style': 'dashed' } },
+    {
+      selector: 'node.map-item:selected, node.selected-copy',
+      style: { 'border-color': primary, 'border-width': 2.5, 'font-weight': 'bold' },
+    },
+    { selector: 'edge.map-line', style: { 'line-opacity': 0.85, width: 1.5 } },
+    {
+      selector: 'edge.map-line.tree',
+      style: { 'line-style': 'solid', 'target-arrow-shape': 'none' },
+    },
+    {
+      selector: 'edge.taxi-downward',
+      style: { 'curve-style': 'taxi', 'taxi-direction': 'downward' },
+    },
+    { selector: 'edge.taxi-upward', style: { 'curve-style': 'taxi', 'taxi-direction': 'upward' } },
+    {
+      selector: 'edge.taxi-rightward',
+      style: { 'curve-style': 'taxi', 'taxi-direction': 'rightward' },
+    },
+    {
+      selector: 'edge.taxi-leftward',
+      style: { 'curve-style': 'taxi', 'taxi-direction': 'leftward' },
+    },
+    {
+      // The same node on another map: a faint line between its copy and the node.
+      selector: 'edge.same-node',
+      style: {
+        'curve-style': 'straight',
+        'line-style': 'dashed',
+        'line-dash-pattern': [2, 6],
+        'line-opacity': 0.3,
+        width: 1,
+      },
+    },
     { selector: 'edge.show-label', style: { label: 'data(label)' } },
     { selector: 'edge.emphasized', style: { 'line-opacity': 1, width: 1.8 } },
     { selector: '.dimmed', style: { opacity: 0.15 } },
@@ -272,6 +362,8 @@ export function GraphCanvas({
   regions,
   fitRequest,
   arrangeOnLoad,
+  followPositions = false,
+  onOpenMap,
   onSelect,
   onOpenNode,
   onPositionsChanged,
@@ -286,12 +378,13 @@ export function GraphCanvas({
   const latest = useRef({
     onSelect,
     onOpenNode,
+    onOpenMap,
     onPositionsChanged,
     showAllLabels,
   });
   useEffect(() => {
-    latest.current = { onSelect, onOpenNode, onPositionsChanged, showAllLabels };
-  }, [onSelect, onOpenNode, onPositionsChanged, showAllLabels]);
+    latest.current = { onSelect, onOpenNode, onOpenMap, onPositionsChanged, showAllLabels };
+  }, [onSelect, onOpenNode, onOpenMap, onPositionsChanged, showAllLabels]);
 
   /**
    * True while the view shows the graph fitted (after opening, Fit, filter or Focus changes). A
@@ -300,12 +393,22 @@ export function GraphCanvas({
    */
   const autoFit = useRef(true);
 
-  /** Fits the visible elements, never zooming in beyond MAX_AUTO_ZOOM. */
-  const fitCapped = (cy: cytoscape.Core) => {
+  /**
+   * Fits the visible elements, never zooming in beyond MAX_AUTO_ZOOM. When opening Maps as drawn
+   * it fits the map groups instead, so many notes on no map do not make the maps tiny; that
+   * choice holds for later automatic fits (resizes, filters) until Fit is pressed.
+   */
+  const fitMapsFirst = useRef(false);
+  const fitCapped = (cy: cytoscape.Core, mapsFirst?: boolean) => {
+    if (mapsFirst !== undefined) fitMapsFirst.current = mapsFirst;
     autoFit.current = true;
     // Cytoscape caches the container size; refresh it so the fit uses the current size.
     cy.resize();
-    const visible = cy.elements(':visible');
+    const groups = cy.nodes('.map-group:visible');
+    const visible =
+      fitMapsFirst.current && groups.nonempty()
+        ? groups.union(groups.descendants())
+        : cy.elements(':visible');
     if (visible.length === 0) return;
     cy.fit(visible, fitPadding(cy));
     if (cy.zoom() > MAX_AUTO_ZOOM) {
@@ -351,7 +454,9 @@ export function GraphCanvas({
       fitCapped(cy);
       reportPositions(visible.nodes());
       if (container.current !== null) {
-        container.current.dataset.renderedNodes = String(cy.nodes(':visible').length);
+        container.current.dataset.renderedNodes = String(
+          cy.nodes(':visible').not('.map-group, .copy').length,
+        );
       }
     });
     layout.run();
@@ -368,7 +473,7 @@ export function GraphCanvas({
       });
     },
     fit: () => {
-      if (instance.current !== null) fitCapped(instance.current);
+      if (instance.current !== null) fitCapped(instance.current, false);
     },
     rearrange: () => {
       if (instance.current !== null) rearrange(instance.current);
@@ -394,13 +499,17 @@ export function GraphCanvas({
       boxSelectionEnabled: false,
     });
     cy.on('tap', 'node', (event) => {
-      latest.current.onSelect((event.target as cytoscape.NodeSingular).id());
+      const node = event.target as cytoscape.NodeSingular;
+      // A map group is a frame, not a node: a click on it is like a click on the background.
+      latest.current.onSelect(node.hasClass('map-group') ? null : keyOf(node));
     });
     cy.on('tap', (event) => {
       if (event.target === cy) latest.current.onSelect(null);
     });
     cy.on('dbltap', 'node', (event) => {
-      latest.current.onOpenNode((event.target as cytoscape.NodeSingular).id());
+      const node = event.target as cytoscape.NodeSingular;
+      if (node.hasClass('map-group')) latest.current.onOpenMap?.(String(node.data('mapId')));
+      else latest.current.onOpenNode(keyOf(node));
     });
     cy.on('mouseover', 'node', (event) => {
       const node = event.target as cytoscape.NodeSingular;
@@ -409,7 +518,7 @@ export function GraphCanvas({
         x: position.x,
         y: position.y,
         title: String(node.data('label')),
-        maps: String(node.data('mapsText') ?? ''),
+        maps: node.hasClass('map-group') ? '' : String(node.data('mapsText') ?? ''),
       });
     });
     cy.on('mouseout', 'node', () => setTooltip(null));
@@ -492,14 +601,31 @@ export function GraphCanvas({
             classes: element.classes ?? '',
           });
         } else {
-          existing.data({ ...element.data });
+          // The parent cannot be changed through data(); a node that changed group is moved.
+          const { parent, ...data } = element.data;
+          existing.data(data);
           existing.classes(element.classes ?? '');
+          if (existing.isNode()) {
+            const currentParent = existing.parent().empty()
+              ? undefined
+              : existing.parent().first().id();
+            const wantedParent = parent === undefined ? undefined : String(parent);
+            if (currentParent !== wantedParent) existing.move({ parent: wantedParent ?? null });
+            if (followPositions && element.position !== undefined && !existing.isParent()) {
+              existing.position({ ...element.position });
+            }
+          }
         }
       }
       // Nodes first, so edges always find their endpoints.
       cy.add(additions.filter((item) => item.group === 'nodes'));
       cy.add(additions.filter((item) => item.group === 'edges'));
     });
+    if (container.current !== null) {
+      // Maps as drawn, for tests and diagnostics: how many maps and copies are drawn.
+      container.current.dataset.mapGroups = String(cy.nodes('.map-group').length);
+      container.current.dataset.mapCopies = String(cy.nodes('.copy').length);
+    }
 
     if (!loaded.current && elements.length > 0) {
       loaded.current = true;
@@ -507,13 +633,17 @@ export function GraphCanvas({
       if (arrangeOnLoad) {
         rearrange(cy);
       } else {
-        fitCapped(cy);
+        fitCapped(cy, followPositions);
         if (container.current !== null) {
-          container.current.dataset.renderedNodes = String(cy.nodes().length);
+          container.current.dataset.renderedNodes = String(
+            cy.nodes().not('.map-group, .copy').length,
+          );
         }
       }
     } else if (container.current !== null) {
-      container.current.dataset.renderedNodes = String(cy.nodes(':visible').length);
+      container.current.dataset.renderedNodes = String(
+        cy.nodes(':visible').not('.map-group, .copy').length,
+      );
     }
     // Only element changes trigger a synchronization; the other values are read once on load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -525,18 +655,27 @@ export function GraphCanvas({
     if (cy === null) return;
     cy.batch(() => {
       cy.elements().removeClass('dimmed emphasized focus-hidden');
+      const items = cy.nodes().not('.map-group');
       if (focusNodeIds !== null) {
-        cy.nodes().forEach((node) => {
-          if (!focusNodeIds.has(node.id())) node.addClass('focus-hidden');
+        items.forEach((node) => {
+          if (!focusNodeIds.has(keyOf(node))) node.addClass('focus-hidden');
+        });
+        cy.nodes('.map-group').forEach((group) => {
+          if (group.children().not('.focus-hidden').empty()) group.addClass('focus-hidden');
         });
       }
       if (emphasis.nodes !== null) {
-        cy.nodes().forEach((node) => {
-          if (!emphasis.nodes?.has(node.id())) node.addClass('dimmed');
+        items.forEach((node) => {
+          if (!emphasis.nodes?.has(keyOf(node))) node.addClass('dimmed');
         });
         cy.edges().forEach((edge) => {
-          if (emphasis.edges?.has(edge.id())) edge.addClass('emphasized');
-          else edge.addClass('dimmed');
+          // Map lines are emphasized when both of their ends are.
+          const mapLine = edge.hasClass('map-line') || edge.hasClass('same-node');
+          const strong = mapLine
+            ? emphasis.nodes?.has(keyOf(edge.source())) === true &&
+              emphasis.nodes.has(keyOf(edge.target()))
+            : emphasis.edges?.has(edge.id()) === true;
+          edge.addClass(strong ? 'emphasized' : 'dimmed');
         });
       }
       cy.edges().forEach((edge) => {
@@ -544,7 +683,13 @@ export function GraphCanvas({
         else edge.removeClass('show-label');
       });
       cy.nodes(':selected').unselect();
-      if (selectedNodeId !== null) cy.getElementById(selectedNodeId).select();
+      cy.nodes('.selected-copy').removeClass('selected-copy');
+      if (selectedNodeId !== null) {
+        cy.getElementById(selectedNodeId).select();
+        cy.nodes('.copy')
+          .filter((node) => node.data('nodeId') === selectedNodeId)
+          .addClass('selected-copy');
+      }
     });
   }, [elements, emphasis, focusNodeIds, showAllLabels, selectedNodeId]);
 

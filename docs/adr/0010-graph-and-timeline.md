@@ -136,6 +136,20 @@ all database work runs on the main process thread.
     Enter or Space; a legend names the shapes in words; the List tab presents the same events as
     an ordinary list.
 
+### Amendment (2026-10-29): maps as drawn
+
+Users asked for the graph to show the mind maps "as they are". **Maps as drawn**, on by default,
+draws every map as a Cytoscape compound node with its items at their map positions (freeform
+coordinates, or the hierarchy layout the map editor computes) and its hierarchy lines and
+connectors. Decision 1 above (each canonical node once, no compound nodes) still holds for the
+free graph; in this mode a node keeps its single graph element in the first group it is on, and
+its other placements are copies (`copy:<placementId>`) that carry the node ID and are joined to
+it by a faint line, so selection, Find, Focus and relationships keep working on the one node.
+Positions in this mode are derived from the maps and never saved as graph positions; Rearrange,
+Regions and collapsing apply to the free graph only. Maps are loaded with `maps:get` (at most 40
+maps, 4,000 items); groups are packed in rows, and nodes on no map keep their free arrangement
+below them. Implemented in `graph-map-groups.ts` (pure, unit-tested) and the graph canvas.
+
 ## Consequences
 
 - The user always knows whether the graph is complete; a large workspace shows its best-connected
