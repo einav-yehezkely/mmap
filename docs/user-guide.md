@@ -520,8 +520,8 @@ relationship that a map connector already shows (a connector linked to it) is dr
 - **Lock** an item to keep it where it is: select it and click **Lock** (a lock icon appears on
   it; click **Locked** to unlock). Auto layout arranges the other items next to the locked ones.
 - The clean routes are saved with the map and come back when you open it again. When you move
-  an item afterwards, its lines go back to ordinary curves; the rest stay as arranged. Locks and
-  routes are not part of ZIP exports (regions are).
+  an item afterwards, its lines go back to ordinary curves; the rest stay as arranged. Locks,
+  routes and regions are all part of ZIP exports.
 - **Regions** group items by subject. Select the items (Ctrl+click, or Shift and drag a box) and
   click **Add region**: a region is drawn around them and its name opens for typing; press Enter
   to save it. With nothing selected, the region appears in the middle of the view. An item is in a

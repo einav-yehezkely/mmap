@@ -18,9 +18,10 @@
 export const ARCHIVE_FORMAT = 'mmap-workspace-export';
 /**
  * Bump when the archive layout or data shape changes; older readers reject newer versions.
- * Version 2 added map regions (`regions`); version 1 archives, which have none, still import.
+ * Version 2 added map regions (`regions`); version 3 added item locks (`pinned`) and each map's
+ * last automatic layout (`arrangement`). Older archives, which have none of these, still import.
  */
-export const ARCHIVE_FORMAT_VERSION = 2;
+export const ARCHIVE_FORMAT_VERSION = 3;
 
 export const ARCHIVE_MANIFEST_PATH = 'manifest.json';
 export const ARCHIVE_DATA_PATH = 'data/workspace.json';
@@ -114,11 +115,30 @@ export interface ArchiveRelationship {
   readonly updatedAt: string;
 }
 
+/** A map's last automatic layout (ADR-0012), with archive IDs. */
+export interface ArchiveArrangement {
+  readonly direction: 'right' | 'down' | 'left' | 'up';
+  readonly placed: readonly {
+    readonly placementId: string;
+    readonly x: number;
+    readonly y: number;
+  }[];
+  readonly routes: readonly {
+    /** "connector:<archive connector ID>" or "relationship:<archive relationship ID>". */
+    readonly lineId: string;
+    readonly sourceSide: 'left' | 'right' | 'top' | 'bottom';
+    readonly targetSide: 'left' | 'right' | 'top' | 'bottom';
+    readonly points: readonly { readonly x: number; readonly y: number }[];
+  }[];
+}
+
 export interface ArchiveMap {
   readonly id: string;
   readonly title: string;
   readonly mode: 'freeform' | 'hierarchical';
   readonly viewport: { readonly x: number; readonly y: number; readonly zoom: number };
+  /** Format version 3; absent or null when the map was never arranged. */
+  readonly arrangement?: ArchiveArrangement | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -133,6 +153,8 @@ export interface ArchivePlacement {
   readonly siblingOrder: number;
   readonly isCollapsed: boolean;
   readonly color: string | null;
+  /** Locked for automatic layout (format version 3; absent means not locked). */
+  readonly pinned?: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

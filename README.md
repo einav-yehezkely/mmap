@@ -111,6 +111,33 @@ Markdown import, and progress or cancel for long operations
 ([implementation plan](docs/implementation-plan.md#not-yet-done-in-phase-5)). End-user
 instructions are in the [user guide](docs/user-guide.md).
 
+## Install
+
+mmap runs on Windows 10 and 11 (64-bit).
+
+1. Open the repository's [Releases](../../releases) page on GitHub and download
+   `mmap-setup-<version>-x64.exe` from the latest release (for example `mmap-setup-0.1.0-x64.exe`).
+2. Run the downloaded file. The installer is not code-signed yet, so Windows SmartScreen shows
+   "Windows protected your PC": click **More info**, then **Run anyway**. (A signed installer is a
+   release requirement still to come; see [ADR-0004](docs/adr/0004-installer-signing-and-updates.md).)
+3. Follow the installer. It installs for your Windows user only (no administrator rights needed),
+   lets you choose the folder, and adds Desktop and Start menu shortcuts.
+4. Start **mmap**. On first start it creates your workspace under `%APPDATA%\mmap\workspaces`, and
+   it takes a backup every day into `%APPDATA%\mmap\backups`. Everything stays on your computer.
+
+**Updating:** download the newer installer and run it; your workspace is kept. **Uninstalling:**
+Windows Settings › Apps › mmap › Uninstall. Your workspace and backups are kept in `%APPDATA%\mmap`;
+delete that folder yourself if you want them gone.
+
+**Bringing notes from a development build:** the installed app and `npm run dev` use separate data
+(`%APPDATA%\mmap` and `%APPDATA%\mmap-dev`). In the development build use **Settings › Export and
+import › Export workspace (ZIP)…**, then in the installed app **Settings › Export and import ›
+Import from an export…** and choose that ZIP file.
+
+**Building the installer yourself:** after the [quick start](#quick-start) steps, run
+`npm run package`; the installer is written to `apps/desktop/release/` (see
+[docs/runbooks/packaging.md](docs/runbooks/packaging.md)).
+
 ## Quick start
 
 Requires Windows 10/11 x64, Node.js 24 (see `.nvmrc`) and git. No Python, Visual Studio or C++

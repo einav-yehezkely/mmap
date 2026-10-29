@@ -634,9 +634,16 @@ function LoadedMapEditor({
           <ArrowLeft aria-hidden="true" />
           All maps
         </Button>
-        <h1 className="min-w-0 flex-1 truncate text-xl font-semibold" dir="auto">
+        <h1
+          className="min-w-0 flex-1 truncate text-xl font-semibold"
+          dir="auto"
+          title={view.map.title}
+        >
           {view.map.title}
         </h1>
+      </div>
+      {/* The tools get their own line, so they never squeeze the map's title. */}
+      <div className="flex flex-wrap items-center gap-2">
         <div role="group" aria-label="Map mode" className="flex rounded-md border p-0.5">
           <Button
             size="sm"

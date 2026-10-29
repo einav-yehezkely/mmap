@@ -226,10 +226,47 @@ async function buildSourceWorkspace(manager: WorkspaceManager) {
   map = await maps.setCollapsed(map.map.id, map.map.revision, root, true);
   await maps.setViewport(map.map.id, { x: 12, y: -8, zoom: 1.5 });
   const freeform = await maps.createMap('Scratch');
-  const placed = await maps.addPlacement(freeform.map.id, freeform.map.revision, {
+  let placed = await maps.addPlacement(freeform.map.id, freeform.map.revision, {
     nodeId: lonely.id,
     x: 10,
     y: 20,
+  });
+  placed = await maps.addPlacement(placed.map.id, placed.map.revision, {
+    nodeId: heat.id,
+    x: 300,
+    y: 20,
+  });
+  const scratchItem = (nodeId: string) => placed.placements.find((item) => item.nodeId === nodeId)!;
+  placed = await maps.addConnection(placed.map.id, placed.map.revision, {
+    sourcePlacementId: scratchItem(lonely.id).id,
+    targetPlacementId: scratchItem(heat.id).id,
+  });
+  placed = await maps.setPlacementStyle(
+    placed.map.id,
+    placed.map.revision,
+    scratchItem(lonely.id).id,
+    {
+      pinned: true,
+    },
+  );
+  // A saved automatic layout (format version 3), at the items' current positions.
+  placed = await maps.saveArrangement(placed.map.id, placed.map.revision, {
+    direction: 'right',
+    placed: [
+      { placementId: scratchItem(lonely.id).id, x: 10, y: 20 },
+      { placementId: scratchItem(heat.id).id, x: 300, y: 20 },
+    ],
+    routes: [
+      {
+        lineId: `connector:${placed.connections[0]!.id}`,
+        sourceSide: 'right',
+        targetSide: 'left',
+        points: [
+          { x: 130, y: 40 },
+          { x: 300, y: 40 },
+        ],
+      },
+    ],
   });
   await maps.addRegion(placed.map.id, placed.map.revision, {
     title: 'Loose ends',
@@ -346,8 +383,8 @@ describe('workspace export and import (criterion 12)', () => {
         nodes: 4,
         relationships: 2,
         maps: 2,
-        placements: 4,
-        connections: 1,
+        placements: 5,
+        connections: 2,
         attachments: 1,
       },
     });
@@ -373,8 +410,8 @@ describe('workspace export and import (criterion 12)', () => {
         newRelationshipTypes: 1,
         relationships: 2,
         maps: 2,
-        placements: 4,
-        connections: 1,
+        placements: 5,
+        connections: 2,
         attachments: 1,
       },
       previousImports: [],
@@ -489,13 +526,17 @@ describe('workspace export and import (criterion 12)', () => {
       style: { color: 'amber' },
     });
     expect(placementOf('Temperature').parentPlacementId).toBe(placementOf('Entropy').id);
-    const sourcePlacements = sourceSnapshot.placements;
+    // Heat is on two maps; the order is checked on this one.
+    const sourceThermo = sourceSnapshot.maps.find((map) => map.title === 'Thermo map')!;
+    const sourcePlacements = sourceSnapshot.placements.filter(
+      (placement) => placement.mapId === sourceThermo.id,
+    );
     const sourceTitles = byTitle(sourceSnapshot);
     for (const name of ['Heat', 'Temperature']) {
       const original = sourcePlacements.find((item) => sourceTitles.title(item.nodeId) === name)!;
       expect(placementOf(name).siblingOrder).toBe(original.siblingOrder);
     }
-    const [connector] = imported.connections;
+    const connector = imported.connections.find((item) => item.label === 'drives');
     expect(connector).toMatchObject({
       mapId: thermoMap.id,
       sourcePlacementId: placementOf('Entropy').id,
@@ -506,9 +547,30 @@ describe('workspace export and import (criterion 12)', () => {
       imported.relationships.find((item) => item.id === connector!.relationshipId),
     ).toBeDefined();
     const scratch = imported.maps.find((map) => map.title === 'Scratch')!;
-    expect(imported.placements.find((item) => item.mapId === scratch.id)).toMatchObject({
-      x: 10,
-      y: 20,
+    const scratchPlacements = imported.placements.filter((item) => item.mapId === scratch.id);
+    const lonelyPlacement = scratchPlacements.find((item) => title(item.nodeId) === 'Lonely idea')!;
+    const heatPlacement = scratchPlacements.find((item) => title(item.nodeId) === 'Heat')!;
+    expect(lonelyPlacement).toMatchObject({ x: 10, y: 20, style: { color: null, pinned: true } });
+    expect(heatPlacement.style).toEqual({ color: null });
+    // The saved layout comes back with the new IDs (format version 3).
+    const scratchConnector = imported.connections.find((item) => item.mapId === scratch.id)!;
+    expect(scratch.arrangement).toEqual({
+      direction: 'right',
+      placed: [
+        { placementId: lonelyPlacement.id, x: 10, y: 20 },
+        { placementId: heatPlacement.id, x: 300, y: 20 },
+      ],
+      routes: [
+        {
+          lineId: `connector:${scratchConnector.id}`,
+          sourceSide: 'right',
+          targetSide: 'left',
+          points: [
+            { x: 130, y: 40 },
+            { x: 300, y: 40 },
+          ],
+        },
+      ],
     });
     // Regions (archive format version 2).
     expect(imported.regions).toEqual([

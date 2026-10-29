@@ -127,6 +127,11 @@ export function createImportService(dependencies: ImportServiceDependencies): Im
         for (const region of plan.regions) {
           await dependencies.maps.insertRegion(region);
         }
+        for (const map of plan.maps) {
+          if (map.arrangement !== undefined && map.arrangement !== null) {
+            await dependencies.maps.setArrangement(workspaceId, map.id, map.arrangement);
+          }
+        }
         for (const attachment of plan.attachments) {
           await dependencies.attachments.insert({
             id: attachment.id,

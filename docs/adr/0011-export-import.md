@@ -103,6 +103,9 @@ wikilink target IDs and attachment IDs ([ADR-0008](0008-wikilinks-and-note-schem
   is no progress reporting yet.
 - Version 2 (2026-10-29, [ADR-0013](0013-map-regions.md)) added `regions` to `data/workspace.json`;
   version 1 archives, which have none, still import.
+- Version 3 (2026-10-29, [ADR-0012](0012-automatic-map-layout.md)) added each placement's `pinned`
+  (locked for automatic layout) and each map's `arrangement` (the last automatic layout, with archive
+  IDs that import rewrites). Older archives import without them.
 - `formatVersion` must be raised whenever the archive layout or data shape changes; older builds
   then refuse newer archives with an actionable message.
 - Map viewports, placement coordinates, colors and collapse states, and graph positions are
